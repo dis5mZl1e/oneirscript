@@ -1,6 +1,6 @@
 """异象主动技能数据定义层（设计提案 v1.0 · 2026-10-08）。
 
-数据源：`梦层异象主动技能开发表.xlsx`（仓库根目录，openpyxl 只读解析）。
+数据源：同目录 `anomaly_skills.json`，保留原技能数据表的值。
 本模块在导入时一次性读取《技能参数》《技能效果》《异象配置》《演出预设》
 《调参规则》五张工作表，并合入 hospital.py 的专属位面成品参数：
 
@@ -24,14 +24,14 @@
 from __future__ import annotations
 
 import math
+import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-import openpyxl
-
-_WORKBOOK_PATH = Path(__file__).resolve().parents[2] / "梦层异象主动技能开发表.xlsx"
+_DATA_PATH = Path(__file__).with_suffix(".json")
+SkillTables = Mapping[str, list[list[Any]]]
 
 _TIER_NAME_TO_INT = {"普通": 0, "强烈": 1, "核心": 2}
 TIER_NAMES = ("普通", "强烈", "核心")
@@ -131,7 +131,7 @@ class AnomalySkillConfig:
 
 
 # ---------------------------------------------------------------------------
-# xlsx 解析
+# 运行数据解析
 # ---------------------------------------------------------------------------
 
 def _to_int(value: Any) -> int:
@@ -159,7 +159,7 @@ def _rows_by_header(ws: Any, header_first_cell: str) -> list[dict[str, Any]]:
     """定位表头行（首个单元格匹配），返回其下所有非空首列行字典。"""
     header: list[str] | None = None
     rows: list[dict[str, Any]] = []
-    for row in ws.iter_rows(values_only=True):
+    for row in ws:
         cells = list(row)
         if header is None:
             if cells and _to_str(cells[0]) == header_first_cell:
@@ -171,13 +171,11 @@ def _rows_by_header(ws: Any, header_first_cell: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _load_workbook() -> openpyxl.Workbook:
-    if not _WORKBOOK_PATH.exists():
-        raise RuntimeError(f"异象主动技能开发表不存在：{_WORKBOOK_PATH}")
-    return openpyxl.load_workbook(_WORKBOOK_PATH, read_only=True, data_only=True)
+def _load_data() -> SkillTables:
+    return json.loads(_DATA_PATH.read_text(encoding="utf-8"))
 
 
-def _parse_skills(wb: openpyxl.Workbook) -> dict[str, SkillDef]:
+def _parse_skills(wb: SkillTables) -> dict[str, SkillDef]:
     params = {r["技能ID"]: r for r in _rows_by_header(wb["技能参数"], "技能ID")}
     effects = {r["技能ID"]: r for r in _rows_by_header(wb["技能效果"], "技能ID")}
     definitions: dict[str, SkillDef] = {}
@@ -213,7 +211,7 @@ def _parse_skills(wb: openpyxl.Workbook) -> dict[str, SkillDef]:
     return definitions
 
 
-def _parse_fx_profiles(wb: openpyxl.Workbook) -> dict[str, FxProfile]:
+def _parse_fx_profiles(wb: SkillTables) -> dict[str, FxProfile]:
     profiles: dict[str, FxProfile] = {}
     for r in _rows_by_header(wb["演出预设"], "预设ID"):
         pid = _to_str(r.get("预设ID"))
@@ -280,7 +278,7 @@ _TUNING_NUMERIC_KEYS = {
 }
 
 
-def _parse_tuning(wb: openpyxl.Workbook) -> Mapping[str, Any]:
+def _parse_tuning(wb: SkillTables) -> Mapping[str, Any]:
     values: dict[str, Any] = {}
     raw_notes: dict[str, str] = {}
     for r in _rows_by_header(wb["调参规则"], "参数/来源"):
@@ -375,7 +373,7 @@ def _tier_from_text(tier_name: str) -> int | None:
 
 
 def _parse_bindings(
-    wb: openpyxl.Workbook,
+    wb: SkillTables,
     definitions: Mapping[str, SkillDef],
 ) -> tuple[dict[str, tuple[SkillBinding, ...]], dict[str, AnomalySkillConfig]]:
     bindings: dict[str, list[SkillBinding]] = {}
@@ -435,14 +433,11 @@ def _build() -> tuple[
     dict[str, AnomalySkillConfig],
     Mapping[str, Any],
 ]:
-    wb = _load_workbook()
-    try:
-        definitions = _parse_skills(wb)
-        fx = _parse_fx_profiles(wb)
-        tuning = _parse_tuning(wb)
-        bindings, configs = _parse_bindings(wb, definitions)
-    finally:
-        wb.close()
+    wb = _load_data()
+    definitions = _parse_skills(wb)
+    fx = _parse_fx_profiles(wb)
+    tuning = _parse_tuning(wb)
+    bindings, configs = _parse_bindings(wb, definitions)
     return definitions, bindings, fx, configs, tuning
 
 

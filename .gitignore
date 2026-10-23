@@ -31,6 +31,7 @@ Thumbs.db
 .ruff_cache/
 
 # Development-only material belongs in the development repository
+*.xlsx
 /tests/
 /docs/
 /scripts/
