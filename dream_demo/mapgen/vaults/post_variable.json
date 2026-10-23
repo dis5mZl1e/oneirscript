@@ -1,0 +1,413 @@
+{
+  "phase": "post",
+  "material": "variable",
+  "vaults": [
+    {
+      "id": "secret_room",
+      "name": "密室",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "####",
+        "#..#",
+        "#..#",
+        "##@#"
+      ],
+      "min_solid": 0.75,
+      "rarity": "少见"
+    },
+    {
+      "id": "pillar_kiosk",
+      "name": "柱亭",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#",
+        "...",
+        "#.#"
+      ],
+      "min_open": 0.9,
+      "rarity": "常见"
+    },
+    {
+      "id": "mini_maze",
+      "name": "迷你迷宫",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#####",
+        "#.#.#",
+        "#.#.#",
+        "#...#",
+        "##@##"
+      ],
+      "min_open": 0.9,
+      "rarity": "少见"
+    },
+    {
+      "id": "altar",
+      "name": "祭坛",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "..#..",
+        ".###.",
+        "..#.."
+      ],
+      "min_open": 0.9,
+      "rarity": "常见"
+    },
+    {
+      "id": "study",
+      "name": "尽头书房",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##.##",
+        "#...#",
+        "##@##"
+      ],
+      "min_solid": 0.7,
+      "rarity": "少见"
+    },
+    {
+      "id": "quad",
+      "name": "四叶庭",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#",
+        "...",
+        "#.#"
+      ],
+      "min_open": 0.9,
+      "rarity": "常见"
+    },
+    {
+      "id": "bridge",
+      "name": "断桥",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##@##",
+        "##@##"
+      ],
+      "min_solid": 0.85,
+      "rarity": "常见"
+    },
+    {
+      "id": "bench",
+      "name": "矮凳",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##"
+      ],
+      "min_open": 0.95,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "twin_benches",
+      "name": "双凳",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##",
+        "..",
+        "##"
+      ],
+      "min_open": 0.9,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "corner_blocks",
+      "name": "角垛",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##..",
+        "##..",
+        "..##",
+        "..##"
+      ],
+      "min_open": 0.85,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "corner_cabinet",
+      "name": "角柜",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##.",
+        "##.",
+        "..."
+      ],
+      "min_open": 0.85,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "half_partition",
+      "name": "半隔断",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#..",
+        "#..",
+        "###"
+      ],
+      "min_open": 0.9,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "low_wall",
+      "name": "矮墙段",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        ".###."
+      ],
+      "min_open": 0.9,
+      "decor": true,
+      "rarity": "常见"
+    },
+    {
+      "id": "stalagmites",
+      "name": "石笋簇",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#.#",
+        ".....",
+        "..#..",
+        "....."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "洞穴"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "mushroom_ring",
+      "name": "蘑菇环",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "..#..",
+        ".#.#.",
+        "##.##",
+        ".#.#.",
+        "..#.."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "洞穴"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "drip_pillar",
+      "name": "钟乳柱",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#",
+        "#.#",
+        "..."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "洞穴"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "courtyard",
+      "name": "小天井",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#####",
+        "#...#",
+        "#.#.#",
+        "#...#",
+        "##@##"
+      ],
+      "min_open": 0.75,
+      "forms": [
+        "居民区"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "drying_alley",
+      "name": "晾衣巷",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##.##",
+        ".....",
+        "##.##"
+      ],
+      "min_open": 0.8,
+      "forms": [
+        "居民区"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "street_altar",
+      "name": "街心石台",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "...",
+        ".S.",
+        "..."
+      ],
+      "min_open": 0.6,
+      "loot": true,
+      "forms": [
+        "整齐的房间",
+        "破碎的房间",
+        "居民区"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "arch_row",
+      "name": "拱门排",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#.#",
+        "....."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "长廊"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "wall_niche",
+      "name": "壁龛",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "###",
+        "..."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "长廊"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "pillar_array",
+      "name": "柱阵",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#.#",
+        ".....",
+        "#.#.#",
+        ".....",
+        "#.#.#"
+      ],
+      "min_open": 0.85,
+      "forms": [
+        "无限房间"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "menhir_circle",
+      "name": "巨石环",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "..#..",
+        ".#.#.",
+        "##.##",
+        ".#.#.",
+        "..#.."
+      ],
+      "min_open": 0.92,
+      "forms": [
+        "碎影平原"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "monolith",
+      "name": "独石",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "##",
+        "##"
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "碎影平原"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "colonnade",
+      "name": "柱廊",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#.#",
+        ".....",
+        "#.#.#"
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "回声大厅"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "resonance_dais",
+      "name": "共鸣台",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        ".#.",
+        "#.#",
+        ".#."
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "回声大厅"
+      ],
+      "rarity": "少见"
+    },
+    {
+      "id": "echo_wall",
+      "name": "回音壁",
+      "phase": "post",
+      "material": "variable",
+      "pattern": [
+        "#.#",
+        "...",
+        "#.#"
+      ],
+      "min_open": 0.9,
+      "forms": [
+        "回声大厅"
+      ],
+      "rarity": "少见"
+    }
+  ]
+}

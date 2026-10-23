@@ -1,0 +1,17 @@
+{
+  "family": "Dream Strata Song Reading",
+  "upstream": "Noto Serif SC Medium",
+  "weight": 500,
+  "source": "https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@500",
+  "source_sha256": "89ec9f54c02b34998447fd5fc859bb2cc84e5e7671aec9aca1ccd9f608034c9f",
+  "sha256": "5d3ac0f2f54370bf209e4507a13ced229e3c737536cd3a7fb9b1389a6bf7528a",
+  "license": "OFL-1.1",
+  "builder": "scripts/build_song_reading_font.py",
+  "half_width": 500,
+  "full_width": 1000,
+  "row_height": 1180,
+  "ascent": 900,
+  "descent": -280,
+  "composite_outlines": "decomposed",
+  "square_symbol_ink": "two columns when followed by reserved space"
+}

@@ -1,0 +1,6 @@
+Material Design Icons (MDI) 7.4.47
+Copyright (c) Pictogrammers contributors
+
+Licensed under the Apache License, Version 2.0. The selected outlines are
+remapped to Dream Strata game codepoints; brand icons and the upstream cmap are
+not included. Full license text: LICENSE-MDI-Apache-2.0.txt.

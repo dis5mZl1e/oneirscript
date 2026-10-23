@@ -1,0 +1,1650 @@
+{
+  "schema_version": 1,
+  "aliases": [
+    {
+      "key": "ability.blink",
+      "label": "闪现",
+      "reuse": "tamper.slot",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a18de5"
+    },
+    {
+      "key": "ability.blur",
+      "label": "曝光",
+      "reuse": "nav.hover",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#829de3"
+    },
+    {
+      "key": "ability.calm_incense",
+      "label": "安神香",
+      "reuse": "noise.silence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#82ace3"
+    },
+    {
+      "key": "ability.collapse",
+      "label": "崩落",
+      "reuse": "tamper.break",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e3a682"
+    },
+    {
+      "key": "ability.combat.arc_orb",
+      "label": "雷珠",
+      "reuse": "portent.charged",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#9a97e7"
+    },
+    {
+      "key": "ability.combat.arc_slash",
+      "label": "横切",
+      "reuse": "tamper.break",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e38f82"
+    },
+    {
+      "key": "ability.combat.backdraft_screen",
+      "label": "逆风幕",
+      "reuse": "tamper.dispel",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e3a1ea"
+    },
+    {
+      "key": "ability.combat.beat_cut",
+      "label": "截拍",
+      "reuse": "tamper.break",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e5ae8d"
+    },
+    {
+      "key": "ability.combat.cross_step",
+      "label": "借位",
+      "reuse": "tamper.slot",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1aaea"
+    },
+    {
+      "key": "ability.combat.delayed_shell",
+      "label": "迟响弹",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#eacba1"
+    },
+    {
+      "key": "ability.combat.fault_ring",
+      "label": "裂地环",
+      "reuse": "tamper.break",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e7ae97"
+    },
+    {
+      "key": "ability.combat.paper_blades",
+      "label": "纸刃旋流",
+      "reuse": "tamper.sentence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#ce97e7"
+    },
+    {
+      "key": "ability.combat.piercing_needle",
+      "label": "穿念针",
+      "reuse": "tamper.break",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#eccdac"
+    },
+    {
+      "key": "ability.combat.refracted_bolt",
+      "label": "折光矢",
+      "reuse": "stat.lucidity",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#829fe3"
+    },
+    {
+      "key": "ability.combat.shadow_pin",
+      "label": "钉影枪",
+      "reuse": "nav.pin",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#accaec"
+    },
+    {
+      "key": "ability.combat.tow_hook",
+      "label": "牵引钩",
+      "reuse": "tamper.call",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#8da5e5"
+    },
+    {
+      "key": "ability.condense_dew",
+      "label": "凝露",
+      "reuse": "stat.imagination",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1eaac"
+    },
+    {
+      "key": "ability.conjure_wall",
+      "label": "凝聚",
+      "reuse": "stat.endurance",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#97e7bb"
+    },
+    {
+      "key": "ability.deep_breath",
+      "label": "深呼吸",
+      "reuse": "noise.echo",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#d4e797"
+    },
+    {
+      "key": "ability.detonate",
+      "label": "引爆",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e39c82"
+    },
+    {
+      "key": "ability.develop",
+      "label": "冲印",
+      "reuse": "nav.hover",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#97abe7"
+    },
+    {
+      "key": "ability.dissolve_wall",
+      "label": "融蚀",
+      "reuse": "tamper.erase",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a197e7"
+    },
+    {
+      "key": "ability.draw_liquid",
+      "label": "汲引",
+      "reuse": "tamper.call",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#82aee3"
+    },
+    {
+      "key": "ability.echo_pulse",
+      "label": "回响",
+      "reuse": "noise.echo",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a2e58d"
+    },
+    {
+      "key": "ability.farsight",
+      "label": "望远",
+      "reuse": "nav.hover",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#d68de5"
+    },
+    {
+      "key": "ability.firewall",
+      "label": "火墙",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#ecb7ac"
+    },
+    {
+      "key": "ability.flame_nova",
+      "label": "烈焰新星",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#ecd4ac"
+    },
+    {
+      "key": "ability.flashback",
+      "label": "回闪",
+      "reuse": "tamper.slot",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#acb7ec"
+    },
+    {
+      "key": "ability.frost_touch",
+      "label": "冻凝",
+      "reuse": "portent.frozen",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1e9ea"
+    },
+    {
+      "key": "ability.ice_bridge",
+      "label": "冰桥",
+      "reuse": "portent.frozen",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#acece8"
+    },
+    {
+      "key": "ability.ice_chain",
+      "label": "急冻链",
+      "reuse": "portent.frozen",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#8db7e5"
+    },
+    {
+      "key": "ability.ink_doodle",
+      "label": "涂鸦",
+      "reuse": "tamper.sentence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1c0ea"
+    },
+    {
+      "key": "ability.kindle",
+      "label": "火种",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#eaada1"
+    },
+    {
+      "key": "ability.library.bookmark",
+      "label": "书签",
+      "reuse": "nav.pin",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a48de5"
+    },
+    {
+      "key": "ability.library.clamp",
+      "label": "夹页",
+      "reuse": "nav.pin",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1a7ea"
+    },
+    {
+      "key": "ability.library.erase",
+      "label": "删划",
+      "reuse": "tamper.erase",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#828de3"
+    },
+    {
+      "key": "ability.library.fold",
+      "label": "折页",
+      "reuse": "tamper.slot",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#b7acec"
+    },
+    {
+      "key": "ability.library.inkline",
+      "label": "墨线",
+      "reuse": "tamper.sentence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#c8acec"
+    },
+    {
+      "key": "ability.library.margin",
+      "label": "旁注",
+      "reuse": "nav.hover",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#97ade7"
+    },
+    {
+      "key": "ability.listen_realm",
+      "label": "听界",
+      "reuse": "noise.echo",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#c2e58d"
+    },
+    {
+      "key": "ability.mirror_stance",
+      "label": "镜面",
+      "reuse": "stat.endurance",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1e8ea"
+    },
+    {
+      "key": "ability.moth_dust",
+      "label": "遗忘喷剂",
+      "reuse": "tamper.sentence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e8a1ea"
+    },
+    {
+      "key": "ability.mute_protocol",
+      "label": "静默协议",
+      "reuse": "noise.silence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#acaeec"
+    },
+    {
+      "key": "ability.nightmare_fuel",
+      "label": "梦魇燃料",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#e5938d"
+    },
+    {
+      "key": "ability.pixel_surge",
+      "label": "像素拆解",
+      "reuse": "tamper.erase",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#acc3ec"
+    },
+    {
+      "key": "ability.purge_wind",
+      "label": "净化风",
+      "reuse": "tamper.dispel",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#caa1ea"
+    },
+    {
+      "key": "ability.raise_terrain",
+      "label": "隆起",
+      "reuse": "tamper.again",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#978de5"
+    },
+    {
+      "key": "ability.repulse",
+      "label": "推斥",
+      "reuse": "tamper.dispel",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#b0a1ea"
+    },
+    {
+      "key": "ability.resonance",
+      "label": "共鸣",
+      "reuse": "noise.echo",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1eaac"
+    },
+    {
+      "key": "ability.rewire",
+      "label": "接线",
+      "reuse": "portent.charged",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#828ae3"
+    },
+    {
+      "key": "ability.rewrite_corner",
+      "label": "重写一隅",
+      "reuse": "tamper.again",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#b4a1ea"
+    },
+    {
+      "key": "ability.short_circuit",
+      "label": "短路",
+      "reuse": "portent.charged",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#8dace5"
+    },
+    {
+      "key": "ability.sink_terrain",
+      "label": "陷落",
+      "reuse": "tamper.again",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#979de7"
+    },
+    {
+      "key": "ability.slow_wave",
+      "label": "迟缓",
+      "reuse": "noise.reduce",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#acbbec"
+    },
+    {
+      "key": "ability.smoke_veil",
+      "label": "烟幕",
+      "reuse": "portent.obscured",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#b582e3"
+    },
+    {
+      "key": "ability.sow_green",
+      "label": "播绿",
+      "reuse": "stat.imagination",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#8de599"
+    },
+    {
+      "key": "ability.spark",
+      "label": "火花",
+      "reuse": "portent.burning",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#ecbbac"
+    },
+    {
+      "key": "ability.stasis",
+      "label": "凝滞",
+      "reuse": "portent.frozen",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#8dbbe5"
+    },
+    {
+      "key": "ability.static_arc",
+      "label": "静电弧",
+      "reuse": "portent.charged",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1ccea"
+    },
+    {
+      "key": "ability.transpire",
+      "label": "蒸腾",
+      "reuse": "portent.obscured",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#bcacec"
+    },
+    {
+      "key": "ability.vanish",
+      "label": "匿踪",
+      "reuse": "noise.silence",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#c897e7"
+    },
+    {
+      "key": "ability.wax_seal",
+      "label": "蜡封",
+      "reuse": "stat.endurance",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a1eabc"
+    },
+    {
+      "key": "ability.wide_develop",
+      "label": "显影拓印",
+      "reuse": "nav.hover",
+      "reason": "同类机制家族；保留名称，以独立颜色区分",
+      "color": "#a082e3"
+    },
+    {
+      "key": "attribute.ability.cooldown_turns",
+      "label": "构想冷却",
+      "reuse": "stat.imagination",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acecc2"
+    },
+    {
+      "key": "attribute.ability.cost_multiplier",
+      "label": "构想费用倍率",
+      "reuse": "stat.imagination",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#82e396"
+    },
+    {
+      "key": "attribute.action.speed_scale",
+      "label": "行动速度倍率",
+      "reuse": "noise.footstep",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acecbc"
+    },
+    {
+      "key": "attribute.attack.delay_penalty",
+      "label": "攻击迟滞代价",
+      "reuse": "tamper.break",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e7a897"
+    },
+    {
+      "key": "attribute.buffer.available",
+      "label": "一次性缓冲",
+      "reuse": "stat.endurance",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acece4"
+    },
+    {
+      "key": "attribute.dissolution.bonus",
+      "label": "崩解收益",
+      "reuse": "stat.collapse",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e5acec"
+    },
+    {
+      "key": "attribute.environment.trauma",
+      "label": "环境即时创伤",
+      "reuse": "stat.endurance",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acece7"
+    },
+    {
+      "key": "attribute.identity.trauma_multiplier",
+      "label": "身份环境弱点",
+      "reuse": "stat.integrity",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#97aee7"
+    },
+    {
+      "key": "attribute.imagination.max",
+      "label": "想象上限",
+      "reuse": "stat.imagination",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#a1eab8"
+    },
+    {
+      "key": "attribute.imagination.regen_credit",
+      "label": "想象回流进度",
+      "reuse": "stat.imagination",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#8de5bd"
+    },
+    {
+      "key": "attribute.imagination.regen_rate",
+      "label": "想象自然回流",
+      "reuse": "stat.imagination",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#aceaa1"
+    },
+    {
+      "key": "attribute.loot.luck",
+      "label": "战利品幸度",
+      "reuse": "nav.filter",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#a5a1ea"
+    },
+    {
+      "key": "attribute.lucidity.max",
+      "label": "清醒上限",
+      "reuse": "stat.lucidity",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#a1c5ea"
+    },
+    {
+      "key": "attribute.lucidity.tier",
+      "label": "清醒档位",
+      "reuse": "stat.lucidity",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acbbec"
+    },
+    {
+      "key": "attribute.melee.base_time",
+      "label": "近战基础耗时",
+      "reuse": "tamper.break",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e59e8d"
+    },
+    {
+      "key": "attribute.melee.base_trauma",
+      "label": "近战基础创伤",
+      "reuse": "tamper.break",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ecceac"
+    },
+    {
+      "key": "attribute.melee.effective_time",
+      "label": "近战有效耗时",
+      "reuse": "tamper.break",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ecc3ac"
+    },
+    {
+      "key": "attribute.mind.loss_blocked",
+      "label": "心智流失免疫",
+      "reuse": "stat.mind",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e5e48d"
+    },
+    {
+      "key": "attribute.mind.loss_multiplier",
+      "label": "心智流失倍率",
+      "reuse": "stat.mind",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e7de97"
+    },
+    {
+      "key": "attribute.mind.max",
+      "label": "心智上限",
+      "reuse": "stat.mind",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ece8ac"
+    },
+    {
+      "key": "attribute.mind.tier",
+      "label": "心智档位",
+      "reuse": "stat.mind",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e7cc97"
+    },
+    {
+      "key": "attribute.move.base_time",
+      "label": "移动基础耗时",
+      "reuse": "noise.footstep",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#b1e797"
+    },
+    {
+      "key": "attribute.move.delay_penalty",
+      "label": "移动迟滞代价",
+      "reuse": "noise.footstep",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#97e798"
+    },
+    {
+      "key": "attribute.move.effective_time",
+      "label": "移动有效耗时",
+      "reuse": "noise.footstep",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#97e7a1"
+    },
+    {
+      "key": "attribute.physics.explosion_bonus",
+      "label": "爆炸增强",
+      "reuse": "tamper.risk",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e382bc"
+    },
+    {
+      "key": "attribute.physics.fire_spread_bonus",
+      "label": "火焰蔓延",
+      "reuse": "tamper.risk",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ecacd5"
+    },
+    {
+      "key": "attribute.physics.penetration_bonus",
+      "label": "穿透加成",
+      "reuse": "tamper.risk",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#eaa1d7"
+    },
+    {
+      "key": "attribute.physics.solidity_penalty",
+      "label": "坚固度惩罚",
+      "reuse": "tamper.risk",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ecacb1"
+    },
+    {
+      "key": "attribute.portent.accumulation_factor",
+      "label": "征兆积累系数",
+      "reuse": "stat.endurance",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#82e39b"
+    },
+    {
+      "key": "attribute.portent.effective_duration",
+      "label": "征兆新沾染时长",
+      "reuse": "stat.endurance",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#82e3bd"
+    },
+    {
+      "key": "attribute.resilience",
+      "label": "战斗韧性",
+      "reuse": "stat.endurance",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#acecdc"
+    },
+    {
+      "key": "attribute.sight.radius",
+      "label": "视距",
+      "reuse": "nav.hover",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#cc82e3"
+    },
+    {
+      "key": "attribute.tamper.chaos_cost",
+      "label": "篡改最终混乱费用",
+      "reuse": "tamper.cost",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#ecc7ac"
+    },
+    {
+      "key": "attribute.tamper.pressure",
+      "label": "连续篡改压力",
+      "reuse": "tamper.cost",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#e5b58d"
+    },
+    {
+      "key": "attribute.throw.range",
+      "label": "投掷距离",
+      "reuse": "nav.pin",
+      "reason": "真实属性注册项；不为未结算条目造数值",
+      "color": "#a997e7"
+    },
+    {
+      "key": "insight.不燃体质",
+      "label": "不燃体质",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#acccec"
+    },
+    {
+      "key": "insight.世纪清算",
+      "label": "世纪清算",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#af8de5"
+    },
+    {
+      "key": "insight.伤口结痂",
+      "label": "伤口结痂",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#ad82e3"
+    },
+    {
+      "key": "insight.借声藏步",
+      "label": "借声藏步",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#b2e58d"
+    },
+    {
+      "key": "insight.冷韧",
+      "label": "冷韧",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#ca82e3"
+    },
+    {
+      "key": "insight.初啼共鸣",
+      "label": "初啼共鸣",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#d6a1ea"
+    },
+    {
+      "key": "insight.双读",
+      "label": "双读",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#d48de5"
+    },
+    {
+      "key": "insight.听声辨向",
+      "label": "听声辨向",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#a1eaab"
+    },
+    {
+      "key": "insight.和声耐受",
+      "label": "和声耐受",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#d6ecac"
+    },
+    {
+      "key": "insight.噪声耐受",
+      "label": "噪声耐受",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#82e397"
+    },
+    {
+      "key": "insight.地形记忆",
+      "label": "地形记忆",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#db82e3"
+    },
+    {
+      "key": "insight.夜行惯性",
+      "label": "夜行惯性",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#cba1ea"
+    },
+    {
+      "key": "insight.夜视",
+      "label": "夜视",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#acbdec"
+    },
+    {
+      "key": "insight.守株待兔",
+      "label": "守株待兔",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#e4a1ea"
+    },
+    {
+      "key": "insight.局部照明",
+      "label": "局部照明",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#e18de5"
+    },
+    {
+      "key": "insight.巧合收集",
+      "label": "巧合收集",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#acb6ec"
+    },
+    {
+      "key": "insight.延迟抵达",
+      "label": "延迟抵达",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#82a8e3"
+    },
+    {
+      "key": "insight.弹窗拦截",
+      "label": "弹窗拦截",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#a697e7"
+    },
+    {
+      "key": "insight.循声定位",
+      "label": "循声定位",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#abeaa1"
+    },
+    {
+      "key": "insight.思维润滑",
+      "label": "思维润滑",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#cbacec"
+    },
+    {
+      "key": "insight.愈合梦",
+      "label": "愈合梦",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#9d82e3"
+    },
+    {
+      "key": "insight.抗灼",
+      "label": "抗灼",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8dafe5"
+    },
+    {
+      "key": "insight.抗辐射体质",
+      "label": "抗辐射体质",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8daae5"
+    },
+    {
+      "key": "insight.抢拍",
+      "label": "抢拍",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#c88de5"
+    },
+    {
+      "key": "insight.无声步",
+      "label": "无声步",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#c1e58d"
+    },
+    {
+      "key": "insight.机关嗅觉",
+      "label": "机关嗅觉",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#d0acec"
+    },
+    {
+      "key": "insight.机械迷恋",
+      "label": "机械迷恋",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#b9a1ea"
+    },
+    {
+      "key": "insight.梦魇老主顾",
+      "label": "梦魇老主顾",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8da8e5"
+    },
+    {
+      "key": "insight.残影直觉",
+      "label": "残影直觉",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#b997e7"
+    },
+    {
+      "key": "insight.液态亲和",
+      "label": "液态亲和",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8db9e5"
+    },
+    {
+      "key": "insight.深层耐性",
+      "label": "深层耐性",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#c28de5"
+    },
+    {
+      "key": "insight.深渊回声",
+      "label": "深渊回声",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#b7e797"
+    },
+    {
+      "key": "insight.灯塔共鸣",
+      "label": "灯塔共鸣",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8da3e5"
+    },
+    {
+      "key": "insight.灰烬记忆",
+      "label": "灰烬记忆",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#c2a1ea"
+    },
+    {
+      "key": "insight.现实洞察",
+      "label": "现实洞察",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8da0e5"
+    },
+    {
+      "key": "insight.电工直觉",
+      "label": "电工直觉",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#bf97e7"
+    },
+    {
+      "key": "insight.留白",
+      "label": "留白",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#9c82e3"
+    },
+    {
+      "key": "insight.疾行拾荒",
+      "label": "疾行拾荒",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#a1a2ea"
+    },
+    {
+      "key": "insight.磁头清洁",
+      "label": "磁头清洁",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#ba97e7"
+    },
+    {
+      "key": "insight.稳立不摇",
+      "label": "稳立不摇",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#cda1ea"
+    },
+    {
+      "key": "insight.绝缘体质",
+      "label": "绝缘体质",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#ddacec"
+    },
+    {
+      "key": "insight.蜂鸣回响",
+      "label": "蜂鸣回响",
+      "reuse": "noise.echo",
+      "reason": "洞察规则家族",
+      "color": "#a6eaa1"
+    },
+    {
+      "key": "insight.蜜脉",
+      "label": "蜜脉",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#dbacec"
+    },
+    {
+      "key": "insight.读唇",
+      "label": "读唇",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#b78de5"
+    },
+    {
+      "key": "insight.足音消音",
+      "label": "足音消音",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#8da1e5"
+    },
+    {
+      "key": "insight.路线依赖",
+      "label": "路线依赖",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#d9a1ea"
+    },
+    {
+      "key": "insight.边界脚本",
+      "label": "边界脚本",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#b9acec"
+    },
+    {
+      "key": "insight.透明边界",
+      "label": "透明边界",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#c2acec"
+    },
+    {
+      "key": "insight.醒梦交界",
+      "label": "醒梦交界",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#b3a1ea"
+    },
+    {
+      "key": "insight.镜术精通",
+      "label": "镜术精通",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#acaeec"
+    },
+    {
+      "key": "insight.静默惯习",
+      "label": "静默惯习",
+      "reuse": "nav.rules",
+      "reason": "洞察规则家族",
+      "color": "#c597e7"
+    },
+    {
+      "key": "memory.休止的静默",
+      "label": "休止的静默",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3b5"
+    },
+    {
+      "key": "memory.低温的迟钝",
+      "label": "低温的迟钝",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82dde3"
+    },
+    {
+      "key": "memory.倒带的静音",
+      "label": "倒带的静音",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3ba"
+    },
+    {
+      "key": "memory.像素的寻路",
+      "label": "像素的寻路",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eadb"
+    },
+    {
+      "key": "memory.初啼的余地",
+      "label": "初啼的余地",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5cc"
+    },
+    {
+      "key": "memory.回响的储备",
+      "label": "回响的储备",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#acece1"
+    },
+    {
+      "key": "memory.守夜的余温",
+      "label": "守夜的余温",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eab2"
+    },
+    {
+      "key": "memory.常亮的房间",
+      "label": "常亮的房间",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3b7"
+    },
+    {
+      "key": "memory.忙音的间距",
+      "label": "忙音的间距",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3de"
+    },
+    {
+      "key": "memory.扩大的想象",
+      "label": "扩大的想象",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3c9"
+    },
+    {
+      "key": "memory.扩大的清醒",
+      "label": "扩大的清醒",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de4e5"
+    },
+    {
+      "key": "memory.扩大的肺活",
+      "label": "扩大的肺活",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3d0"
+    },
+    {
+      "key": "memory.未尽的余韵",
+      "label": "未尽的余韵",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eab3"
+    },
+    {
+      "key": "memory.机械的耐性",
+      "label": "机械的耐性",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eaba"
+    },
+    {
+      "key": "memory.毒雾的失敏",
+      "label": "毒雾的失敏",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5c0"
+    },
+    {
+      "key": "memory.气泡的卸压",
+      "label": "气泡的卸压",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#acecec"
+    },
+    {
+      "key": "memory.湿滑的经验",
+      "label": "湿滑的经验",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5a1"
+    },
+    {
+      "key": "memory.满格的存档",
+      "label": "满格的存档",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5b5"
+    },
+    {
+      "key": "memory.灼痕的硬壳",
+      "label": "灼痕的硬壳",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5e1"
+    },
+    {
+      "key": "memory.电路的辨音",
+      "label": "电路的辨音",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eae3"
+    },
+    {
+      "key": "memory.眩光的钝化",
+      "label": "眩光的钝化",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#97e7b5"
+    },
+    {
+      "key": "memory.移动的视窗",
+      "label": "移动的视窗",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3b0"
+    },
+    {
+      "key": "memory.空转的间隙",
+      "label": "空转的间隙",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#acecdb"
+    },
+    {
+      "key": "memory.草叶的松动",
+      "label": "草叶的松动",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eab4"
+    },
+    {
+      "key": "memory.辐射的钝感",
+      "label": "辐射的钝感",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1eacc"
+    },
+    {
+      "key": "memory.边缘的容差",
+      "label": "边缘的容差",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#8de5c8"
+    },
+    {
+      "key": "memory.醒着的顶层",
+      "label": "醒着的顶层",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e39f"
+    },
+    {
+      "key": "memory.门风的驯服",
+      "label": "门风的驯服",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e3b1"
+    },
+    {
+      "key": "memory.陈年的积累",
+      "label": "陈年的积累",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#a1e5ea"
+    },
+    {
+      "key": "memory.雨声的遮蔽",
+      "label": "雨声的遮蔽",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#82e39a"
+    },
+    {
+      "key": "memory.雨声的钝化",
+      "label": "雨声的钝化",
+      "reuse": "stat.endurance",
+      "reason": "可装卸适应配置；保留原物品和地图图标",
+      "color": "#acece0"
+    },
+    {
+      "key": "tamper.condition.catch_unaware",
+      "label": "趁它未察觉",
+      "reuse": "alert.unaware",
+      "reason": "独立程度或战术条件",
+      "color": "#a38de5"
+    },
+    {
+      "key": "tamper.condition.exploit_crack",
+      "label": "趁虚",
+      "reuse": "tamper.break",
+      "reason": "独立程度或战术条件",
+      "color": "#eac7a1"
+    },
+    {
+      "key": "tamper.condition.force_lure",
+      "label": "强诱引",
+      "reuse": "tamper.call",
+      "reason": "独立程度或战术条件",
+      "color": "#828ce3"
+    },
+    {
+      "key": "tamper.condition.forcefully",
+      "label": "用力",
+      "reuse": "noise.amplify",
+      "reason": "独立程度或战术条件",
+      "color": "#d7a1ea"
+    },
+    {
+      "key": "tamper.condition.gently",
+      "label": "轻轻",
+      "reuse": "noise.reduce",
+      "reason": "独立程度或战术条件",
+      "color": "#828be3"
+    },
+    {
+      "key": "tamper.condition.pay_with_chaos",
+      "label": "以乱代想",
+      "reuse": "stat.chaos",
+      "reason": "独立程度或战术条件",
+      "color": "#e382db"
+    },
+    {
+      "key": "tamper.condition.pay_with_noise",
+      "label": "以声代想",
+      "reuse": "noise.pulse",
+      "reason": "独立程度或战术条件",
+      "color": "#9be58d"
+    },
+    {
+      "key": "tamper.condition.pay_with_thought",
+      "label": "以想代声",
+      "reuse": "stat.imagination",
+      "reason": "独立程度或战术条件",
+      "color": "#acecbc"
+    },
+    {
+      "key": "tamper.dialog.again",
+      "label": "再",
+      "reuse": "tamper.again",
+      "reason": "对话篡改功能词",
+      "color": "#daacec"
+    },
+    {
+      "key": "tamper.dialog.also",
+      "label": "也",
+      "reuse": "tamper.again",
+      "reason": "对话篡改功能词",
+      "color": "#df82e3"
+    },
+    {
+      "key": "tamper.dialog.delete",
+      "label": "删除",
+      "reuse": "tamper.erase",
+      "reason": "对话篡改功能词",
+      "color": "#acbcec"
+    },
+    {
+      "key": "tamper.dialog.negate",
+      "label": "不",
+      "reuse": "tamper.negate",
+      "reason": "对话篡改功能词",
+      "color": "#a082e3"
+    },
+    {
+      "key": "tamper.dialog.only",
+      "label": "只",
+      "reuse": "nav.filter",
+      "reason": "对话篡改功能词",
+      "color": "#cb97e7"
+    },
+    {
+      "key": "tamper.word.break",
+      "label": "破坏",
+      "reuse": "tamper.break",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e7a597"
+    },
+    {
+      "key": "tamper.word.brief_dispel",
+      "label": "短暂退散",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#9f97e7"
+    },
+    {
+      "key": "tamper.word.brittle",
+      "label": "脆裂",
+      "reuse": "tamper.break",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e3b482"
+    },
+    {
+      "key": "tamper.word.call",
+      "label": "呼唤",
+      "reuse": "tamper.call",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#8db3e5"
+    },
+    {
+      "key": "tamper.word.chip",
+      "label": "剥落",
+      "reuse": "tamper.break",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#eabea1"
+    },
+    {
+      "key": "tamper.word.clamor",
+      "label": "尖声呼唤",
+      "reuse": "noise.amplify",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#d982e3"
+    },
+    {
+      "key": "tamper.word.deep_dispel",
+      "label": "深深退散",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#bf97e7"
+    },
+    {
+      "key": "tamper.word.delete",
+      "label": "删除",
+      "reuse": "tamper.erase",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#979ce7"
+    },
+    {
+      "key": "tamper.word.dispel",
+      "label": "退散",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e1acec"
+    },
+    {
+      "key": "tamper.word.disperse",
+      "label": "消散大半",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e28de5"
+    },
+    {
+      "key": "tamper.word.echo_here",
+      "label": "在此鸣响",
+      "reuse": "noise.echo",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#daeaa1"
+    },
+    {
+      "key": "tamper.word.evaporate",
+      "label": "蒸发",
+      "reuse": "portent.obscured",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#cb82e3"
+    },
+    {
+      "key": "tamper.word.gather_gas",
+      "label": "聚气",
+      "reuse": "tamper.call",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#acc9ec"
+    },
+    {
+      "key": "tamper.word.gather_liquid",
+      "label": "聚流",
+      "reuse": "tamper.call",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#b8acec"
+    },
+    {
+      "key": "tamper.word.grow",
+      "label": "催生",
+      "reuse": "stat.endurance",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#8de5ae"
+    },
+    {
+      "key": "tamper.word.ignite",
+      "label": "点燃",
+      "reuse": "portent.burning",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e5ac8d"
+    },
+    {
+      "key": "tamper.word.lure_to",
+      "label": "引向此处",
+      "reuse": "tamper.call",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e297e7"
+    },
+    {
+      "key": "tamper.word.scatter",
+      "label": "扬散",
+      "reuse": "portent.obscured",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#af82e3"
+    },
+    {
+      "key": "tamper.word.settle",
+      "label": "沉降",
+      "reuse": "noise.reduce",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e397e7"
+    },
+    {
+      "key": "tamper.word.shatter",
+      "label": "崩碎",
+      "reuse": "tamper.break",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#ecb9ac"
+    },
+    {
+      "key": "tamper.word.soak",
+      "label": "浸透",
+      "reuse": "stat.imagination",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#acecc4"
+    },
+    {
+      "key": "tamper.word.solidify",
+      "label": "凝固",
+      "reuse": "stat.endurance",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#82dfe3"
+    },
+    {
+      "key": "tamper.word.spill",
+      "label": "泼开",
+      "reuse": "tamper.again",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#a1c0ea"
+    },
+    {
+      "key": "tamper.word.thin",
+      "label": "消散",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#e2acec"
+    },
+    {
+      "key": "tamper.word.uproot",
+      "label": "拔除",
+      "reuse": "tamper.erase",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#b782e3"
+    },
+    {
+      "key": "tamper.word.whisper",
+      "label": "低声招引",
+      "reuse": "noise.reduce",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#82aae3"
+    },
+    {
+      "key": "tamper.word.wither",
+      "label": "枯萎",
+      "reuse": "tamper.dispel",
+      "reason": "地图篡改操作；兼容旧档位ID",
+      "color": "#a297e7"
+    },
+    {
+      "key": "ui.cancel",
+      "label": "取消",
+      "reuse": "tamper.negate",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#e5988d"
+    },
+    {
+      "key": "ui.checked",
+      "label": "已选择",
+      "reuse": "tamper.again",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#8da7e5"
+    },
+    {
+      "key": "ui.conditions",
+      "label": "条件",
+      "reuse": "nav.filter",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#9f8de5"
+    },
+    {
+      "key": "ui.confirm",
+      "label": "确认",
+      "reuse": "nav.pin",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#96e382"
+    },
+    {
+      "key": "ui.cost",
+      "label": "费用",
+      "reuse": "tamper.cost",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#e3af82"
+    },
+    {
+      "key": "ui.degree",
+      "label": "程度",
+      "reuse": "tamper.again",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#8296e3"
+    },
+    {
+      "key": "ui.details",
+      "label": "详情",
+      "reuse": "nav.details",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#82aae3"
+    },
+    {
+      "key": "ui.result",
+      "label": "改后句",
+      "reuse": "tamper.sentence",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#acb2ec"
+    },
+    {
+      "key": "ui.risk",
+      "label": "风险",
+      "reuse": "tamper.risk",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#e58d94"
+    },
+    {
+      "key": "ui.select",
+      "label": "当前选择",
+      "reuse": "nav.pin",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#c697e7"
+    },
+    {
+      "key": "ui.sentence",
+      "label": "原句",
+      "reuse": "tamper.sentence",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#e297e7"
+    },
+    {
+      "key": "ui.target",
+      "label": "目标",
+      "reuse": "tamper.slot",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#d9a1ea"
+    },
+    {
+      "key": "ui.unchecked",
+      "label": "未选择",
+      "reuse": "tamper.slot",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#a1bdea"
+    },
+    {
+      "key": "ui.view",
+      "label": "查看地图",
+      "reuse": "nav.hover",
+      "reason": "界面语义标记；文本与键位保留",
+      "color": "#82dde3"
+    },
+    {
+      "key": "portent.blinded",
+      "label": "致盲",
+      "reuse": "portent.obscured",
+      "color": "#b6cae8",
+      "reason": "22日新增状态征兆；先复用遮蔽专属字形，待独立绘制"
+    }
+  ]
+}

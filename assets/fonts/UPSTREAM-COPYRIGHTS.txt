@@ -1,0 +1,95 @@
+Upstream font copyright notices / 上游字体版权声明
+Collected 2026-10-22 from the actual local build inputs.
+The notices below are transcribed from font name tables, not replaced by a generic project credit.
+These source fonts are used under OFL-1.1; see OFL.txt, NotoEmoji-OFL.txt and NotoColorEmoji-OFL.txt.
+This file is provenance evidence, not a waiver of Reserved Font Names or a new license.
+
+Source: base.ttf
+Family: Noto Serif SC
+SHA256: a513b97fa1503422d78ee1f40415db736926e2d0d8d99701bdcede8cf6f6058e
+(c) 2017-2024 Adobe (http://www.adobe.com/).
+License URL: https://openfontlicense.org
+
+Source: egyptian.ttf
+Family: Noto Sans Egyptian Hieroglyphs
+SHA256: d0b3041bc635fbec21c69ee5b2dbd0930be233a7be684333c1edcd3ced908486
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/egyptian-hieroglyphs)
+License URL: https://openfontlicense.org
+
+Source: georgian.ttf
+Family: Noto Serif Georgian
+SHA256: c92a2919535b076f289348f55e7ce0fe9de1a8dcafc9d4ee4da0094deadebfcd
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/georgian)
+License URL: https://scripts.sil.org/OFL
+
+Source: greek.ttf
+Family: Noto Serif
+SHA256: 5473d2e43bdd018ee124a4addba8091fd0a29894b121cbb741023af6549662b6
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+License URL: https://openfontlicense.org
+
+Source: hangul.ttf
+Family: Noto Serif KR
+SHA256: 659a979987ffbf8987fa4e4ce26a3bdcdb37873f492d414fb858e13a58abea7c
+(c) 2017-2024 Adobe (http://www.adobe.com/).
+License URL: https://openfontlicense.org
+
+Source: hebrew.ttf
+Family: Noto Serif Hebrew
+SHA256: a9aacca0bb0723459982b4d91af89a09a8845772f9d6cf149d86de7107fecb8a
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/hebrew)
+License URL: https://openfontlicense.org
+
+Source: math.ttf
+Family: Noto Sans Math
+SHA256: 7283c396e9b22699bb542d9631030dc804a7e5b954f193d8f8f5b5f1162fbc61
+Copyright 2022 Google LLC. All Rights Reserved.
+Trademark: Noto is a trademark of Google Inc.
+License URL: https://scripts.sil.org/OFL
+
+Source: NotoColorEmoji-v2.051.ttf
+Family: Noto Color Emoji
+SHA256: 72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b
+Copyright 2022 Google Inc.
+Trademark: Noto is a trademark of Google Inc.
+License URL: http://scripts.sil.org/OFL
+
+Source: notoemoji.ttf
+Family: Noto Emoji
+SHA256: de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551
+Copyright 2013 Google LLC
+Trademark: Noto is a trademark of Google Inc.
+License URL: http://scripts.sil.org/OFL
+
+Source: song-medium.ttf
+Family: Noto Serif SC Medium
+SHA256: 89ec9f54c02b34998447fd5fc859bb2cc84e5e7671aec9aca1ccd9f608034c9f
+(c) 2017-2024 Adobe (http://www.adobe.com/).
+License URL: https://openfontlicense.org
+
+Source: symbols.ttf
+Family: Noto Sans Symbols
+SHA256: 0088617baec0e8ac47e022cc1f38695f772301c9ef6d1f24a785abbef1e05d79
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
+Trademark: Noto is a trademark of Google LLC.
+License URL: https://scripts.sil.org/OFL
+
+Source: symbols2.ttf
+Family: Noto Sans Symbols 2
+SHA256: 3ce38effdb615dd929c8b0f52768dfa2cd21f206e3824bc7df61e4074b41ae52
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
+Trademark: Noto is a trademark of Google Inc.
+License URL: https://scripts.sil.org/OFL
+
+Source: tibetan.ttf
+Family: Noto Serif Tibetan
+SHA256: f94e3bde2a13ec085793d1ff2d97f8dd58960df0aeb92c65afad276fa4a57c15
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/tibetan)
+License URL: https://scripts.sil.org/OFL
+
+Source: victor.ttf
+Family: Victor Mono
+SHA256: 64c558bdf031f7a7b3c2f00b946565634ec014a04493ca88c683b4ddd4fdea02
+Copyright 2023 The Victor Mono Project Authors (https://github.com/rubjo/victor-mono-font)
+License URL: https://scripts.sil.org/OFL
+

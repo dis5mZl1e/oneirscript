@@ -1,0 +1,221 @@
+"""英文语言包 · 内容分册（由 scripts/_split_i18n_content.py 生成）。
+
+无意识领域（21–27 层）区域内容英文。
+键仍是中文原文；合并进 EN 的顺序见 dream_demo/i18n.py 末尾。
+"""
+
+from __future__ import annotations
+
+
+
+
+# ---- 无意识领域（21–27）：区域内容英文 ----
+EN_UNCONSCIOUS: dict[str, str] = {
+    # 层主题
+    "无意识领域·静默之海": "Unconscious Realm · The Silent Sea",
+    "无意识领域·倒悬的深渊": "Unconscious Realm · The Inverted Deep",
+    "无意识领域·无声的摇篮": "Unconscious Realm · The Soundless Cradle",
+    "无意识领域·巨梦的脊椎": "Unconscious Realm · Spine of the Great Dream",
+    "无意识领域·被遗忘的画廊": "Unconscious Realm · The Forgotten Gallery",
+    "无意识领域·原初的潮汐": "Unconscious Realm · Primordial Tide",
+    "无意识领域·初啼之渊": "Unconscious Realm · Abyss of the First Cry",
+    # 异象描述
+    "沉在无意识之海的钟，每次摆动都把附近的梦震出涟漪。": "A bell sunk in the sea of the unconscious; every swing ripples the dreams nearby.",
+    "它不做任何决定，只精确地做你做过的事。": "It makes no decisions; it repeats exactly what you have done.",
+    "它咬穿念头取食，被咬中的想法再也想不起来。": "It bites through thoughts to feed, and the bitten idea is never remembered again.",
+    "无意识领域没有昼夜，它仍然守着一段不存在的更次。": "The Unconscious Realm has no day or night; it still keeps a watch that does not exist.",
+    "它把你的记忆织成噩梦，一针一线都很耐心。": "It weaves your memories into nightmares, patient stitch by stitch.",
+    "它拆掉名字与事物之间的线，再织回错误的名字。": "It unpicks the thread between a name and its thing, then weaves the wrong name back.",
+    "梦在这里缺了一块，缺口的边缘会缓慢移动。": "A piece of the dream is missing here, and the edge of the gap drifts slowly.",
+    "语言出现之前就存在的那个念头，从未学会停顿。": "The thought that existed before language, which never learned to pause.",
+    "无意识的最深处，是第一声啼哭之前的那片寂静。": "The deepest part of the unconscious is the silence before the first cry.",
+    # 物品描述（含存量携带意象数值调整）
+    "无意识领域最深处的一枚齿。伤害 +4。": "A tooth from the deepest part of the Unconscious Realm. Damage +4.",
+    "用无光绒织成：心智创伤 −3，清醒创伤 −3。": "Woven of lightless velvet: mind trauma −3, lucidity trauma −3.",
+    "悬在虚空边缘的一点光。视野 +3。": "A point of light at the edge of the void. Vision +3.",
+    "两面都刻着同一个名字。击破失控意识时崩解度额外 +5。": "Both faces engraved with the same name. +5 extra dissolution when you break a rogue consciousness.",
+    "能凿进念头的深处。修缮效果额外 +60。": "It chisels into the depth of thoughts. Repair effects +60.",
+    "盖在裂隙上的印，弹体从缝隙里穿过去。弹体穿透 +3。": "A seal stamped over the rift; shots slip through the gap. Projectile penetration +3.",
+    "梦的丝线在指尖听话：拾取显化物不耗时。": "The threads of dreams obey your fingertips: picking up manifestations costs no time.",
+    "念头比手快：攻击耗时 −0.3。": "The thought is faster than the hand: attack costs −0.3.",
+    "无意识领域里最干净的东西。恢复心智 24。": "The cleanest thing in the Unconscious Realm. Restores 24 mind.",
+    "一口下去，想到很远的地方。恢复清醒 12 与想象力 12。": "One sip and your thoughts travel far. Restores 12 lucidity and 12 imagination.",
+    "凝固被虚空泡软的念头：清除噩梦、虚无与遗忘。": "Sets thoughts softened by the void: clears nightmare, voidness and oblivion.",
+    "在无光处点亮一片：以自身为中心半径 4 的地形永久显影。": "Lights a patch in the lightless: terrain within radius 4 of you is permanently developed.",
+    "空心灯塔熄灭前留下的那撮火。以自身为中心半径 7 的地形永久显影。": "The last fire left when the hollow lighthouse went out. Terrain within radius 7 of you is permanently developed.",
+    "一句话的结尾被人拿走了。想象力 +25；代价是接下来 10 回合每 2 回合清醒度 −1。": "Someone took the end of a sentence. Imagination +25; for the next 10 rounds you lose 1 lucidity every 2 rounds.",
+    "第一声啼哭留下的温度：记得自己是谁（免疫失忆，跨局保留）。": "The warmth left by the first cry: you remember who you are (immune to amnesia; kept across runs).",
+    # 稀有植物拔起收益（2026-09-18）
+    "铃兰薄荷叶心里的一滴凉意。恢复心智 8，并冲开迟滞与麻痹的欠账。": "A drop of coolness from a lily-mint leaf. Restores 8 mind and clears sluggishness and numbness.",
+    "彩玻菌的碎壳：5 格内真能看见这束光的失控意识视距减半，共五回合，墙挡住的不会被闪。": "A shard of glass-shroom shell: unbound minds within 5 tiles that can actually see the flash have their sight halved for five rounds; walls spare the rest.",
+    "苔藓磨成的金粉。想象力 +24；代价是接下来 10 回合每 2 回合清醒度 −1。": "Golden powder ground from moss. Imagination +24; for the next 10 rounds you lose 1 lucidity every 2 rounds.",
+    "摇响它，一千个梦同时慢下来：铃声传得到的地方，失控意识慢 5 回合。": "Ring it and a thousand dreams slow at once: stray consciousnesses that can hear the bell are slowed for 5 rounds.",
+    "正面是梦，反面也是梦。每次击破失控意识，崩解度额外推进 3。": "Heads is dream, tails is also dream. +3 extra dissolution per rogue consciousness broken.",
+    "还剩一点电，够照亮两步之外。视野 +2。": "A little charge is left — enough to light two steps away. Vision +2.",
+    "拧螺丝的手感还在。修缮效果额外 +40。": "The feel of turning screws remains. Repair effects +40.",
+    "盖在弹道上的印，谁都拦不住。弹体穿透 +2。": "A stamp on the trajectory that nothing can stop. Projectile penetration +2.",
+    # 事件描述
+    "最深处的第一声啼哭还悬在原地。": "The very first cry still hangs where it was born.",
+    "钟声早已被海水泡软。": "Its bell-sound was long soaked soft by the sea.",
+    "画框里空着，标题写着你的名字。": "The frame is empty; the title bears your name.",
+    "潮水涨起时，无数名字浮出水面又沉下去。": "When the tide rises, countless names surface and sink again.",
+    # 征兆效果
+    "梦的边缘在啃食意识：每 2 回合心智 −1。": "The edge of the dream gnaws on the mind: mind −1 every 2 rounds.",
+    "噩梦纤维缠上意识：每 2 回合心智 −1。": "Nightmare fiber wraps the mind: mind −1 every 2 rounds.",
+    "噩梦气息渗进意识：每 2 回合心智 −1。": "Nightmare breath seeps into the mind: mind −1 every 2 rounds.",
+    "无念黑渊浸透了记忆：无法使用行囊与携带意象，物品名称模糊。": "The abyss soaks through memory: inventory and gear cannot be used, and item names blur.",
+    "熔念金属在意识里烧出沟壑：每回合清醒 −1。": "Molten ideation burns grooves into the mind: lucidity −1 per round.",
+    "静滞之泪拖住了一切：行动速度减半。": "Still tears hold everything back: action speed halved.",
+    "星辉露在意识里亮成一片：每 2 回合心智 +1。": "Starlight dew glows through the mind: mind +1 every 2 rounds.",
+    "雏菊的香气托住念头：持续期间心智不再减少。": "The daisy's scent holds your thoughts up: mind no longer decreases while it lasts.",
+    "原初混沌持续冲刷意识：每回合心智 −2。": "Primordial chaos keeps washing through the mind: mind −2 per round.",
+    "无意识的呢喃借你的声音扩散：声音传播半径 ×3。": "Murmurs from the unconscious borrow your voice: sound radius ×3.",
+    "虚无孢子糊住了感官：视野 −4，每 3 回合想象力 −1。": "Void spores smear the senses: vision −4, imagination −1 every 3 rounds.",
+    "溶梦酸雾把你溶进梦里：每 2 回合清醒 −1，崩解 +1。": "Dream-dissolving acid melts you into the dream: lucidity −1 every 2 rounds, dissolution +1.",
+    "晨霜清气提着精神：每 3 回合清醒 +1。": "Morning frost sharpens the spirit: lucidity +1 every 3 rounds.",
+    "曼陀罗的花香让人半梦半醒：每一次行动多沉 1 回合。": "The datura scent keeps you half-asleep: every action sinks 1 extra round.",
+    "冥河柳的影子浸着河水：移动额外耗时 +0.5。": "The styx willow's shadow drips river water: movement costs +0.5.",
+    "夜皇后的幽光替你照亮四周：视野范围翻倍。": "The Night Queen's ghost-light lights your surroundings: vision doubled.",
+    "缚魂藤缠住了脚踝：移动额外耗时 +0.5。": "The soul-binding vine coils around your ankle: movement costs +0.5.",
+    # 贴近效果
+    "低语的噩梦边缘": "whispering edge of nightmare",
+    "悲鸣（想象力流失）": "wailing (imagination drain)",
+    "声音在此止步": "sound stops here",
+    "吞掉周围的微光": "swallows nearby glow",
+    "蚀梦：贴近清醒流失": "dream-etch: lucidity drains nearby",
+    "沉重的水下钟声": "heavy sunken-bell toll",
+    "深处气体的结晶": "crystal of deep gases",
+    "碑文无人能读": "inscription no one can read",
+    "一层是一段没做的梦": "each stratum is an unlived dream",
+    "黑色的镜面": "black mirror",
+    # 墙体介绍
+    "无意识领域的主墙体（赤）：比浅梦的墙更密、更硬，颜色随梦的记忆不同。": "Main wall of the Unconscious Realm (crimson): denser and harder than shallow-dream walls; its color varies with the memory of the dream.",
+    "无意识领域的主墙体（黄）：致密、沉重，颜色随梦的记忆不同。": "Main wall of the Unconscious Realm (amber): dense and heavy; its color varies with the memory of the dream.",
+    "无意识领域的主墙体（蓝）：致密、冰冷，颜色随梦的记忆不同。": "Main wall of the Unconscious Realm (azure): dense and cold; its color varies with the memory of the dream.",
+    "无意识领域的主墙体（绿）：致密、沉默，颜色随梦的记忆不同。": "Main wall of the Unconscious Realm (viridian): dense and silent; its color varies with the memory of the dream.",
+    "低语的黑色岩石：在它旁边停留超过 3 回合，梦魇便会附身（心智每 2 回合 −1，离开后很快消退）。": "A muttering black rock: linger more than 3 rounds and a nightmare attaches (mind −1 every 2 rounds; it fades soon after you leave).",
+    "会哭的晶柱：贴近时听见悲鸣，想象力被一点点带走。": "A weeping crystal: stand close and you hear wailing while imagination is carried away bit by bit.",
+    "吞掉声音的铁幕：贴近时你发出的所有声音都传不出去。": "An iron curtain that swallows sound: while close, none of your sounds carry.",
+    "吸光的绒墙：贴近时连视野都被它吃掉一格。": "A velvet wall that eats light: standing close, it eats one tile of your vision.",
+    "爬满菌丝的地毯：贴近时清醒度被缓慢侵蚀（每 2 回合 −1）。": "A carpet of pale mycelium: standing close, your lucidity is slowly etched away (−1 every 2 rounds).",
+    "刻着无名者碑文的岩石：破坏后放出一团呢喃。": "A rock carved with nameless inscriptions: breaking it releases a murmur.",
+    "深处气体凝成的结晶：吸储周围 3×3 的气体（上限 160），破坏后尽数涌出。": "A crystal of gases condensed from the deep: absorbs gas in a 3×3 area (cap 160) and vents it all when broken.",
+    "拴着无数悔恨的石锚：贴近时脚步变得沉重（移动 +0.5）。": "A stone anchor moored to countless regrets: standing close, movement costs +0.5.",
+    "层层叠叠的沉积岩：全梦最结实的墙之一；破坏后放出虚无孢子。": "Layer upon layer of sediment: one of the strongest walls in the dream; breaking it releases void spores.",
+    "黑色的镜面岩：挡移动不挡视线；破坏后放出一团呢喃。": "A black mirror of rock: blocks movement, not sight; breaking it releases a murmur.",
+    # 液体介绍
+    "没有底的黑色液体：浸进去连怎么用行囊都想不起来。": "A bottomless black liquid: step in and you forget how to use your inventory at all.",
+    "熔化的念头凝成的金属液：接触会灼烧清醒（每回合 −1）。": "Molten metal of condensed thought: contact burns lucidity (−1 per round).",
+    "凝在半空的泪滴：接触后行动速度减半。": "Tears frozen mid-fall: contact halves your action speed.",
+    "从梦的高处滴下的光露：接触后每 2 回合恢复 1 点心智。": "Light-dew dripping from the heights of the dream: contact restores 1 mind every 2 rounds.",
+    "噩梦织成的纤维液：接触直接沾染噩梦。": "A fibrous liquid woven from nightmares: contact attaches a nightmare directly.",
+    "语言出现之前的浑汤：接触后意识被持续冲刷（心智每回合 −2）。": "The murk from before language: contact keeps washing through the mind (mind −2 per round).",
+    # 气体介绍
+    "无意识深处没说出口的话：吸入后你的声音会替它们传播（声音半径 ×3）。": "Words never spoken, from the depths of the unconscious: inhale, and your voice spreads on their behalf (sound radius ×3).",
+    "虚无的种子：吸入后视野 −4、想象力缓慢流失。": "Seeds of the void: inhale for vision −4 and slow imagination loss.",
+    "把梦溶进梦里的酸雾：吸入后清醒流失、崩解加速。": "An acid haze that melts dream into dream: inhale for lucidity loss and faster dissolution.",
+    "凝成雾的噩梦：吸入直接沾染噩梦。": "A nightmare condensed to mist: inhaling attaches a nightmare directly.",
+    "清凉提神的霜气：吸入后每 3 回合恢复 1 点清醒。": "Crisp, bracing frost air: inhale for 1 lucidity every 3 rounds.",
+    # 植物介绍
+    "传说拔出时会尖啸的人形草：尖啸散出一片噩梦气息，把远处的东西也招来。":
+        "The legendary humanoid root that shrieks when pulled: the scream spills a patch of nightmare breath and draws distant things in.",
+    "巫术传说中的花香草：贴近会沾染幻觉安眠（每次行动多沉 1 回合）；拔除同样得闻其香。":
+        "The scented herb of witch-lore: standing close attaches hallucinated sleep (1 extra round per action); uprooting smells just as sweet.",
+    "冥河边的垂柳：遮挡视线，贴近被河水浸重（移动 +0.5）；拔起或踩断都会渗出一点黑水。":
+        "A willow from the river Styx: blocks sight, and standing close weighs you down (movement +0.5); uprooting or breaking it leaks a little black water.",
+    "黑郁金香的传说变体：发出暗紫色的光；贴近或拔除都获得「月下」（视野翻倍）。":
+        "A legendary black-tulip variant: glows dark violet; standing close or uprooting both grant Moonlit (vision doubled).",
+    "缠住旅人脚踝的湿藤：踩上去被缚魂（移动 +0.5）——失控意识踩上去一样被缠；藤身湿润不可燃。":
+        "A wet vine that coils around travellers' ankles: stepping on it binds the soul (movement +0.5) — stray consciousnesses get tangled just the same; its wet body will not burn.",
+    "炼金术士寻找的黄金苔：拔除后得到「贤者之粉」（想象力 +15，代价是清醒度缓慢流失）。":
+        "The golden moss alchemists sought: uprooting yields Sage Powder (imagination +15, at the cost of slowly draining lucidity).",
+    "花瓣像小镜子的兰花：拔除后获得镜面架势（反弹一次指向你的打击）。": "An orchid with mirror-like petals: uprooting gains Mirror Stance (reflects the next strike aimed at you).",
+    "挂着千只小铃的兰草：贴近获得清朗（免疫控制类征兆）；拔下一只铃可以摇响它，拖慢周围的失控意识。":
+        "An orchid hung with a thousand little bells: standing close grants Clarity; pluck one bell to ring it and slow nearby stray consciousnesses.",
+    # 记忆碎片·第一批新增（描述）
+    "戴久了眼角会结晶，但不再被强光刺穿。": "Worn long enough, crystals form at the corners of your eyes — but glare no longer pierces you.",
+    "它记得上一次把手伸进液氮里是什么感觉。": "It remembers what it felt like the last time a hand went into liquid nitrogen.",
+    "灼伤结痂之后，热就不再是新的。": "Once the burn has scabbed, heat is never new again.",
+    "身体比谁都先学会和辐射共处。": "The body learns to live with radiation before anyone else does.",
+    "地面是干的还是湿的，脚踝比脑子清楚。": "Whether the ground is dry or wet, your ankles know before your mind does.",
+    "呼吸被记得太久，就成了一种储备。": "Breathe long enough to be remembered, and it becomes a reserve.",
+    "它记得自己从没有真正慌过。": "It remembers that it never truly panicked.",
+    "总有一部分想象力被留在更深的地方。": "Some part of the imagination is always left deeper down.",
+    # 记忆碎片效果（效果名 / 一句效果 / 详情）
+    "眩光的钝化": "Glare Dulling",
+    "低温的迟钝": "Cold Numbness",
+    "灼痕的硬壳": "Burn Callus",
+    "辐射的钝感": "Radiation Numbness",
+    "湿滑的经验": "Slick Experience",
+    "空转的间隙": "Idling Gap",
+    "雨声的遮蔽": "Rain Veil",
+    "机械的耐性": "Machine Endurance",
+    "常亮的房间": "Always-Lit Room",
+    "未尽的余韵": "Unfinished Cadence",
+    "陈年的积累": "Years of Accumulation",
+    "移动的视窗": "Moving Window",
+    "扩大的肺活": "Expanded Lung",
+    "扩大的清醒": "Expanded Lucidity",
+    "边缘的容差": "Edge Tolerance",
+    "休止的静默": "Restful Silence",
+    "扩大的想象": "Expanded Imagination",
+    "初啼的余地": "Room of the First Cry",
+    "免疫遮蔽": "Immune: obscuring",
+    "免疫冻僵": "Immune: frozen",
+    "免疫灼伤": "Immune: scalded",
+    "免疫辐射病": "Immune: radiation sickness",
+    "免疫麻痹": "Immune: numb",
+    "免疫迟钝": "Immune: sedation",
+    "免疫失忆": "Immune: amnesia",
+    "适应蜂蜜": "Adapted: honey",
+    "适应粘稠": "Adapted: viscous",
+    "声响 −2": "Sound −2",
+    "心智上限 +10": "Mind cap +10",
+    "清醒上限 +10": "Lucidity cap +10",
+    "想象上限 +8": "Imagination cap +8",
+    "视野 +1": "Vision +1",
+    # §11 §9：8 件碎片的独立声学／测绘配置
+    "电路的辨音": "Circuit Ear",
+    "忙音的间距": "Dial-Tone Spacing",
+    "像素的寻路": "Pixel Wayfinding",
+    "回响的储备": "Echo Reserve",
+    "气泡的卸压": "Bubble Pressure Release",
+    "脚步与道具声响 −2": "Step and item sound −2",
+    "听取上限 +3": "Listen cap +3",
+    "主动诱引 +2": "Active lure +2",
+    "测绘 +1／旁注 +2": "Survey +1 / margin +2",
+    "想象上限 +8／诱引 −1": "Imagination cap +8 / lure −1",
+    "回声放大减弱／时长减半": "Echo amplification damped / duration halved",
+    "线索保留 +4 回合": "Clue retention +4 turns",
+    "视野 +1／听取 +2": "Vision +1 / listen +2",
+    "自身脚步与普通道具的基础声径 −2，最低 1；不减主动诱引、爆炸，也不改异象视野。":
+        "Your own footsteps and ordinary items lose 2 base sound radius (minimum 1); active lures, explosions and anomaly vision are unaffected.",
+    "听取上限 12→15：能接收更远处真实发出的声音，但不扩大声源本身，也不会看见未感知的异象。":
+        "Listen cap 12→15: you can receive real sounds from farther away, but the source itself is not extended and unseen anomalies stay unseen.",
+    "主动诱引类真实声源的声径 +2，只对基础大于 0 的声音生效；广播诱敌，也可能招来更多敌人。":
+        "Real active-lure sound radius +2, only for sounds with a positive base; broadcasting lures enemies — and may draw more of them.",
+    "冲印、显影拓印的静态地形扫描半径 +1，旁注长度 +2；不提高当前视觉或任意技能攻击范围。":
+        "Develop and wide develop scan radius +1, margin length +2; current sight and attack ranges are unchanged.",
+    "想象力上限 +8（首次获得回填 8 点），主动诱引类构想（回响）的最终想象费用 −1，最低 1。":
+        "Imagination cap +8 (8 restored on first acquisition); the final imagination cost of lure constructs (Echo) is −1, minimum 1.",
+    "自身「回声」征兆的声音倍率超出 1 的部分降低 60%，新附着时间缩短 50%（最低 1 回合）；不削回声雾、瓷墙或其他征兆。":
+        "The portion of your Echo portent's sound multiplier above 1 is reduced by 60%, and its new attach duration is halved (minimum 1 turn); echo mist, porcelain walls and other portents are untouched.",
+    "声音线索保持时间 2→6 个真实回合；不自动更新来源位置。":
+        "Sound clues persist 2→6 real turns; their source position is not refreshed automatically.",
+    "视野 +1（与发光加成同一条通道），听取上限 +2；稳定的视觉／听觉配置。":
+        "Vision +1 (same channel as the glow bonus) and listen cap +2; a stable sight/hearing setup.",
+    "弥散印象造成的视线遮蔽对你无效。": "Sight obscuring from diffuse impressions has no effect on you.",
+    "液氮的冻僵对你无效。": "Freezing from liquid nitrogen has no effect on you.",
+    "灼热蒸汽的灼伤对你无效。": "Scalding from hot steam has no effect on you.",
+    "辐射尘埃的辐射病对你无效。": "Radiation sickness from irradiated dust has no effect on you.",
+    "麻痹与迟钝的征兆对你无效。": "Numbness and sluggish portents have no effect on you.",
+    "镇静类征兆无法让你陷入沉眠般的迟缓。": "Sedative portents cannot drag you into a sleep-like torpor.",
+    "蜂蜜地面不再让移动耗时翻倍。": "Honey ground no longer doubles your movement cost.",
+    "粘稠液体不再额外拖慢你的行动。": "Viscous liquid no longer slows your actions further.",
+    "声音对你的惊扰减弱：异象的听觉判定 −2。": "Sound startles you less: anomaly hearing checks are −2.",
+    "心智上限 +10，获得时立即回填 10 点心智。": "Mind cap +10; 10 mind is restored immediately on acquisition.",
+    "清醒度上限 +10，获得时立即回填 10 点清醒度。": "Lucidity cap +10; 10 lucidity is restored immediately on acquisition.",
+    "想象力上限 +8，获得时立即回填 8 点想象力。": "Imagination cap +8; 8 imagination is restored immediately on acquisition.",
+    "视野 +1（与发光加成同一条通道，只是不再需要光源）。": "Vision +1 (same channel as the glow bonus, but no light source required).",
+    "无念黑渊吞掉记忆时，你仍记得自己是谁（行囊与携带意象照常可用）。": "When the Abyss of No-Thought swallows memory, you still remember who you are (inventory and carried images stay usable).",
+}

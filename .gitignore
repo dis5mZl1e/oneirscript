@@ -1,0 +1,42 @@
+# Local runtime data
+/save*/
+/config.json
+/crash_reports/
+/.wezterm/
+/vendor/
+
+# Generated files and local development state
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+*.log
+*.tmp
+*.bak
+*.lnk
+*.exe
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.trae/
+.workbuddy/
+.superpowers/
+.worktrees/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Development-only material belongs in the development repository
+/tests/
+/docs/
+/scripts/
+/sim/
+/tools/
+/audio_production/
+test_*.py
+*_test.py
+_tmp*
