@@ -2,9 +2,18 @@
 
 *Rewrite the dream. Face what follows.*
 
+**[简体中文](README_CN.md) · [English](README_EN.md)**
+
 梦层是一款以潜意识为舞台的单人回合制 Roguelike。探索程序生成的梦境，组合装备语句，篡改描述现实的文字，并利用液体、气体和材料反应应对危机。
 
 Oneirscript is a single-player, turn-based roguelike set in the subconscious. Explore generated dreamscapes, assemble equipment sentences, tamper with the words that describe reality, and turn environmental reactions into tactics.
+
+## 阅读指南 / Guides
+
+| 语言 / Language | 内容 / Contents |
+|---|---|
+| [简体中文 — README_CN.md](README_CN.md) | 游戏介绍、运行方式、操作与许可 |
+| [English — README_EN.md](README_EN.md) | Overview, setup, controls, and licensing |
 
 ## 从源码运行 / Run from source
 
