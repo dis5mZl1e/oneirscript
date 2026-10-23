@@ -4,11 +4,26 @@
 
 **[简体中文](README_CN.md) · [English](README_EN.md)**
 
-[授权与 AI 贡献政策](#zh-ai-policy) · [Licensing and AI contribution policy](#en-ai-policy)
+**传统 Roguelike · 网格回合制 · 程序生成 · 失败重开**
 
-梦层是一款以潜意识为舞台的单人回合制 Roguelike。探索程序生成的梦境，组合装备语句，篡改描述现实的文字，并利用液体、气体和材料反应应对危机。
+**Traditional roguelike · Turn-based grid tactics · Procedural generation · Permadeath**
 
-Oneirscript is a single-player, turn-based roguelike set in the subconscious. Explore generated dreamscapes, assemble equipment sentences, tamper with the words that describe reality, and turn environmental reactions into tactics.
+梦层是一款以潜意识为舞台的传统 Roguelike。观察局势、管理资源，在随机生成的梦境里寻找通路。你可以**把装备组织成行动语句、改写眼前现实的描述，再利用材料、光照和声音解决遭遇**。
+
+Oneirscript is a traditional roguelike set in the subconscious. Read the situation, manage resources, and find your way through generated dreamscapes. **Compose equipment into action sentences, rewrite descriptions of reality, and use materials, light, and sound to solve encounters.**
+
+## 独特玩法 / What makes it distinctive
+
+| 特色 / System | 玩点 | What you play with |
+|---|---|---|
+| **语法装备 / Equipment sentences** | 组合条件、目标和行为，改变自己的行动规则。 | Combine conditions, targets, and actions to shape the rules of your build. |
+| **现实篡改 / Reality tampering** | 预览并修改可编辑描述，权衡想象力费用、混乱与风险。 | Preview and edit eligible descriptions, weighing imagination costs, chaos, and risk. |
+| **环境战术 / Environmental tactics** | 利用声音诱引、光照遮挡、积液传导、火焰与液气反应。 | Work with sound lures, light and cover, conductive pools, fire, and liquid–gas reactions. |
+| **梦境探索 / Dream exploration** | 选择路线，处理异象、事件和支线梦境，决定何时下潜。 | Choose routes, handle anomalies and events, explore branching dreams, and decide when to descend. |
+
+**观察与探索 → 处理遭遇 → 调整构筑 → 累积崩解度 → 继续搜寻或下潜。** 根据本局得到的能力与环境找解法，失败后重新尝试。
+
+**Observe and explore → resolve encounters → adjust your build → accumulate dissolution → keep searching or descend.** Find solutions with this run's abilities and surroundings, then learn from each attempt.
 
 ## 阅读指南 / Guides
 
@@ -42,19 +57,47 @@ Chinese and English are available in the in-game settings. Startup options are i
 
 ## 操作 / Controls
 
-| 按键 / Key | 操作 / Action |
-|---|---|
-| WASD / 方向键 / Arrow keys | 移动 / Move |
-| X | 观察 / Observe |
-| Enter | 行动与确认 / Act and confirm |
-| Tab | 行囊 / Inventory |
-| N / B | 下潜／回溯 / Descend / Backtrack |
-| Esc | 取消与暂停 / Cancel and pause |
-| F10 | 保存并退出 / Save and quit |
+默认常用键位；字母无须 Shift。按键随当前面板、瞄准或编辑状态变化。
 
-完整操作以游戏内键位说明为准。See the in-game controls for the full key reference.
+Default common controls; letters do not require Shift. Active panels, aiming, and editors determine the context.
+
+| 按键 / Key | 操作 | Action |
+|---|---|---|
+| `Arrow keys / Numpad` | 地图移动；小键盘支持斜向 | Move on the map; numpad supports diagonals |
+| `WASD` | 右侧面板选择与分类切换 | Select entries and switch categories in the side panel |
+| `/` | 切换地图／面板焦点 | Switch focus between map and panel |
+| `.` | 等待一回合 | Wait one turn |
+| `Enter` | 行动／确认当前选择 | Act / Confirm the current selection |
+| `G / E` | 收纳物品／回应地点或对象 | Pick up items / Interact with a site or object |
+| `Tab` | 打开行囊；瞄准时切到自由落点 | Open inventory; while aiming, switch to a free target cell |
+| `U` | 使用物品；也可从行囊选择后确认 | Use an item; items can also be selected and confirmed in inventory |
+| `F` | 进入瞄准；瞄准中再按查看发射来源 | Aim; press again while aiming to view firing sources |
+| `O` | 瞄准时切换合法敌方目标 | Cycle valid enemy targets while aiming |
+| `Q` | 投掷瞄准；面板中返回 | Aim a throw; return from a panel |
+| `R` | 为当前发射来源换弹 | Reload the current firing source |
+| `X` | 观察；观察时 Enter 前往选中位置 | Observe; Enter travels to the selected cell while observing |
+| `Right-click` | 查看格子或物品详情／上下文操作 | Inspect a cell or item / Open context actions |
+| `H / ?` | 操作与帮助；选择可用构想等行动 | Actions and help; select available conceptions and other actions |
+| `T / [` | 携带意象页面／联想盘编辑器 | Equipment page / Equipment-board editor |
+| `C` | 篡改可编辑的对话或眼前文字 | Tamper with eligible dialogue or nearby descriptions |
+| `V / I / K` | 征兆／现实洞察／观测 | Portents / Insights / Observations |
+| `J` | 任务日志 | Quest journal |
+| `Alt+S / Alt+N` | 自我察觉／噪音与混乱详情 | Character details / Noise and chaos details |
+| `F3` | 分层观察；观察内 Tab 切层 | Layered observation; Tab switches layers within that view |
+| `N / B` | 满足条件后下潜／回溯 | Descend when eligible / Backtrack |
+| `Esc` | 取消或逐级返回；无待取消状态时暂停 | Cancel or return; pause when no action or view needs cancelling |
+| `F10` | 保存并返回主页；主页再按退出 | Save and return home; press again on the main home screen to exit |
+| `Alt+H / Alt+Z` | 完整键位表／展开或收起底栏 | Full controls reference / Expand or collapse the footer |
+
+**方向键／小键盘移动角色，WASD 主要操作右栏；`/` 切换焦点。** 左键选择／移动／行动，右键详情，滚轮滚动。
+
+**Arrow keys / numpad move the character; WASD primarily operates the side panel. `/` switches focus.** Left-click selects / moves / acts, right-click inspects, and the wheel scrolls.
+
+按 `Alt+H` 查看完整键位；以游戏内上下文提示与设置为准。Press `Alt+H` for the full reference; follow in-game prompts and settings.
 
 ## 许可 / License
+
+[授权与 AI 贡献政策](#zh-ai-policy) · [Licensing and AI contribution policy](#en-ai-policy)
 
 项目自有代码采用 [GPL-3.0-only](LICENSE)。字体、图标和音频保留各自的独立许可；详见 [许可边界](LICENSING.md)、[第三方声明](THIRD-PARTY-NOTICES.md)及 [音频署名](assets/CREDITS.md)。
 

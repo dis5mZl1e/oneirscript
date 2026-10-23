@@ -4,7 +4,7 @@
 >
 > A traditional roguelike where words reshape reality and the environment becomes part of your tactics.
 
-**Single-player · Turn-based · Procedural generation · Terminal game · Python**
+**Traditional roguelike · Single-player · Turn-based grid tactics · Procedural generation · Permadeath**
 
 [简体中文](README_CN.md) · English · [Project home](README.md)
 
@@ -25,9 +25,11 @@
 
 ## About the game
 
-**Oneirscript is a traditional roguelike set in the subconscious.** Wake in the Origin of the Dream, explore shifting dreamscapes, confront wandering anomalies, and follow scattered memories toward the obsessions at their core.
+**Oneirscript is a traditional roguelike set in the subconscious: grid-based exploration, turn-based actions, procedural generation, and permadeath that ends a run.** Wake in the Origin of the Dream, explore shifting dreamscapes, confront wandering anomalies, and follow scattered memories toward the obsessions at their core. Observation, positioning, resource management, and an understanding of the rules shape how far you get.
 
-Each action can change the situation. Crossing a pool, making a sound, or altering a sentence may open a route or set off an unexpected chain of events. Combat, observation, environmental interactions, and language all shape your options.
+**Compose the rules of your actions, then rewrite the reality around you.** Arrange equipment-board entries into sentences with conditions, targets, and actions. Choose editable words in environmental descriptions or dialogue, preview the result, pay its cost, and see how it changes the situation. Liquids, gases, fire, light, and sound provide the tactical conditions those choices act upon.
+
+The run follows a loop: **observe and explore → resolve encounters, events, and environmental problems → adjust your build → accumulate dissolution → decide whether to keep searching or descend**. Judge when to fight, when to take another route, when to spend resources rewriting a situation, and when to leave a stratum with what you have found.
 
 The game is under active development. It is built in Python with Textual, runs primarily in a terminal, and offers Chinese and English interfaces.
 
@@ -37,16 +39,16 @@ The game is under active development. It is built in Python with Textual, runs p
 
 ## Core features
 
-| System | What you can do |
+| Distinctive system | What makes it interesting to play |
 |---|---|
-| **Explore dreams** | Navigate generated rooms, caves, corridors, and mazes. Discover anomalous sites and enter self-contained dreams within dreams. |
-| **Tamper with reality** | Edit descriptions of the environment or dialogue. Choose words and conditions, preview the resulting sentence, and weigh the costs and risks. |
-| **Learn conceptions** | Find specific abilities that offer new ways to handle combat, exploration, and unusual environmental situations. |
-| **Use the environment** | Bring liquids, gases, fire, electric fields, and material reactions into your tactics, reshaping local conditions and routes. |
-| **Build your character** | Combine equipment-board entries, configure memory shards, and learn insights while balancing resources and adaptability. |
-| **Observe, then act** | Examine targets and terrain before choosing melee, ranged fire, a throw, or a retreat. Turn-based play gives you time to think. |
+| **Build with sentences** | Arrange conditions, targets, and actions on the equipment board, read the resulting sentence, and try the combination in play. Build decisions involve triggers, affected targets, and additional effects. |
+| **Use tampering as a tactical action** | Edit eligible parts of nearby environmental descriptions or dialogue, preview the result, then weigh imagination costs, chaos, and risk. Decide what is worth changing, when to change it, and what resources to save for later threats. |
+| **Work with interacting environments** | Use sound to lure, light and cover to judge routes, and conductive pools, spreading fire, and liquid–gas reactions to deal with enemies and terrain. Several systems can contribute to the same encounter. |
+| **Find solutions in generated situations** | Generated rooms, caves, corridors, and mazes combine with different anomalies, supplies, and anomalous sites to change your routes, encounters, and available tools. |
+| **Follow branching dreams and choices** | Enter self-contained dreams within dreams, engage with NPCs, events, mechanisms, and side objectives, and approach the core obsessions and different endings. |
+| **Learn the rules through observation** | Examine threats through observation, the codex, and detailed views. Adapt with conceptions, memory shards, and insights, and take what you have learned into your next attempt. |
 
-Mind, lucidity, and imagination serve different purposes. Portents, noise, and chaos also affect the situation. Items, NPCs, events, a codex, and records of past dreams accompany your exploration.
+Mind, lucidity, and imagination serve different purposes. Portents, noise, and chaos also affect the situation. The challenge is to make choices with this run's equipment, abilities, and environment, finding solutions whose costs you can afford.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-features)
 
@@ -78,15 +80,39 @@ Available platforms, architectures, and requirements will be listed with each re
 
 **Bundled WezTerm is recommended.** It provides the intended fonts and image-map display through a game-specific window configuration, separate from your global settings. Other terminals can use the character map; font, color, and mouse behavior depend on terminal support.
 
-| Common action | Control |
-|---|---|
-| Move | Arrow keys / `WASD` |
-| Wait | `.` |
-| Pick up | `G` |
-| Open or close the full control list | `Alt+H`, or click the control-list entry in the side panel |
-| Expand or collapse the footer | `Alt+Z`, or click its expand button |
+These are the default common controls. Letter keys are shown in uppercase and do not require Shift. Aiming, editors, dialogs, and panels take priority according to the current context.
 
-Use in-game prompts and the full control list for context-specific actions. Language, audio, and display options are available in Settings. Back up your saves before updating.
+| Key | Action |
+|---|---|
+| `Arrow keys / Numpad` | Move on the map; numpad supports diagonals |
+| `WASD` | Select entries and switch categories in the side panel |
+| `/` | Switch focus between map and panel |
+| `.` | Wait one turn |
+| `Enter` | Act / Confirm the current selection |
+| `G / E` | Pick up items / Interact with a site or object |
+| `Tab` | Open inventory; while aiming, switch to a free target cell |
+| `U` | Use an item; items can also be selected and confirmed in inventory |
+| `F` | Aim; press again while aiming to view firing sources |
+| `O` | Cycle valid enemy targets while aiming |
+| `Q` | Aim a throw; return from a panel |
+| `R` | Reload the current firing source |
+| `X` | Observe; Enter travels to the selected cell while observing |
+| `Right-click` | Inspect a cell or item / Open context actions |
+| `H / ?` | Actions and help; select available conceptions and other actions |
+| `T / [` | Equipment page / Equipment-board editor |
+| `C` | Tamper with eligible dialogue or nearby descriptions |
+| `V / I / K` | Portents / Insights / Observations |
+| `J` | Quest journal |
+| `Alt+S / Alt+N` | Character details / Noise and chaos details |
+| `F3` | Layered observation; Tab switches layers within that view |
+| `N / B` | Descend when eligible / Backtrack |
+| `Esc` | Cancel or return; pause when no action or view needs cancelling |
+| `F10` | Save and return home; press again on the main home screen to exit |
+| `Alt+H / Alt+Z` | Full controls reference / Expand or collapse the footer |
+
+**Use arrow keys or the numpad for character movement; WASD primarily operates the side panel.** Use `/` to switch map/panel focus. Left-click selects, moves, or acts; the wheel scrolls lists. Press `Alt+H` for the full reference, and follow in-game prompts and settings for context-specific behavior.
+
+Language, audio, and display options are available in Settings. Back up your saves before updating.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-play)
 
