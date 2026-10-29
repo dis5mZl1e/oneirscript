@@ -1,0 +1,60 @@
+name: Python package smoke (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SDL_AUDIODRIVER: dummy
+      SDL_VIDEODRIVER: dummy
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Create an isolated build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/oneir-venv"
+          "$RUNNER_TEMP/oneir-venv/bin/python" -m pip install build
+          echo "$RUNNER_TEMP/oneir-venv/bin" >> "$GITHUB_PATH"
+      - name: Build source distribution and wheel outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: python -m build "$GITHUB_WORKSPACE" --outdir "$RUNNER_TEMP/dist"
+      - name: Install the built wheel
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pip install "$RUNNER_TEMP"/dist/*.whl
+          python -m pip check
+      - name: Verify installed resources
+        working-directory: ${{ runner.temp }}
+        run: |
+          python - <<'PY'
+          from dream_demo.resource_paths import assets_dir
+          from dream_demo.font_assets import emoji_faces, semantic_icon_faces, game_icon_face
+          from dream_demo.audio import _asset_path
+          from dream_demo.data.anomaly_skills import _WORKBOOK_PATH
+          assets = assets_dir()
+          assert assets.name == '_assets'
+          assert (assets / 'fonts/DreamStrataInterfaceSans-Regular.ttf').is_file()
+          assert emoji_faces(assets / 'fonts')
+          assert semantic_icon_faces(assets / 'fonts')
+          assert game_icon_face(assets / 'fonts')
+          assert _asset_path('sfx', 'fire.wav') is not None
+          assert _WORKBOOK_PATH.is_file()
+          PY
+      - name: Run installed smoke checks
+        working-directory: ${{ runner.temp }}
+        run: |
+          oneirscript --smoke --game-directory "$RUNNER_TEMP/game" --save-dir "$RUNNER_TEMP/save-basic"
+          oneirscript --smoke --image-smoke --game-directory "$RUNNER_TEMP/game" --save-dir "$RUNNER_TEMP/save-image"
+          oneirscript --smoke --fx-smoke --game-directory "$RUNNER_TEMP/game" --save-dir "$RUNNER_TEMP/save-fx"
+          test -f "$RUNNER_TEMP/save-basic/run.json"
+          test -f "$RUNNER_TEMP/save-image/image-map-smoke.png"
+          test -f "$RUNNER_TEMP/save-fx/run.json"
