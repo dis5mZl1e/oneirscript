@@ -42,6 +42,7 @@ oneirscript = "dream_demo.cli:main"
 
 [tool.setuptools]
 py-modules = ["run_demo", "launch_game"]
+license-files = ["LICENSE", "LICENSING.md", "THIRD-PARTY-NOTICES.md"]
 
 [tool.setuptools.packages.find]
 include = ["dream_demo*"]
