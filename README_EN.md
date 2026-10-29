@@ -194,6 +194,10 @@ See the [technical overview](TECHNICAL_EN.md) for the architecture diagram, sour
 
 ## Feedback and contributions
 
+Read [CONTRIBUTING.md](CONTRIBUTING.md), the primary English contribution guide,
+for submission permissions, project direction, contributor review and merge
+criteria. A [Chinese reference translation](CONTRIBUTING_CN.md) is also available.
+
 Bug reports, play experiences, translations, new content, and code improvements are welcome. Use the issue tracker and pull or merge requests on the platform hosting this repository.
 
 For a bug report, include the game version, operating system, terminal, reproduction steps, and expected versus actual behavior. Screenshots and error logs help. Check saves and logs for personal information before sharing them.

@@ -81,6 +81,8 @@ flowchart TD
 
 ## 开发验证
 
+提交与审查要求以 [英文贡献指南](CONTRIBUTING.md) 为主要说明，另见 [中文参考译文](CONTRIBUTING_CN.md)。
+
 先按 [README_CN.md](README_CN.md#zh-source) 创建虚拟环境并安装依赖，各项检查使用独立的测试存档目录：
 
 ```sh

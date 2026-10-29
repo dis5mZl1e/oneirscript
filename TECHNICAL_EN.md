@@ -102,6 +102,8 @@ assume compatibility between an older checkout and a newer desktop release.
 
 ## Development checks
 
+For submission and review requirements, start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
 Use the virtual-environment setup in [README_EN.md](README_EN.md#en-source).
 Run each check with its own disposable save directory:
 

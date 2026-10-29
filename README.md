@@ -72,6 +72,8 @@ This repository contains desktop source; the web frontend, portable terminal ven
 |---|---|
 | [简体中文 — README_CN.md](README_CN.md) | 游戏介绍、运行方式、操作与许可 |
 | [English — README_EN.md](README_EN.md) | Overview, setup, controls, and licensing |
+| [Contributing — English primary guide](CONTRIBUTING.md) | Submission permissions, review, design direction and merge decisions |
+| [中文贡献指南（参考译文）](CONTRIBUTING_CN.md) | 提交权限、代码审查、设计偏好与分支建议 |
 
 ## 从源码运行 / Run from source
 
