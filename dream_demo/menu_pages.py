@@ -154,9 +154,11 @@ class CodexPageState:
         row: int,
         definitions: Iterable[CatalogDefinition] | Mapping[str, CatalogDefinition],
         progress: Mapping[str, Mapping],
+        column: int = 0,
     ) -> bool:
         entries = _definitions_in(definitions, self.active_category)
-        index = self.scroll_offsets[self.active_category] + row
+        index = (self.scroll_offsets[self.active_category]
+                 + max(0, int(row)) * 2 + max(0, int(column)))
         if not (0 <= index < len(entries)) or not catalog_entry_unlocked(entries[index], progress):
             return False
         self.selections[self.active_category] = index
@@ -167,6 +169,9 @@ class CodexPageState:
 @dataclass
 class SettingsPageState:
     selected: int = 0
+    active_category: str = 'general'
+    category_positions: dict = field(default_factory=dict)
+    category_scrolls: dict = field(default_factory=dict)
     capture_target: str | None = None
     feedback: str = ""
     # 「删除历史统计」的两段确认：第一次激活只警告，第二次才执行。
@@ -175,9 +180,51 @@ class SettingsPageState:
     delete_callback: Callable[[], SettingChange] | None = None
     unlock_catalog_callback: Callable[[], SettingChange] | None = None
 
+    CATEGORIES = (('general', '常规'), ('display', '画面'), ('audio', '声音'),
+                  ('keys', '按键'), ('data', '数据'))
+
+    @staticmethod
+    def category_for(definition):
+        key = definition.key
+        if key in ('skip_tutorial', 'intent_large_marks'):
+            return None
+        if definition.setting_type is SettingType.KEY_BIND:
+            return 'keys'
+        if definition.setting_type is SettingType.ACTION:
+            return 'data'
+        if key.startswith(('sfx_', 'music_')):
+            return 'audio'
+        if key.startswith(('fx_', 'map_', 'intent_')) or key in (
+                'symbol_mode', 'floor_transition', 'left_event_log', 'terse_mode'):
+            return 'display'
+        return 'general'
+
+    def visible_indices(self, registry=SETTING_REGISTRY):
+        return [i for i, definition in enumerate(registry)
+                if self.category_for(definition) == self.active_category]
+
+    def select_category(self, category, registry=SETTING_REGISTRY):
+        if self.capture_target is not None:
+            return
+        self.category_positions[self.active_category] = self.selected
+        self.active_category = category
+        rows = self.visible_indices(registry)
+        selected = self.category_positions.get(category)
+        self.selected = selected if selected in rows else (rows[0] if rows else 0)
+        self.confirm_delete = False
+        self.feedback = ''
+
+    def cycle_category(self, delta, registry=SETTING_REGISTRY):
+        keys = [key for key, _ in self.CATEGORIES]
+        self.select_category(keys[(keys.index(self.active_category) + delta) % len(keys)], registry)
+
     def move(self, delta: int, registry: tuple[SettingDef, ...] = SETTING_REGISTRY) -> None:
         if registry and self.capture_target is None:
-            self.selected = (self.selected + delta) % len(registry)
+            rows = self.visible_indices(registry)
+            if not rows:
+                return
+            index = rows.index(self.selected) if self.selected in rows else 0
+            self.selected = rows[(index + delta) % len(rows)]
             self.confirm_delete = False
 
     def activate(
@@ -238,6 +285,35 @@ class SettingsPageState:
         self.feedback = tr("已取消按键捕获。")
 
 
+CODEX_LIST_COLUMNS = 2
+_CODEX_COLUMN_GAP = 2
+
+
+def _codex_entry_cell(
+    definition: CatalogDefinition,
+    *,
+    selected: bool,
+    unlocked: bool,
+    symbol_mode: str,
+    width: int,
+) -> Text:
+    """一条图鉴列表标签；宽度不足时用省略号截断（各标签统一口径）。"""
+    cell = Text(no_wrap=True)
+    cell.append(symbol("cursor", symbol_mode) if selected else "  ",
+                style=f"bold {INK['heading']}" if selected else "")
+    if unlocked:
+        cell.append(glyph_for(definition.icon, definition.symbol_key, symbol_mode),
+                    style=definition.color)
+        cell.append(tr(definition.name),
+                    style=f"bold underline {INK['text']}" if selected else INK['text'])
+    else:
+        # 未解锁只给中性亮灰：条目自身的 identity 色此刻是玩家还不该知道的信息。
+        cell.append(symbol("locked", symbol_mode), style=INK['muted'])
+        cell.append(tr("未知"), style=INK['muted'])
+    cell.truncate(width, overflow="ellipsis", pad=True)
+    return cell
+
+
 def render_codex_list(
     state: CodexPageState,
     definitions: Iterable[CatalogDefinition] | Mapping[str, CatalogDefinition],
@@ -245,29 +321,35 @@ def render_codex_list(
     symbol_mode: str,
     *,
     viewport_size: int = 10,
+    width: int | None = None,
 ) -> RenderableType:
+    """图鉴条目列表：左侧选择按两列铺排，每列标签等宽；超宽标签省略尾部文字。"""
     entries = _definitions_in(definitions, state.active_category)
     offset = state.scroll_offsets[state.active_category]
-    visible = entries[offset : offset + max(1, viewport_size)]
-    text = Text()
-    for row, definition in enumerate(visible):
-        index = offset + row
-        unlocked = catalog_entry_unlocked(definition, progress)
-        selected = index == state.selections[state.active_category] and unlocked
-        text.append(symbol("cursor", symbol_mode) if selected else "  ",
-                    style=f"bold {INK['heading']}" if selected else "")
-        if unlocked:
-            text.append(glyph_for(definition.icon, definition.symbol_key, symbol_mode), style=definition.color)
-            text.append(tr(definition.name),
-                        style=f"bold underline {INK['text']}" if selected else INK['text'])
-        else:
-            # 未解锁只给中性亮灰：条目自身的 identity 色此刻是玩家还不该知道的信息。
-            text.append(symbol("locked", symbol_mode), style=INK['muted'])
-            text.append(tr("未知"), style=INK['muted'])
-        if row < len(visible) - 1:
-            text.append("\n")
+    rows = max(1, int(viewport_size))
+    capacity = rows * CODEX_LIST_COLUMNS
+    visible = entries[offset : offset + capacity]
     if not visible:
-        text.append(tr("此分类暂无条目。"), style=INK['muted'])
+        return Text(tr("此分类暂无条目。"), style=INK['muted'])
+    available = max(CODEX_LIST_COLUMNS * 8, int(width or 0) or 50)
+    column_width = max(8, (available - _CODEX_COLUMN_GAP) // CODEX_LIST_COLUMNS)
+    text = Text(no_wrap=True)
+    for row_start in range(0, len(visible), CODEX_LIST_COLUMNS):
+        for column in range(CODEX_LIST_COLUMNS):
+            index = offset + row_start + column
+            if index >= len(entries):
+                break
+            definition = entries[index]
+            unlocked = catalog_entry_unlocked(definition, progress)
+            selected = index == state.selections[state.active_category] and unlocked
+            if column:
+                text.append(" " * _CODEX_COLUMN_GAP)
+            text.append(_codex_entry_cell(
+                definition, selected=selected, unlocked=unlocked,
+                symbol_mode=symbol_mode, width=column_width,
+            ))
+        if row_start + CODEX_LIST_COLUMNS < len(visible):
+            text.append("\n")
     return text
 
 
@@ -332,6 +414,7 @@ def render_settings(
     rows = [
         render_setting_row(state, manager, symbol_mode, index, definition)
         for index, definition in enumerate(registry)
+        if index in state.visible_indices(registry)
     ]
     # feedback 由 ConfigManager / SettingsPageState 生成时已落地成当前语言的成品句
     # （模板与字段各自取词一次），这里不能再过一遍 tr，否则模板键匹配不上。

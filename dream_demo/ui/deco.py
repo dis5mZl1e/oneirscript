@@ -13,6 +13,7 @@ numpy 用在两处：色标插值生成渐变 LUT（导入期一次性）、呼�
 """
 
 from __future__ import annotations
+from functools import lru_cache
 
 import numpy as np
 
@@ -21,6 +22,7 @@ _LUT_STEPS = 48
 _PALETTE_CACHE: dict[tuple, list[str]] = {}
 
 
+@lru_cache(maxsize=4096)
 def _parse_hex(color: str) -> tuple[int, int, int]:
     color = color.lstrip("#")
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
@@ -56,9 +58,10 @@ def glow_palette(stops: tuple[str, ...], steps: int = _LUT_STEPS) -> list[str]:
 
 def mix_hex(color_a: str, color_b: str, u: float) -> str:
     """两色线性混合（u=0 → a，u=1 → b）。呼吸/脉冲的基本算子。"""
-    a = np.array(_parse_hex(color_a), dtype=float)
-    b = np.array(_parse_hex(color_b), dtype=float)
-    return _to_hex(a * (1.0 - u) + b * u)
+    # Three scalar channels cost less than creating two tiny ndarrays for every
+    # glass/border pixel. Keep the same operation order and banker rounding.
+    a, b = _parse_hex(color_a), _parse_hex(color_b)
+    return _to_hex(left * (1.0 - u) + right * u for left, right in zip(a, b))
 
 
 def breathe_u(t: float, period: float, phase: float = 0.0) -> float:

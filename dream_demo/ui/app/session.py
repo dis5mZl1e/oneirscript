@@ -14,6 +14,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.geometry import Region
 from textual.widgets import Button, Footer, Header, Input, Static
 
 from ...audio import sfx
@@ -33,18 +34,23 @@ from ...symbols import symbol
 from .._native import _trace_native, select_mouse_driver
 from .. import glyphs
 from ..home_title import home_title_text
-from ..home_scene import HomeScene, DreamStatic, DreamVertical, DreamHorizontal, dream_title_text
+from ..home_scene import HomeScene, DreamStatic, DreamTitle, DreamVertical, DreamHorizontal, dream_title_text
 from ..frame_geometry import compose_fx, projectile_color
 from ..map_particles import MapParticles
+from ..visual_timeline import VisualClock, VisualPlayer
+from ...core.visual_events import drain_visual_events
 from ..ornament_frame import OrnamentPane
 from ..self_audit import ClickableStatus, SelfAuditPane
 from ..layer_observation import LayerStrip, LayerStatus
 from ..signal_status import (SignalStatusLink, InspectionPane, InspectionClose,
                              SignalDetailText, SignalListenLink)
 from ..input import InputMixin
+from ..movement_timing import MoveCadence
+from ..movement_presentation import MovementPresentation
 from ..qol import QoLUIMixin
 from ..debug_panel import DebugPanelMixin
 from ..floating_toast import FloatingToast, MapHints, MapHintText
+from ..left_event_log import LeftEventLog
 from ..sentence_writer import SentenceWriter
 from ..newgame_options import NewGameOptionsView, options_text, summary_text, detail_text
 from ..tutorial_card import TutorialCard
@@ -73,9 +79,12 @@ from ..styles import BAR_LUCIDITY_STYLES
 from ..styles import BAR_MIND_STYLES
 from ..styles import CARRIED_IMAGE_STYLE
 from ..styles import GAME_FRAME_SECONDS
+from ..styles import MOVE_REPEAT_MIN_SECONDS
+from ..styles import RIGHT_PANEL_MODES
 from ..styles import HOME_PANEL_MODES
 from ..styles import LAYER_LABEL_STYLE
 from ..widgets import (
+    ClickableHoverInfo,
     CodexListView,
     HistoryListView,
     DebugListWidget,
@@ -100,8 +109,24 @@ from ..board_editor import (
     BoardSideView,
     BoardToolButton,
 )
+from ..fast_static import install_fast_static_updates
+from ..world_renderer import (WorldPainter, image_direct_ui_enabled,
+                              world_render_mode)
+
+# 固定尺寸正文控件 update 不请求整屏布局（见 ui/fast_static.py）：
+# 必须在任何 App/控件创建之前安装；放在所有 UI import 之后，避免循环依赖。
+install_fast_static_updates()
 
 from .footer import I18nFooter
+
+# P3：独立采样定时器周期（40Hz）。它只写平滑轨迹的中间帧，不决定行动节拍。
+PRESENTATION_TICK_SECONDS = 1 / 40
+
+# C6+（2026-10-28）：默认 GC 阈值。默认 (700,10,10) 在连续移动中约每 1.2s
+# 触发一次 gen2（单次 7–50ms），就是玩家感到的「短暂卡顿」；放宽后 gen2 频率
+# 降到约 1/5.7。配合启动时的 gc.freeze()，gen2 只扫本局新对象。
+# ONEIRSCRIPT_GC_TUNE=0 回退旧阈值，ONEIRSCRIPT_GC_THRESHOLD 仍可精确覆盖。
+GC_TUNED_THRESHOLD = (1000, 20, 20)
 
 
 def _idle_frame_divisor() -> int:
@@ -195,20 +220,39 @@ class SessionMixin:
         # 寿命 <1s，故不跨层保留、不入档。
         self._fx_flashes: list[dict] = []
         self._fx_flash_seq: int = 0
+        # 命中表现（2026-10-24，手感方案 §3.2/§4）：state.presentation_hits
+        # 按 seq 差分拾取；born = FX 时钟 + 弹道飞行时间，抖动/跳字/强调/
+        # 命中音共用同一时刻。全部是世界坐标 + FX 时钟，不跨层、不入档。
+        self._fx_hit_seq: int = int(getattr(session.state, "hit_event_seq", 0) or 0)
+        self._fx_impact_cues: list[dict] = []
+        self._fx_shake_offset: tuple[int, int] = (0, 0)
         # 弹道回放（2026-09-23）：拾取到的最新一发（原始缓存 + 出生墙钟时刻）。
         self._fx_projectile: tuple[dict, float] | None = None
         self._fx_projectile_seq: int | None = None
+        # Projectile-related action audio and prose use the same presentation
+        # clock as the flight; neither is driven by independent wall timers.
+        self._fx_audio_cues: list[tuple[float, str, float]] = []
+        self._fx_audio_flush_pending = False
+        self._fx_deferred_message_until: dict[int, float] = {}
+        self._fx_deferred_message_owner = id(session.state)
         # 同一次动作里 _capture_projectile_action 与 refresh 的 force 补画
         # 可能用同一个时钟与基帧：记录上次真正画过的快速键，直接跳过重复
         # 快照/compose（docs §11 P1）。
         self._fx_quick_key = None
         self._map_particles = MapParticles()
+        # 多层 ASCII 动画（2026-10-26 扩展）：旁路事件 -> 播放器 -> 字符层。
+        # 与旧 FX/粒子并存，未接系统前事件为空，旧画面逐像素不变。
+        self._visual_player = VisualPlayer()
+        self._visual_frame_key = 0
         self._particle_layer = (session.state.depth, session.state.realm_id, session.state.realm_depth)
         self._fx_blast_count = len(getattr(session.state, 'explosion_blasts', ()) or ())
         self._fx_combat_seq = getattr(session.state, '_combat_fx_seq', 0)
         self._fx_combat_pulses: list[tuple[dict, float]] = []
         self._home_started: float | None = None
         self._home_timer = None
+        # 装饰帧空闲降频（2026-10-26）：最近一次真实输入时刻。无输入 2s 后
+        # 边框流光从 5Hz 降到 2Hz，按键/鼠标一恢复立刻回到 5Hz。
+        self._last_activity = time.monotonic()
         self._fx_vitals: tuple[int, int] | None = None   # 上帧 (mind, lucidity)
         # 边框短时反馈（docs §9.6）：危险/交互/奖励统一优先级，只改颜色。
         from ..border_feedback import BorderFeedback
@@ -232,9 +276,17 @@ class SessionMixin:
         # 玩家配置文件（主文件夹 game_config.ini）→ 设置页记录（save/config.json）。
         # 配置文件缺失时自动生成带注释的模板，解析失败一律回退（绝不挡住开局）。
         self.user_config = load_user_config()
+        # 首次启动/配置缺失：语言与装备句法按系统语言预置。已有 game_config.ini
+        # 永远优先（它是玩家或发行包明确给出的默认值）。
+        file_defaults = dict(self.user_config.values)
+        if "language" not in file_defaults:
+            from ...system_locale import system_language
+            detected = system_language()
+            file_defaults["language"] = detected
+            file_defaults.setdefault("equipment_syntax", detected)
         self.config = ConfigManager(
             session.manager.directory / "config.json",
-            file_defaults=self.user_config.values,
+            file_defaults=file_defaults,
             file_overrides_saved=self.user_config.override_saved,
         )
         self.fx_engine.scanlines_disabled = not bool(self.config.get("fx_scanlines"))
@@ -248,8 +300,11 @@ class SessionMixin:
         # 「一键解锁全部图鉴」：立即执行（只补标记，不清记录）。
         self.settings_page.unlock_catalog_callback = self._unlock_all_catalog
         self.facing = (1, 0)
-        self.panel_mode = "world"
+        # 右侧默认页：左侧事件记录开启时是行囊，否则保持事件记录（world）。
+        self.panel_mode = self._default_panel_mode()
         self.panel_scroll = 0
+        # ~ 锁定（右侧固定）时的页面快照：见 sidebar_workspaces._enforce_locked_panel_page。
+        self._locked_panel_page = None
         # 携带意象页底部「记忆碎片独立滚动区」的滚动偏移（2026-10-14）。
         self.memory_scroll = 0
         self.hover_cell: tuple[int, int] | None = None
@@ -277,6 +332,7 @@ class SessionMixin:
         self.home_view = "menu"
         self.menu_index = 0
         self.save_disabled = False
+        self.tutorial_session = False
         # 开局选项页（2026-10-09）的会话内状态：选空存档槽时打开，
         # phase: options（调律）→ fragment（择碎片）。全部选项无锁定。
         self.newgame_slot: int | None = None
@@ -353,17 +409,21 @@ class SessionMixin:
         self.pickup_picked: set[int] = set()
         self.pickup_cursor = 0
         self.pickup_scroll = 0
-        # 面板光标锁定（~ 键 / 底栏「锁定」）：锁定后三套键位（方向键/WASD/小键盘）
-        # 都只移动面板光标；解锁后 WASD 动面板，方向键/小键盘动地图（2026-09-16 互换）。
+        # 面板光标锁定（~ 键 / 底栏「锁定」）：锁定后只有 WASD 留在面板光标上；
+        # 方向键与小键盘数字始终归地图（2026-10-24 第四次定稿）。
         self.panel_locked = False
         # 右侧面板**同一按钮界面内部**的分层页签（2026-10-23）：按按钮记住当前页；
         # 行囊页直接复用物品分类筛选值。切换按钮不丢各按钮自己的页。
         from ..styles import PANEL_SUBPAGE_DEFAULTS as _subpage_defaults
         self.panel_subpages = dict(_subpage_defaults)
         self._panel_subtab_hits: list[tuple[int, int, str]] = []
-        # 光标焦点区域（/ 键 / 底栏「区域」按钮，2026-10-12）：map=方向键移动角色、
-        # WASD 动面板（默认分工）；panel=方向键+WASD 都只动右侧面板（←→ 切页）；
-        # overlay=左侧浮层打开时焦点示意（浮层自身键处理本来优先）。浮层关闭自动归 map。
+        # 2026-10-27：#status 第 1 行最右 2 列锁图标的点击列区 (start, end)，
+        # 每次 _refresh_world_view 按当前宽度/panel_locked 重算；None = 本帧
+        # 没画图标（宽度太小或尚未布局）。ClickableStatus 据此路由 toggle_cursor_lock。
+        self._status_lock_hits: tuple[int, int] | None = None
+        # 光标焦点区域（/ 键 / 底栏「区域」按钮，2026-10-24 定稿）：
+        # 方向键与数字键**始终**移动角色；WASD 恒控右栏，只有 `/` 把焦点交给
+        # 左侧面板（overlay）时才改为在左面板内移动。map/panel 只在提示与焦点边框上有差别。
         self.cursor_zone = "map"
         # o 键目标辅助：开启后悬停格画玩家→目标的寻路路径（黄底高亮）；
         # 瞄准时 o 变为瞄准辅助（自动指向视野内最近异像，可循环切换）。
@@ -437,6 +497,8 @@ class SessionMixin:
         self._configured_show_details = bool(self.config.get("show_details"))
         self.details_expanded = self._configured_show_details
         self._game_frame_timer = None
+        self._presentation_timer = None
+        self._presentation_timer_running = False
         # 空闲帧分频 + 帧内控件引用缓存（2026-10-22 性能 C9）：
         # 30Hz 的 _refresh_game_frame 里每帧 3 次 App.query 会走一遍整个控件树
         # （实测空闲帧 ~2.0ms 中约 1.8ms 花在 selectors 匹配），而 toast/结算/
@@ -454,6 +516,12 @@ class SessionMixin:
         self._held_direction: tuple[int, int] | None = None
         self._last_hold_event = 0.0
         self._hold_repeats = 0
+        # M1：长按移动的统一下一次期限（按单调秒计）。按键事件只提供「仍按住」
+        # 证据，帧回调按截止点结算；转向/阻断/松键一律 reset。
+        self._move_cadence = MoveCadence(MOVE_REPEAT_MIN_SECONDS)
+        self._movement_presentation = MovementPresentation()
+        self._movement_presentation_viewport = None
+        self._movement_presentation_needs_final_frame = False
         set_language(str(self.config.get("language")))
         # 标题栏标题按语言取中文名/英文名（此前从未初始化，Header 一直显示
         # Textual 默认的类名 "DreamApp"，2026-09-19 修复）。
@@ -486,6 +554,16 @@ class SessionMixin:
         """
         from ...equipment.syntax import default_syntax, normalize_syntax, set_default_syntax
         wanted = normalize_syntax(self.config.get("equipment_syntax"))
+        # 老配置文件/旧发行包没有 equipment_syntax：未在游戏内改过时跟随界面语言，
+        # 避免英文玩家拿到中文列角色。配置文件若显式写了 equipment_syntax，则尊重它。
+        explicit = ("equipment_syntax" in self.user_config.values
+                    or self.config.has_record("equipment_syntax"))
+        if not explicit:
+            wanted = normalize_syntax(self.config.get("language"))
+            # 设置页也要显示实际生效的语序；不落盘、不标 touched，下次启动仍按
+            # 当前语言重新推导，玩家之后改语言也能继续跟随。
+            if normalize_syntax(self.config.get("equipment_syntax")) != wanted:
+                self.config.values["equipment_syntax"] = wanted
         if default_syntax() != wanted:
             set_default_syntax(wanted)
 
@@ -498,6 +576,9 @@ class SessionMixin:
                 # 不再常驻一格气泡遮挡地图。
                 yield MapHintText(id="map-mode-hint")
                 yield FloatingToast(id="toast")
+            # 左侧透明事件记录（2026-10-26）：默认关闭，开启时叠在地图显示框
+            # 左下/左上，只有文字、无背景无边框、鼠标穿透。
+            yield LeftEventLog(id="left-event-log")
             with OrnamentPane(id="map-pane"):
                 # 提示层是 layout 的兄弟节点，贴边时不会被地图内边距裁剪。
                 yield MapView(id="map")
@@ -518,12 +599,14 @@ class SessionMixin:
             with OrnamentPane(id="side-pane"):
                 yield ClickableStatus(id="status")
                 yield SignalStatusLink(id='signal-status')
-                yield Static(id="hover-info")
+                yield ClickableHoverInfo(id="hover-info")
                 with Horizontal(id="panel-tabs"):
                     from ..sidebar_workspaces import WORKSPACES, ROUTES
                     from ..widgets import SidebarTabButton
                     for key, label, english, mode in WORKSPACES:
                         yield SidebarTabButton(tr(label), id='nav-' + key)
+                    # 2026-10-24 玩家定稿：六个页签后不再挂「盘」按钮。联想盘入口
+                    # 改为「构筑 · 装备」页里可点击的盘面示意图（见 panels/mouse_routing）。
                 with Horizontal(id='panel-sections'):
                     for routes in ROUTES.values():
                         for route in routes:
@@ -550,7 +633,7 @@ class SessionMixin:
             # alignment otherwise left-aligns the 60-column menu with an
             # expanded 84-column title, visibly shifting the buttons left.
             with DreamVertical(id="home-title-row", classes="home-center-row"):
-                yield DreamStatic(id="home-title")
+                yield DreamTitle(id="home-title")
             with DreamVertical(id="home-subtitle-row", classes="home-center-row"):
                 yield DreamStatic(tr("入梦之前，先选好一段位置。"), id="home-subtitle")
             with DreamVertical(id="home-menu-row", classes="home-center-row"):
@@ -574,6 +657,8 @@ class SessionMixin:
                         with DreamHorizontal(classes="slot-row"):
                             yield NativeButton(tr("存档槽") + " 3", id="slot-3", classes="slot-main")
                             yield NativeButton(tr("删除"), id="delete-3", classes="slot-delete", variant="warning")
+                        with DreamHorizontal(id='tutorial-slot-row', classes='slot-row'):
+                            yield NativeButton(tr('新手教程'), id='home-tutorial', classes='slot-main')
                         yield DreamStatic(tr("Enter 进入 · ←→ 选槽/删除 · 数字 1/2/3 直选 · Esc/Q 返回"), id="saves-help")
             with Vertical(id="history-page"):
                 yield HistoryListView(id="history-list")
@@ -615,6 +700,9 @@ class SessionMixin:
         # 设置页挂在 Screen 顶层（不在 #home 里）：overlay 层全屏覆盖，
         # 主页与暂停菜单共用同一份（见 CSS 注释）。
         with Vertical(id="settings-page"):
+            with Horizontal(id='settings-categories'):
+                for category, label in SettingsPageState.CATEGORIES:
+                    yield NativeButton(tr(label), id=f'settings-category-{category}')
             with SettingsListView(id="settings-list"):
                 for index in range(len(self.config.registry)):
                     yield SettingRowView(index, id=f"setting-row-{index}", classes="setting-row")
@@ -665,6 +753,9 @@ class SessionMixin:
             yield NativeButton(tr('关闭 · Esc / Q'), id='controls-help-close')
         with SelfAuditPane(id="self-pane"):
             yield Static(id="self-audit-body")
+        from ..layer_info import LayerInfoPane
+        with LayerInfoPane(id="layer-info-pane"):
+            yield Static(id="layer-info-body")
         with InspectionPane(id='signal-detail'):
             yield Static(tr('噪音与混乱度'), id='signal-detail-title')
             with VerticalScroll(id='signal-detail-scroll'):
@@ -695,20 +786,56 @@ class SessionMixin:
             self.query_one(Header).styles.display = "none"
         else:
             self.session.start()
-        self.set_interval(0.12, self._follow_path)
+        self._path_timer = self.set_interval(0.12, self._follow_path)
         self._fx_timer = self.set_interval(1 / 20, self._fx_tick)
         # 装饰帧（10fps，ui/deco.py）：牌匾流光/呼吸灯 + 世界边框呼吸。
         # 与 _fx_tick 分开：fx_tick 冻结于暂停/主页，而装饰恰恰在那里最显眼。
         self._deco_timer = self.set_interval(0.1, self._deco_tick)
         self._home_timer = self.set_interval(1 / 20, self._home_tick, pause=True)
         self._game_frame_timer = self.set_interval(GAME_FRAME_SECONDS, self._refresh_game_frame)
+        # P3：独立采样定时器，只负责平滑轨迹里的中间帧直写。默认暂停；
+        # 平滑开始 resume、轨迹结束 pause，不参与节拍与规则结算。
+        self._presentation_timer = self.set_interval(
+            PRESENTATION_TICK_SECONDS, self._presentation_tick, pause=True)
         self._audio_timer = self.set_interval(1 / 20, sfx.tick)
         self._set_qol_layout_classes()
+        self._ensure_world_painter()
         self.refresh_view()
         self.call_after_refresh(self._freeze_gc_once)
         self.call_after_refresh(self._graphics_startup_notice)
         if self.config.migration_messages:
             self.call_after_refresh(self.show_toast, '\n'.join(self.config.migration_messages))
+
+    def _ensure_world_painter(self) -> None:
+        """按当前配置惰性装载直写 painter（painter 模式或图像模式受控直绘）。
+
+        painter 模式下它接管世界帧；图像模式（第二步）下它只接管周围 UI，
+        地图由原生图像层负责。角色/纯 Textual 模式不装载，避免给默认路径
+        增加任何钩子开销（test_deco_painter_throttle 也用这个口径）。
+        """
+        if getattr(self, "_world_painter", None) is not None:
+            return
+        install = world_render_mode() == "painter"
+        if not install:
+            # 图像受控直绘只给真实终端装：无头测试/探针的 driver 不是终端，
+            # 直写没有语义，还会打乱既有的「终端写包」断言
+            # （test_image_dirty_261022 等）。painter 模式的既有测试仍需在
+            # 无头下拿到 painter 实例，所以那一支照旧安装。
+            if getattr(self, "is_headless", False):
+                return
+            if not image_direct_ui_enabled():
+                return
+            # 只看玩家显式配置，不看 resolved：无头测试/拍照补丁会把
+            # resolved 改成 image，但它们并不是真实终端。配置切到图像的
+            # 运行期切换需要重启后启用受控直绘（回退路径仍正常）。
+            try:
+                install = str(self.config.get("map_display") or "").strip().lower() == "image"
+            except Exception:
+                return
+        if not install:
+            return
+        self._world_painter = WorldPainter(self)
+        self._world_painter.install(self.screen)
 
     def _freeze_gc_once(self) -> None:
         """把「启动时就已存在」的常驻对象移出 GC 扫描（2026-10-21 性能 P95）。
@@ -745,25 +872,41 @@ class SessionMixin:
         self._gc_frozen = True
 
     def _apply_gc_threshold_once(self) -> None:
-        """C6：ONEIRSCRIPT_GC_THRESHOLD="gen0,gen1,gen2" 可选覆盖 GC 阈值。
+        """C6：GC 阈值。2026-10-28 起默认放宽到 (1000,20,20)。
 
-        默认不设 = 不改变现有 (700,10,10)；非法值同样保持默认。只做一次，
-        避免每次重建界面重复写全局阈值。
+        证据（outputs/stutter-261028/summary-quick.md，玩家配置 image+平滑+high）：
+        默认 (700,10,10) 下连续移动约每 1.2s 一次 gen2，单次 7–50ms——
+        对应玩家报告的「连续移动一会就短暂卡一下」；gen1 56 次累计 168ms、
+        gen0 59 次累计 125ms。放宽后同一探针 gen2 8→1 次、可见间隔 p95
+        210→160ms。配合 _freeze_gc_once 的 gc.freeze()（启动常驻对象进永久代），
+        gen2 只扫本局新对象，峰值 RSS 在既有 A/B 中未变。
+
+        优先级（只做一次，避免每次重建界面重复写全局阈值）：
+        1. ONEIRSCRIPT_GC_THRESHOLD="gen0,gen1,gen2"（旧名 DREAM_STRATA_ 兼容）
+           合法时原样生效；非法值不回退到旧行为，而是继续走下面的默认放宽；
+        2. ONEIRSCRIPT_GC_TUNE=0 一键回退到 (700,10,10)，对照测量/排障用；
+        3. 否则写入默认放宽值。
         """
         if getattr(self, "_gc_threshold_attempted", False):
             return
         self._gc_threshold_attempted = True
         raw = (env_get("GC_THRESHOLD", "") or "").strip()
-        if not raw:
+        if raw:
+            try:
+                values = tuple(int(part) for part in raw.split(","))
+            except ValueError:
+                values = ()
+            if len(values) == 3 and all(value > 0 for value in values):
+                try:
+                    gc.set_threshold(*values)
+                except Exception:
+                    pass
+                return
+        if str(env_get("GC_TUNE", "1") or "1").strip().lower() in (
+                "0", "false", "no", "off"):
             return
         try:
-            values = tuple(int(part) for part in raw.split(","))
-        except ValueError:
-            return
-        if len(values) != 3 or any(value <= 0 for value in values):
-            return
-        try:
-            gc.set_threshold(*values)
+            gc.set_threshold(*GC_TUNED_THRESHOLD)
         except Exception:
             return
 
@@ -772,6 +915,24 @@ class SessionMixin:
         self.screen.set_class(width < 95, 'qol-compact')
         self.screen.set_class(self.size.height < 28,'qol-short-home')
         self.screen.set_class(95 <= width < 120, 'qol-medium')
+        self._sync_map_task_focus()
+
+    def _sync_map_task_focus(self) -> None:
+        """标记瞄准/拾取等地图任务状态，**不改右栏几何**。
+
+        2026-10-24 玩家反馈：左栏或气泡出现时右栏若临时收窄（改宽/改内边距），
+        内容会整体重排、左右边缘跳动。现在只维护语义类（`map-task-focus`），
+        右栏宽度始终按屏幕档位取，退出任务也不会有任何几何变化。
+        """
+        focused = bool(
+            not self.home_mode
+            and (self.aiming or self.sentence_aim is not None
+                 or getattr(self, 'spray_select', None) is not None
+                 or self._active_left_overlay() is not None)
+        )
+        if focused == self.screen.has_class('map-task-focus'):
+            return
+        self.screen.set_class(focused, 'map-task-focus')
 
     def on_resize(self, event) -> None:
         pixels = getattr(event, 'pixel_size', None)
@@ -821,6 +982,41 @@ class SessionMixin:
         if not sfx.request_music(scene.track, loops=scene.loops, context=context) and scene.fallback:
             sfx.request_music(scene.fallback, loops=scene.loops, context=context)
 
+    async def on_event(self, event) -> None:
+        # 关窗确认框被取消后 WezTerm 的标题不会自动恢复；用玩家下一次真实
+        # 键鼠输入作为「提示已消失」的信号，恢复地图图像层。
+        if getattr(self, '_native_prompt_suppressed', False):
+            from textual import events
+            if isinstance(event, (events.Key, events.MouseEvent)):
+                self._release_native_prompt_suppression()
+        await super().on_event(event)
+
+    def _world_view_live(self) -> bool:
+        """世界画面是否仍然「活着」：可见、可交互，时间可以推进。
+
+        2026-10-26 的 ~ 锁定语义只冻结右栏当前页，世界行动照旧——方向键与
+        小键盘数字始终移动角色（key_routing._should_move_map_with_keys），
+        点击地图寻路/攻击也不再把 panel_mode 改回 world（mouse_routing），
+        锁定时面板页更不会因为行动自动回跳。所以 RIGHT_PANEL_MODES 下的世界
+        必须继续推进 FX 时钟、长按自动移动与平滑采样；旧实现把
+        「panel_mode != "world"」一律当成冻结，命中跳字/涟漪/施法波就会在
+        锁定页里永远停在屏幕上。
+
+        真正的冻结只有全屏模态：panel_mode 不在 RIGHT_PANEL_MODES（暂停 /
+        设置 / 图鉴 / 联想盘 / 主页子页 / 事件对话 / 左浮层等）、观察模式
+        与层观测。观察与层观测的指令不落地、时间静止，所以不能算「活着」。
+
+        ⚠️ 终局与进层演出不在这里判：_fx_tick 顶部已有 _floor_transition
+        早退、run_over 在 FX 分支里清场；_refresh_game_frame 在结算演出
+        期间仍要推进地图刷新。调用方各自保持原来的语义。
+        """
+        if self.home_mode or self.observe_mode:
+            return False
+        if getattr(self, "layer_observation", None) is not None:
+            return False
+        mode = getattr(self, "panel_mode", "world")
+        return mode == "world" or mode in RIGHT_PANEL_MODES
+
     def _refresh_game_frame(self) -> None:
         self._expire_attack_confirmation()
         # 节流自动存档：动作标记的脏状态按回合间隔（10 回合）落盘（30fps 下检查成本可忽略）
@@ -836,6 +1032,10 @@ class SessionMixin:
             # 段窗口里进来一次：存档照常落盘（卸载时 save_and_exit 还会兜底），
             # 但任何 DOM 访问都不做。
             return
+        # 关窗确认框期间地图图像层必须收起；30fps 检查一次，不等下一次地图重绘。
+        self._guard_native_close_prompt()
+        if getattr(self, '_native_prompt_suppressed', False):
+            return
         if was_dirty != self.session._dirty:
             self._refresh_qol()
         # 临时弹窗动画/倒计时。（控件引用缓存：见 __init__ 的 C9 说明）
@@ -846,9 +1046,10 @@ class SessionMixin:
         state = self.session.state
         # 标题栏播报：事件记录出现新消息 → 顶部滚动播报 3 秒（2026-09-19）。
         # 3 秒内再来新消息立即切入；结束后没有其他事件则还原标题。
-        new_message = bool(state.messages and state.messages[-1] != self._seen_event_message)
+        visible_messages = self._visible_game_messages(state)
+        new_message = bool(visible_messages and visible_messages[-1] != self._seen_event_message)
         if new_message:
-            self._seen_event_message = state.messages[-1]
+            self._seen_event_message = visible_messages[-1]
             self._push_header_ticker(self._seen_event_message)
         # 异象蓄力/准备类提示的独立通道（2026-10-12）：不进事件记录，只上顶部
         # 滚动。每帧最多播一条：连发时逐帧切入，跑马灯不会把前一条瞬间顶掉。
@@ -870,22 +1071,55 @@ class SessionMixin:
             if state.explosion_age > 6:
                 state.explosion_cells = set()
                 state.explosion_age = 0
-        if not self.is_running or not self.is_mounted or self.home_mode or self.panel_mode != "world":
+        if not self.is_running or not self.is_mounted or not self._world_view_live():
+            # 全屏模态/观察/层观测才停：右栏面板（含 ~ 锁定页）下世界仍可行动，
+            # 长按自动移动与平滑采样必须继续（2026-10-28 修复面板冻结）。
+            self._sync_presentation_timer(False)
             if self._held_key is not None:
                 self._clear_held()
+            movement = getattr(self, "_movement_presentation", None)
+            if movement is not None and movement.is_active(time.monotonic()):
+                map_view = getattr(self, "_frame_map", None)
+                viewport = getattr(map_view, "viewport", (0, 0, 1, 1))
+                player = self.session.state.player
+                movement.reset((player.x - viewport[0], player.y - viewport[1]))
+                self._movement_presentation_viewport = None
+                self._movement_presentation_needs_final_frame = False
             return
         self._auto_repeat_move()
         map_view = self._frame_widget("_frame_map", MapView)
         if map_view is None:
             return
+        movement = getattr(self, "_movement_presentation", None)
+        try:
+            smooth_enabled = (bool(self.config.get("smooth_movement"))
+                              and not bool(self.config.get("fx_reduce_motion"))
+                              and map_view.display_mode == "image")
+        except (AttributeError, KeyError, TypeError):
+            smooth_enabled = False
+        now = time.monotonic()
+        smooth_active = bool(
+            smooth_enabled and movement is not None and movement.is_active(now)
+            and self._movement_presentation_viewport == map_view.viewport)
+        if movement is not None and movement.is_active(now) and not smooth_active:
+            player = self.session.state.player
+            movement.reset((player.x - map_view.viewport[0],
+                            player.y - map_view.viewport[1]))
+            self._movement_presentation_viewport = None
+            self._movement_presentation_needs_final_frame = True
+        self._sync_presentation_timer(smooth_active)
+        force_presentation_frame = bool(
+            smooth_active or self._movement_presentation_needs_final_frame)
+        if self._movement_presentation_needs_final_frame and not smooth_active:
+            self._movement_presentation_needs_final_frame = False
         # C9 空闲帧分频：上面的簿记（存档 flush/攻击确认/toast/结算/爆炸老化/
         # 教程/跑马灯/auto_repeat）始终每帧跑；只有「确认没有动态来源」时才把
         # 地图 update_state 降到 1/DIV。动作后的 refresh_view 不受影响。
-        if self._idle_frame_skips_map_refresh(
+        if (not force_presentation_frame and self._idle_frame_skips_map_refresh(
                 toast_shown=toast_shown, settlement_active=settlement_active,
                 new_message=new_message, pending_ticker=pending_ticker,
                 explosion=explosion, tutorial_active=tutorial_active,
-                map_view=map_view):
+                map_view=map_view)):
             return
         map_view.symbol_mode = self._symbol_mode()
         # 目标辅助路径同步（每帧；帧签名含路径集合，未变化时不会重渲染）。
@@ -894,10 +1128,84 @@ class SessionMixin:
         elif map_view.assist_cells:
             map_view.assist_cells = None
         map_view.update_state(self.session.state)
+        if force_presentation_frame:
+            # update_state 的同场景快捷路径可能因 interaction signature 未变而
+            # 不调用 Static.update；动画采样本身虽变，需显式调度一次地图重绘。
+            # 平滑中间帧只需要一次「有序显示事务」把新采样位置通过图像写出：
+            # 整块地图重排（52×29 格）每帧要 ~28ms，而脏格补丁只依赖
+            # _map_damage 与本帧图像。仅当采样帧补丁路由开着时才只标一格的脏区
+            # （补丁会把图像补回来）；路由关着必须整块刷新，否则文字层留半旧。
+            native_plane = getattr(self, '_native_image_plane', None)
+            if (smooth_active and native_plane is not None
+                    and not getattr(native_plane, 'error', '')):
+                # 原生图像层在 worker 侧按 duration 与 _PlaneMotion 自行插值，
+                # 显示采样帧不需要经过 Textual 事务。旧实现每 1/30 秒整块
+                # refresh 一次空白占位层，等于让合成器每步多排 3–4 次整张地图
+                # （2026-10-26 实测：移动步内 map refresh 3–4 次、_render_chops
+                # 16–30ms/次）。worker 已有本步画布，直接跳过即可。
+                return
+            if smooth_active and (self.smooth_patch_routes_enabled()
+                                  or map_view.display_mode == 'image'):
+                # M3：先试 mini 事务直接贴采样补丁（完全绕开整屏合成周期）；
+                # 任何 guard 不满足再退回「一格脏区」的常规显示事务。
+                if map_view.try_emit_presentation_frame():
+                    return
+                # 用内容区左上角的一格作为脏区：装饰边框本身不在图内，标错了
+                # _display 会判成「无地图 damage」而丢掉这次采样。
+                content = map_view.content_region
+                widget = map_view.region
+                map_view.refresh(Region(
+                    max(0, content.x - widget.x), max(0, content.y - widget.y), 1, 1))
+            else:
+                map_view.refresh()
+
+    def _sync_presentation_timer(self, smooth_active: bool) -> None:
+        """P3：平滑轨迹期间 resume 独立采样定时器，轨迹结束时 pause。"""
+        timer = getattr(self, "_presentation_timer", None)
+        if timer is None:
+            return
+        try:
+            wanted = bool(smooth_active and self.presentation_timer_enabled())
+        except (AttributeError, KeyError, TypeError):
+            wanted = False
+        if wanted == self._presentation_timer_running:
+            return
+        if wanted:
+            # reset() 同时恢复调度：暂停期间累积的错过的周期必须丢弃，
+            # 否则 Timer 会按 25ms 步长逐个补跑（长时间空闲后是上千次空转）。
+            timer.reset()
+        else:
+            timer.pause()
+        self._presentation_timer_running = wanted
+
+    def _presentation_tick(self) -> None:
+        """P3：独立采样回调——只写采样帧，不推进节拍、不结算规则、不碰 _display。
+
+        回调里唯一的重活是 ``image_frame`` + 直写；任何 guard 不满足就直接
+        返回，让常规 30Hz 帧回调负责这一帧，不在这里兜底刷新。
+        """
+        movement = getattr(self, "_movement_presentation", None)
+        if (not self.is_running or not self.is_mounted
+                or not self._world_view_live()
+                or movement is None or not movement.is_active(time.monotonic())):
+            self._sync_presentation_timer(False)
+            return
+        map_view = self._frame_widget("_frame_map", MapView)
+        if map_view is None or map_view.display_mode != "image":
+            self._sync_presentation_timer(False)
+            return
+        if getattr(self, "_movement_presentation_viewport", None) != map_view.viewport:
+            return
+        map_view.try_emit_presentation_frame()
 
     def _frame_widget(self, cache_attr: str, widget_type):
         """帧循环里的控件引用（带缓存）：三个控件在 compose 里一次挂载、生命周期同 App。"""
         widget = getattr(self, cache_attr, None)
+        # 缓存外复核 is_mounted：将来若页面被 recompose，旧引用不能把动画
+        # 静默卡死（_home_tick 会一直拿到已卸载控件）。失配时回退重新查询。
+        if widget is not None and not widget.is_mounted:
+            widget = None
+            setattr(self, cache_attr, None)
         if widget is None:
             widget = next(iter(self.query(widget_type)), None)
             if widget is not None:
@@ -935,6 +1243,8 @@ class SessionMixin:
         来源是下面的瞬时 FX 队列（弹道/粒子/战斗脉冲/波纹/短光/命中涟漪）。
         """
         if self.home_mode or self.panel_mode != "world":
+            # 面板/主页帧一律按动态处理，不参与 C9 分频（既有语义：面板内容
+            # 可能随世界状态变化；tests/test_idle_gc_261022.py 钉住这一点）。
             return True
         if self._held_key is not None or getattr(self, "_held_direction", None) is not None:
             return True
@@ -968,6 +1278,14 @@ class SessionMixin:
         return False
 
     def on_unmount(self) -> None:
+        painter = getattr(self, "_world_painter", None)
+        if painter is not None:
+            painter.close()
+            self._world_painter = None
+        plane = getattr(self, '_native_image_plane', None)
+        if plane is not None:
+            plane.close()
+            self._native_image_plane = None
         layer = getattr(self,'layer_observation',None)
         if layer is not None and layer.context == self._layer_context():
             self.session.state.hover_target = layer.previous.get('_world_hover_target')
@@ -981,6 +1299,9 @@ class SessionMixin:
             self._home_timer.stop()
         if self._game_frame_timer is not None:
             self._game_frame_timer.stop()
+        if self._presentation_timer is not None:
+            self._presentation_timer.stop()
+            self._presentation_timer_running = False
         if not self.home_mode and not self.session.state.run_over and not self.save_disabled:
             self.session.save_and_exit()
         # 停掉音乐并释放音频设备（内部全降级，未初始化时是空操作）。

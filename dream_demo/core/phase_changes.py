@@ -23,6 +23,53 @@ for _recipe in FREEZES:
     FREEZE_BY_LIQUID.setdefault(_recipe.reactant_a, ())
     FREEZE_BY_LIQUID[_recipe.reactant_a] += (_recipe,)
 CLOCK = 'phase:at'
+# 「先让它沉下去」（诊断行 terrain.i06）：相变结束后多少回合内，这一格的第一次
+# 取液还算「刚沉下去」的。窗口给 2 回合：等它落定，又不至于等到忘了。
+SETTLED_WINDOW = 2
+
+
+def settled(state, cell) -> bool:
+    """这一格是不是**刚相变过**（`phase:at` 落在最近的窗口里）。"""
+    at = cell.material_clocks.get(CLOCK)
+    if at is None:
+        return False
+    age = int(state.time) - int(at)
+    return 0 <= age <= SETTLED_WINDOW
+
+
+def arm_settled_grab(state, x: int, y: int) -> bool:
+    """记下「刚相变完的这一格第一次取液」。
+
+    只登记，不改任何数值：真正的减免在 ``portents._grant_material_portents`` 里
+    把**附着层**削成 0（伤害照旧），所以「不能跳过伤害」是结构性的。
+    """
+    features = getattr(state, "realm_features", None)
+    if not isinstance(features, dict):
+        return False
+    features["settled_grab"] = {"x": int(x), "y": int(y),
+                                "until": int(state.time) + SETTLED_WINDOW}
+    return True
+
+
+def take_settled_grab(state, cell) -> bool:
+    """这一格正是刚取过液的那一格 → 用掉它（按格子身份比，不靠坐标换算）。"""
+    features = getattr(state, "realm_features", None)
+    if not isinstance(features, dict):
+        return False
+    memo = features.get("settled_grab")
+    if not isinstance(memo, dict):
+        return False
+    if int(state.time) > int(memo.get("until", -1)):
+        features.pop("settled_grab", None)
+        return False
+    point = (int(memo.get("x", -1)), int(memo.get("y", -1)))
+    if not (0 <= point[0] < state.width and 0 <= point[1] < state.height):
+        return False
+    if state.cell(*point) is not cell:
+        return False
+    features.pop("settled_grab", None)
+    return True
+
 
 
 def locked(state, cell):

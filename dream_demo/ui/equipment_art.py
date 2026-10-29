@@ -4,7 +4,10 @@ No emoji or font-dependent glyph widths. Art never defines hit boxes or slots.
 """
 from rich.text import Text
 
+from ..data.icon_glyphs import ICONS as _ICONS, icon_text as _icon_text
 from ..equipment.icon_art import painted_cells
+from ..data.expansion.catalog import ENTRIES as _EXPANSION_ENTRIES
+_EXPANSION_ART_ICONS = {e['id']: e for e in _EXPANSION_ENTRIES if e['category'] == 'equipment'}
 
 
 def piece_cell_text(piece, cell, piece_glyphs):
@@ -23,7 +26,7 @@ def piece_cell_text(piece, cell, piece_glyphs):
     return english.get(piece.piece_id, '??') if dx == 0 else '  '
 
 
-def icon_cell(definition_id, x, y, rotation=0, *, emphasis=""):
+def icon_cell(definition_id, x, y, rotation=0, *, emphasis="", icons_enabled=None):
     entry = next(((l, r, g) for cx, cy, l, r, g in
                   painted_cells(definition_id, rotation) if (cx, cy) == (x, y)),
                  None)
@@ -32,6 +35,22 @@ def icon_cell(definition_id, x, y, rotation=0, *, emphasis=""):
     else:
         left, right, glyphs = entry
     left_glyph, left_fg, right_glyph, right_fg = glyphs
+    expansion = _EXPANSION_ART_ICONS.get(definition_id)
+    if expansion is not None and left_glyph == expansion['source_character']:
+        # The board and inventory share the reviewed PUA drawing; system font
+        # fallbacks must not substitute a different silhouette inside the board.
+        #
+        # 2026-10-27 A4：ICONS 开关由整张图/整块盘面的调用方解析一次传下来
+        #（icons_enabled），逐格不再各读一次环境变量；调用方没传时按单格现读
+        #（themed_icon 每次现读活环境，运行时切换仍立即生效）。
+        icon_key = expansion['icon_key']
+        if icons_enabled is None:
+            from ..symbols import themed_icon
+            private = themed_icon(icon_key)
+        else:
+            private = _icon_text(icon_key) if (icons_enabled and icon_key in _ICONS) else None
+        left_glyph = private or expansion['terminal_fallback']
+        right_fg = None  # The returned icon already reserves the whole two-cell slot.
 
     def bg_style(bg):
         return f"{emphasis} on {bg}".strip() if emphasis else f"on {bg}"
@@ -55,16 +74,19 @@ def icon_cell(definition_id, x, y, rotation=0, *, emphasis=""):
 
 
 def icon_lines(definition_id, rotation=0):
+    from ..symbols import themed_icons_enabled
     cells = painted_cells(definition_id, rotation)
     width = max(x for x, *_ in cells) + 1
     height = max(y for _, y, *_ in cells) + 1
     occupied = {(x, y) for x, y, *_ in cells}
+    icons_enabled = themed_icons_enabled()
     lines = []
     for y in range(height):
         line = Text()
         for x in range(width):
             if (x, y) in occupied:
-                line.append_text(icon_cell(definition_id, x, y, rotation))
+                line.append_text(icon_cell(definition_id, x, y, rotation,
+                                           icons_enabled=icons_enabled))
             else:
                 line.append("  ")
         lines.append(line)
@@ -79,6 +101,8 @@ def board_art_rows(board, piece_glyphs):
              for trace in board.traces}
     marks.update({cell: piece_cell_text(piece, cell, piece_glyphs)
                   for piece in board.pieces for cell in piece_cells(piece)})
+    from ..symbols import themed_icons_enabled
+    icons_enabled = themed_icons_enabled()
     rows = [Text('┌' + '─' * (board.width * 2) + '┐', style='grey74')]
     for y in range(board.height):
         line = Text('│', style='grey74')
@@ -86,7 +110,8 @@ def board_art_rows(board, piece_glyphs):
             placement = equipment.get((x, y))
             if placement is not None:
                 line.append_text(icon_cell(placement.definition_id, x-placement.x,
-                                           y-placement.y, placement.rotation))
+                                           y-placement.y, placement.rotation,
+                                           icons_enabled=icons_enabled))
             else:
                 mark = marks.get((x, y), '· ')
                 line.append(mark if len(mark) != 1 or mark not in ',;' else mark+' ', style='grey62')

@@ -51,9 +51,14 @@ OFL 字体随游戏聚合发行，不要求把程序改为 OFL，也不能将字
 独立图标资产不会仅因被游戏加载就变为 GPL 代码；嵌入或物理合并仍须另核。
 Game-icons 的作者、来源、许可与 PUA 重映射／规范化说明应继续保留。
 
-**统一字体候选尚未放行**：`DreamStrataUnified-Regular.ttf` 物理合并了多种许可来源。
-必须先处理整体字体的许可兼容性，不能因名称叫“混合字体”就视作独立资源聚合。
-当前文件存在且打包会复制它；不是默认字体不代表已经排除分发。
+**统一字体已放行（2026-10-27 复核）**：`DreamStrataUnified-Regular.ttf` 物理合并了
+OFL-1.1、MIT、Apache-2.0 与 CC-BY-3.0 四种来源。复核证据：14 个上游字体文件的
+SHA-256 与 `UPSTREAM-COPYRIGHTS.txt` 逐项一致；上游许可文本与名称表均未声明保留
+字体名；产物 cmap 33,826 个码位恰为“正文底衬 + 4 个图标子集”的并集，无第五来源；
+族名/PostScript 名全部为 Dream Strata 系列；10 个随包字体 fsType 均为 0。
+合并字体整体按 OFL-1.1 分发，嵌入的 MIT／Apache-2.0／CC-BY-3.0 轮廓保留各自许可
+与署名，四份许可全文、NOTICE-MDI、逐项 Game-icons 署名随包分发。
+Apache-2.0 §4(b) 修改说明与逐源哈希见 `assets/fonts/UNIFIED-LICENSE-NOTICE.md`。
 
 ### WezTerm 与平台组件
 
@@ -81,7 +86,7 @@ Game-icons 的作者、来源、许可与 PUA 重映射／规范化说明应继�
 - 提供与发行版对应的 GPL 源码及构建脚本，依法选择源码交付方式。
 - 将 LICENSE、LICENSING.md、本声明及资源许可一起纳入所有平台的发行包。
 
-详情与证据见 [本次核查记录](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/docs/261022开源许可与第三方资源核查.md)。
+详情与证据见 [本次核查记录](docs/261022开源许可与第三方资源核查.md)。
 
 [返回顶部 / Back to top](#zh) · [English](#en)
 
@@ -126,7 +131,7 @@ The build chain also includes altgraph, packaging, pefile, pyinstaller-hooks-con
 
 Aggregating OFL fonts with the game does not require licensing the program under the OFL, nor does it permit relicensing the fonts collectively under the GPL. Loading separately distributed icon assets does not by itself turn them into GPL code; embedding or physical merging requires separate review. Retain Game-icons author credits, sources, licenses, and the PUA remapping/normalization notices.
 
-**The unified font candidate is not approved for distribution.** `DreamStrataUnified-Regular.ttf` physically combines content under multiple licenses. Resolve the licensing compatibility of the combined font first; calling it a mixed font does not make it an aggregation of separate resources. The file exists and current packaging copies it. Being non-default does not establish that it is excluded from distribution.
+**The unified font is approved for distribution (reviewed 2026-10-27).** `DreamStrataUnified-Regular.ttf` physically merges content under OFL-1.1, MIT, Apache-2.0, and CC-BY-3.0. Evidence: the SHA-256 of all 14 upstream font files matches `UPSTREAM-COPYRIGHTS.txt`; neither the bundled OFL texts nor the upstream name tables declare a Reserved Font Name; the product's 33,826-codepoint cmap is exactly the union of the reading base font and the four icon subsets, with no fifth source; every family and PostScript name is in the Dream Strata series; all ten bundled fonts have `fsType = 0`. The merged font as a whole is distributed under OFL-1.1 while the embedded MIT / Apache-2.0 / CC-BY-3.0 outlines retain their licenses and notices, and the four license texts, NOTICE-MDI, and the per-icon Game-icons attribution ship with the packages. The Apache-2.0 section 4(b) modification statement and per-source hashes are in `assets/fonts/UNIFIED-LICENSE-NOTICE.md`.
 
 ### WezTerm and platform components
 
@@ -145,11 +150,6 @@ Original synthesized audio retains the MIT license in `assets/licenses/Original-
 - Supply GPL source and build scripts corresponding to each release, using a compliant source-delivery method.
 - Include LICENSE, LICENSING.md, this notice, and the complete resource licensing materials in distributions for every platform.
 
-Details and evidence are recorded in the [internal review](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/docs/261022开源许可与第三方资源核查.md).
+Details and evidence are recorded in the [internal review](docs/261022开源许可与第三方资源核查.md).
 
 [Back to top](#en) · [简体中文](#zh)
-
-
-本仓库为精简的源码运行版本，不包含 WezTerm 二进制、构建工具、开发文档或统一字体研究候选。历史开发记录与构建材料保留在原开发仓库。
-
-This repository contains the source-playable edition. WezTerm binaries, build tools, development documents, and the unified-font research candidate are excluded. Historical development records and build materials remain in the original development repository.

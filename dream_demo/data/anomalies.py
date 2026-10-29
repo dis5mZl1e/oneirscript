@@ -110,6 +110,8 @@ ANOMALY_DEFINITIONS: dict[str, dict[str, Any]] = {
         "trauma_type": "心智创伤", "communicates": True, "drop_id": "wet_fold", "dissolution_reward": 8, "vision": 6,
     "power": 1, "layers": [1, 6],
         "trait": "liquid_swimmer", "color": "#9ad1c9",
+        # 自然补刷的地形要求：纸鱼只在液面上成形（上岸几乎无法移动）。
+        "spawn_terrain": "liquid",
     },
     "anomaly.sleepwalking_tailor": {
         # ✂(U+2702) 带 FE0E 强制文本呈现：与符号表同款，避免被字体按 emoji 渲染。
@@ -607,6 +609,10 @@ ANOMALY_DEFINITIONS.update(LIBRARY_ANOMALIES)
 # 漏字者只由篡改风险召唤：定义带 spawn_only='tamper'，投放池按该标记排除。
 from .tamper_anomalies import TAMPER_ANOMALIES
 ANOMALY_DEFINITIONS.update(TAMPER_ANOMALIES)
+# 混乱极高专属异象（嗔影/空心者/伪光者）：只由 core/chaos_anomalies 召唤，
+# 定义带 pool=False + spawn_only='chaos'，任何普通/强烈投放池都会排除。
+from .chaos_anomalies import CHAOS_ANOMALIES
+ANOMALY_DEFINITIONS.update(CHAOS_ANOMALIES)
 from .environment_prose import ANOMALY_NOTE_PROSE
 for (_anomaly_id, _field), (_prose, _english_prose) in ANOMALY_NOTE_PROSE.items():
     ANOMALY_DEFINITIONS[_anomaly_id][_field] = _prose

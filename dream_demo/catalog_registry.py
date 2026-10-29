@@ -223,6 +223,107 @@ ITEM_EFFECT_LABELS: dict[str, str] = {
     "deploy_quiet_boundary": "静音圈：削弱声响",
     "waking_reserve": "储备：清醒与洗涤",
     "bottled_sunrise": "瓶装天亮：延时纵火",
+    # ---- 扩展包运行期装备（2026-10-25）----
+    # 文案照抄各件 catalog 描述的第一句口径，不新增机制。
+    # 十六件「实用改写」（篡改／构想／爆炸／火焰／电场）
+    "tamper_cost": "篡改：节用",
+    "tamper_range": "篡改：远及",
+    "tamper_damage": "篡改：加力",
+    "construct_cost": "构想：节用",
+    "construct_kill_afterblast": "构想：击杀余爆",
+    "two_step_construct_range": "构想：两步准备",
+    "external_light_construct_damage": "构想：外光充能",
+    "construct_kill_refund": "构想：击杀回流",
+    "construct_radius": "构想：扩幅",
+    "construct_soft_portent_duration": "构想：软征兆延续",
+    "construct_melee_mark": "构想：近战刻痕",
+    "construct_ignite": "构想：点燃",
+    "player_explosion_damage": "爆炸：加压",
+    "owned_flame_damage": "火焰：加温",
+    "reactive_conductive_field": "受击接地",
+    "owned_field_damage_and_guard": "电场：限流",
+    # 声源与调查批（被动四件＋液体被动两件）
+    "lure_on_hurt": "受击诱引",
+    "lure_echo_split": "诱引回音分账",
+    "lure_mark_on_hit": "命中留痕诱引",
+    "thin_liquid_step": "薄液面挡一下",
+    "sealed_suit": "封衣：不沾液体",
+    # 光与灯具批（2026-10-25 批次二）
+    "half_light": "半罩：前亮后暗",
+    "glare_buffer": "强光缓冲",
+    "strike_flash": "出手短闪",
+    "beam_lamp": "双档电量手电",
+    "rear_shade": "背向遮光",
+    "soot_shield": "遮片挡光",
+    # 扩展包 physical 批（terrain · 液体与地势工具）
+    "scoop_liquid": "舀液进真容器",
+    "read_slope": "读邻格高低差",
+    "hang_container": "把容器挂上承载面",
+    "shoe_weight": "步伐更沉（被动）",
+    "lower_ground": "降一档地势",
+    "spill_outlet": "短导流出口",
+    "straw_upper": "只取当前可取液体",
+    "gas_outlet": "单向泄气出口",
+    "leak_bucket": "沿途漏液",
+    "mount_tool": "固定小工具",
+    "portent_fling": "把一份附着剥回脚下",
+    "reverse_pump": "把液送上高处",
+    "split_gate": "两条出口分流",
+    "liquid_barrier": "可收起的阻液边界",
+    # 扩展包 physical 批（projectile · 弹道工具）
+    "single_load": "一发一装",
+    "dropped_rounds": "换弹掉落实弹（被动）",
+    "interceptor_sight": "显示第一拦截物",
+    "heavy_round": "把下一发推重",
+    "twin_chamber": "两个真实弹仓",
+    "empty_melee": "空仓改近战",
+    "reload_brace": "架稳装填（移动即收）",
+    "unload_round": "退出未发射的实弹",
+    "bounce_shot": "撞面反折一次",
+    "fork_shot": "双发分叉弹道",
+    "sling_step": "换弹中走一步（被动）",
+    "recover_rounds": "回收自己的弹壳",
+    "mirror_shot": "借镜面开火",
+    "last_round_push": "末发强击退",
+    "wax_volley": "蜡弹齐射并沉积",
+    # 扩展包 physical 批（circuit · 电路工具）
+    "probe_conduct": "试电：只报一跳连通",
+    "dry_cloth": "操作电路少沾一次（被动）",
+    "wire_pull": "拆线并回收导线",
+    "pulse_box": "发一次真实信号",
+    "relay_delay": "信号延后一回合",
+    "solder_port": "用焊料连端口",
+    "scrape_solid": "刮取固体材料",
+    "filter_impurity": "只滤定下的那一种杂质",
+    "melt_mold": "接熔料凝成障碍",
+    "rhythm_relay": "只放行同节奏信号",
+    "sealed_crucible": "容器隔离一回合",
+    "wire_fork": "择一接通线路",
+    "deposit_strike": "攻击留下熔料沉积",
+    # 扩展包 realm 批（病区／书库交界 · 记录与回收）
+    "peel_portent": "刮掉一份负面附着",
+    "facility_note": "抄下设施的交互条件",
+    "mark_sightline": "沿视线标记已知地形",
+    "wrap_tome": "包住一本学习物",
+    "scrape_attachment": "剥离附着存入废料格",
+    "tray_slots": "托盘托两件、取一件",
+    "suture_slow": "命中换一回合牵制",
+    "staged_dose": "恢复品分期给药",
+    "index_compare": "轮换两条构想对照",
+    "push_low_wall": "搬一格低矮障碍",
+    "trim_residue": "裁掉残留的边缘一格",
+    "pin_residue": "续长纸质残留并锁同类",
+    "sealed_dose": "两份恢复品择一延期",
+    "defer_settle": "推迟残留末次结算",
+    "boundary_anchor": "把恒显边界记成锚点",
+    "pack_device": "收回未耗尽的装置",
+    # 扩展包的非装备条目：消耗品与成长内容各自共用一个 effect 常量（36 个易逝物
+    # 都是 `expansion_consumable`，36 洞察＋36 构想都是 `expansion_growth`）。
+    # 图鉴「作用」行按 effect 查表，缺了就把 id 原样吐给玩家——这两条的措辞按
+    # 「这一类东西怎么来的、怎么没的」写，不冒充某一件的具体机制（各自的
+    # 描述与 effect_description 才是那件的做法）。
+    "expansion_consumable": "一次性：用掉即失去",
+    "expansion_growth": "习得后永久生效",
 }
 
 # 物品/携带意象「作用说明」：effect id → 一句机制描述（图鉴详情用）。
@@ -392,7 +493,10 @@ def _floor_effect(value: Any) -> str:
 
 
 def _time(value: Any) -> str:
-    return f"{float(value):g} {tr('回合')}"
+    # 「回合」的英文值自带一个前导空格（EN["回合"] = " rounds"，为兼容
+    # f"{n}{tr('回合')}" 那种写法），这里已经自己补了空格，取词后要剥掉，
+    # 否则图鉴会显示成「1.3  rounds」（双空格）。
+    return f"{float(value):g} {tr('回合').strip()}"
 
 
 def _item_name(value: Any) -> str:

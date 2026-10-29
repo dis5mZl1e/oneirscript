@@ -15,6 +15,23 @@ MULTI_SOLUTION_GATE = 'encounter.multi_solution_gate'
 GATE_WALL_KIND = '潮解纸墙'
 
 
+def _emit_encounter(state, record, kind, stage, *, source=None, cells=(), facts=(),
+                    visual_key='cast.rewrite_corner', tier=2, theme='paper',
+                    outcome='release'):
+    # 只登记真实遭遇状态转变；生成/checkpoint/只读 tick 不经过这里。
+    from ..core.visual_events import emit_visual
+    values = {'encounter_id': str(record.definition_id),
+              'facility_uid': str(record.scene_uid),
+              'stage': str(stage)}
+    for name, value in facts:
+        values[str(name)] = value
+    return emit_visual(state, kind=kind, outcome=outcome, source=source,
+                       targets=(), paths=(), affected_cells=tuple(cells),
+                       visual_key=visual_key, tier=int(tier), theme=theme,
+                       facts=tuple(values.items()), layer_key='encounter',
+                       source_id=str(record.scene_uid))
+
+
 def _local_encounters(state):
     return [record for record in state.world_ledger.facilities.values()
             if record.layer_key==state.layer_key() and record.definition_id.startswith('encounter.')]
@@ -238,6 +255,12 @@ def _resolve_gate(state,record,method):
         target_uid=record.scene_uid,owner_uid=record.scene_uid,
         position=record.area('gate')[1],cause_uid='gate:'+method,source_kind='encounter',
         before='已布置',after={'state':'通路已开','resolution':method})
+    # 一次真实开路只发一次：真实已开格是 after 事实，不再另造第二次爆散。
+    opened=tuple((x,y) for x,y in record.area('gate') if not state.cell(x,y).solid)
+    _emit_encounter(state,record,'encounter.open','open',
+                    source=(opened[0] if opened else None),cells=opened,
+                    visual_key='fx.explosion',tier=1,theme='',
+                    facts=(('resolution',str(method)),('actual_amount',len(opened))))
     if any(state.is_visible(x,y) for x,y in record.area('gate')):
         state.messages.append(tr('门纹让出了通路，这一次的解法已记下。'))
 
@@ -311,12 +334,21 @@ def tick_tactical_layouts(state,amount):
                 continue
             record.state='预告';record.pending={'remaining':REWRITE_DELAY}
             state.messages.append(tr('走廊的纸纹正在合拢：{n} 个客观回合后，中央通道会变成纸墙。两端仍可退到外圈。',n=REWRITE_DELAY))
+            # 首次进入预告只发一次；remaining 来自本次真实写入的 pending。
+            _emit_encounter(state,record,'encounter.warning','warning',
+                            source=gate,cells=(gate,),
+                            facts=(('remaining',REWRITE_DELAY),),
+                            outcome='entry')
             continue
         before=record.pending.get('remaining',REWRITE_DELAY)
         remaining=max(0,before-amount);record.pending['remaining']=remaining
         for threshold in (3,1):
             if before>threshold>=remaining and remaining>0:
                 state.messages.append(tr('纸纹改写还剩 {n} 个客观回合；可以从任一端退到外圈。',n=remaining))
+                # 跨过 3/1 阈值各一次；remaining 与阈值都取自真实倒计时。
+                _emit_encounter(state,record,'encounter.countdown','countdown',
+                                source=gate,cells=(gate,),
+                                facts=(('remaining',remaining),('threshold',threshold)))
         if remaining>0:continue
         x,y=gate;cell=state.cell(x,y)
         occupied=((state.player.x,state.player.y)==gate or state.entity_at(x,y) is not None
@@ -325,11 +357,24 @@ def tick_tactical_layouts(state,amount):
             if not record.flags.get('deferred'):
                 state.messages.append(tr('中央通道尚有占位或流动材料，纸纹暂缓合拢；移开后才会继续。'))
                 record.flags['deferred']=True
+                # 暂缓只发一次：断开的括框，不播成墙。
+                _emit_encounter(state,record,'encounter.deferred','deferred',
+                                source=gate,cells=(gate,),
+                                facts=(('remaining',remaining),))
             continue
         # Do not replace a wall or feature the player has installed in the meantime.
-        if not cell.solid and not cell.wall_kind:state.configure_wall(cell,'潮解纸墙')
+        new_wall=()
+        if not cell.solid and not cell.wall_kind:
+            state.configure_wall(cell,'潮解纸墙')
+            if cell.solid and cell.wall_kind==GATE_WALL_KIND:
+                new_wall=((x,y),)
         record.state='已改写';record.pending={}
         state.messages.append(tr('中央通道已改写；两侧仍可各自退到外圈，也可以破开纸墙。'))
+        if new_wall:
+            # 只有真实新生成的纸墙格才播重构；已放其他墙体不画成被替换。
+            _emit_encounter(state,record,'encounter.rewrite','rewrite',
+                            source=(x,y),cells=new_wall,
+                            facts=(('remaining',0),('actual_amount',len(new_wall))))
         state._material_index_ready=False
         from .vision import cache
         cache.invalidate(state)

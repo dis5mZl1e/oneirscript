@@ -31,6 +31,6 @@ IDENTITY_RULE_DESCRIPTIONS = {
 
 from .identity_prose import IDENTITY_PROSE
 IDENTITY_DESCRIPTIONS = {
-    key: prose[0] + '\n作用：' + IDENTITY_RULE_DESCRIPTIONS[key].split('。', 1)[1]
+    key: prose[0] + '\n' + IDENTITY_RULE_DESCRIPTIONS[key].split('。', 1)[1]
     for key, prose in IDENTITY_PROSE.items()
 }

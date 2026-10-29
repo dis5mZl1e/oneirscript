@@ -126,6 +126,9 @@ EN_EVENTS_SEP18: dict[str, str] = {
     "按开门键": "Press the door-open button",
     "取走那卷底片": "Take the roll of film",
     "再拍一张": "Take one more shot",
+    "从逆光的底片中取出裁纸刀": "Take the paper cutter from the backlit negative",
+    "反扣的接地腕带沿导电介质接通了 {n} 格电场。":
+        "The reversed grounding band charged {n} conductive cells.",
     "走出幕布": "Step out of the curtain",
     "取下那只挂钩": "Take the hook down",
     "推一推铰链印子": "Push at the hinge marks",

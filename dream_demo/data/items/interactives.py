@@ -123,9 +123,13 @@ ITEMS = {
         "color": "bright_yellow", "effect": "develop_radius", "power": 7, "max_stack": 1,
     },
     "glass_shard": {
+        # 2026-10-26（平衡审计 §11.5）：power 5 → 6。半径 5 与常见件闪光灯泡
+        # 完全同值，少见档买到的却是同一束光。抬到 6 格后与同为少见的信号焰火
+        # 分工：焰火不限量程（blind_scope=sight），碎片是 6 格近旁闪光。
+        # 稀有度不动——植物采集物（薄荷露/熔烛/鼠尾草粉）统一在少见档。
         "name": "彩玻碎片", "category": "交互道具", "rarity": "少见",
-        "description": "彩玻菌的碎壳：5 格内真能看见这束光的失控意识视距减半，共五回合，墙挡住的不会被闪。",
-        "color": "bright_magenta", "effect": "blind", "power": 5, "max_stack": 2,
+        "description": "彩玻菌的碎壳：6 格内真能看见这束光的失控意识视距减半，共五回合，墙挡住的不会被闪。",
+        "color": "bright_magenta", "effect": "blind", "power": 6, "max_stack": 2,
     },
     "dream_bell": {
         "name": "千梦铃", "category": "交互道具", "rarity": "稀有",

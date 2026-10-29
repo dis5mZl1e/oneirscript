@@ -104,6 +104,7 @@ class QoLUIMixin:
         self.query_one('#controls-help').display = True
         self.query_one('#controls-help-scroll').scroll_home(animate=False)
         self._fit_controls_help()
+        getattr(self, '_coach_record_view', lambda: None)()
 
     def _fit_controls_help(self):
         """把键位表放进当前可用区（地图区 / 当前页面），并按窗口变化重排。"""
@@ -426,12 +427,12 @@ class QoLUIMixin:
             self.panel_selection = indices[((indices.index(self.panel_selection) if self.panel_selection in indices else -1)+delta) % len(indices)] if indices else -1
             self._panel_enter_mode = 'inventory'
             self._follow_list_selection()
-            self.refresh_view()
+            self._refresh_navigation_selection()
         elif self.panel_mode == 'tasks':
             count = self._panel_item_count()
             self.panel_selection = (self.panel_selection+delta) % count if count else 0
             self._follow_list_selection()
-            self.refresh_view()
+            self._refresh_navigation_selection()
         else:
             super()._move_panel_selection(delta)
 

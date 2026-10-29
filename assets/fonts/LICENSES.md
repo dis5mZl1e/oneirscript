@@ -37,6 +37,17 @@ ascent 900 / descent -280，不拉伸；源文件为构建素材 `scripts/_fonts
 
 ## 千禧园彩色 emoji 子集
 
+右栏锁图标使用 `DreamStrataLockOutline.ttf`：从同一 Noto Emoji 单色字体
+提取 U+1F512、U+1F513，使用 OFL-1.1，许可全文见 `NotoEmoji-OFL.txt`；
+构建脚本为 `scripts/build_lock_outline_font_261027.py`。
+
+混乱专属异象（嗔影/空心者/伪光者）使用 `DreamStrataChaosOutline.ttf`：
+与锁图标**同源同流程**——从同一 Noto Emoji 单色可变字体在 wght=400 实例化后
+提取 U+1F47F 👿、U+1F5A4 🖤、U+1F607 😇 三个码位，族名
+`Dream Strata Chaos Outline`，不含 COLR/CBDT/sbix/SVG 彩色表；使用 OFL-1.1，
+许可全文见 `NotoEmoji-OFL.txt`；构建脚本为
+`scripts/build_chaos_outline_font_261027.py`。
+
 `DreamStrataMillenniumEmoji.ttf` 从 Noto Color Emoji v2.051 提取 26 个单码位图标，
 保留 CBDT/CBLC 彩色位图，去除组合替换，并以新族名 Dream Strata Millennium Emoji 分发。
 上游字体版权字段保留，许可为 OFL-1.1，全文见 `NotoColorEmoji-OFL.txt`。
@@ -56,6 +67,13 @@ Google LLC；许可全文 `NotoEmoji-OFL.txt`，符号字体许可全文 `OFL.tx
 原始 emoji 文件哈希、各槽来源和等比缩放记录见 `glyph-manifest.json`，
 构建入口 `scripts/build_game_icon_font.py`。旧 `ICONS-LICENSE.txt` 仅对应保留在
 源码 ART 中的原创像素研究稿，不再作为当前字体的发行许可证。
+
+2026-10-25 内容扩展的 E588–E677 图标继续遵循 OFL-1.1。逐码位轮廓来源锁定在
+随仓库的 Noto Emoji、Noto Sans Symbols 2、Noto Sans Math、Noto Serif、Noto Serif SC
+Medium 与 Noto Sans Egyptian Hieroglyphs 字体；来源文件哈希和 Unicode 码位记录在
+`DreamStrataIcons.ttf` 的 `glyph-manifest.json`，每个新增条目也在
+`dream_demo/data/expansion/catalog.json` 中声明。上游版权及许可证文本见
+`UPSTREAM-COPYRIGHTS.txt`、`OFL.txt` 与 `NotoEmoji-OFL.txt`。
 
 
 ## 地图大轮廓槽（2026-10-18，docs/261018方案合集.md 第 7 节）
@@ -101,8 +119,19 @@ Google LLC；许可全文 `NotoEmoji-OFL.txt`，符号字体许可全文 `OFL.tx
 OFL 衍生字体继续 OFL-1.1；三个语义子集继续分别使用 MIT、Apache-2.0、CC-BY-3.0。
 本项目原创图形研究稿已有的 `ICONS-LICENSE.txt` MIT 授权继续保留。
 
-`DreamStrataUnified-Regular.ttf` 为混合许可研究候选：物理合并了 OFL、MIT、Apache
-和 CC BY 来源，尚未取得足以确认整体许可兼容的结论，不能简单列四种许可后认定可发行。
-优先沿用独立文件与字体回退；统一单文件的公开发行须另行复核，必要时替换受限轮廓
-或取得额外授权。现有打包会复制整个目录，应在首次公开发布前排除或解决该候选。
-完整项目许可范围见根目录 `LICENSING.md`。
+`DreamStrataUnified-Regular.ttf` 为物理合并字体，**2026-10-27 复核后已放行随包分发**：
+合并来源是 OFL-1.1（正文底衬与图标轮廓）、MIT（Phosphor 派生）、Apache-2.0（MDI 派生）
+与 CC-BY-3.0（Game-icons 派生）。四者均允许合并；上游许可文本与名称表均未声明
+保留字体名，产物已整体改名为 Dream Strata 系列；产物 cmap 恰为“底衬 + 4 个子集”
+的并集（33,826 码位，无额外来源）；逐源 SHA-256 与 `UPSTREAM-COPYRIGHTS.txt` 一致。
+合并字体整体按 OFL-1.1 分发，嵌入的 MIT／Apache-2.0／CC-BY-3.0 轮廓保留各自许可，
+四份许可全文、NOTICE-MDI 与逐项 Game-icons 署名随包分发。修改说明、证据与复核命令见
+同目录 `UNIFIED-LICENSE-NOTICE.md`；完整项目许可范围见根目录 `LICENSING.md`。
+# Interface Sans (2026-10-29)
+
+DreamStrataInterfaceSans-Regular.ttf is derived from Noto Sans SC, Copyright
+2014-2021 Adobe (http://www.adobe.com/), SIL Open Font License 1.1.
+See InterfaceSans-OFL.txt for the upstream notice and full license.
+Changes: upright weight 450, fixed 500/1000 terminal advances, shared baseline,
+renamed family. Game icons and map glyphs retain the existing dedicated faces.
+Source: https://github.com/google/fonts/tree/main/ofl/notosanssc

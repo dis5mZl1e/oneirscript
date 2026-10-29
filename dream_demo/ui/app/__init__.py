@@ -4,6 +4,7 @@ import time  # noqa: F401  兼容历史 patch("dream_demo.ui.app.time.monotonic"
 from .app import (
     DreamApp, create_session, _sentence_fragments, MapView,
     FX_WRITEBACK_HZ, FX_WRITEBACK_INTERVAL, DECO_FRAME_HZ,
+    set_fx_action_skip_enabled, set_deco_idle_throttle,
 )
 from .board_editor import BoardEditorMixin
 from .css import AppCssMixin
@@ -15,6 +16,7 @@ from .session import SessionMixin
 __all__ = [
     "DreamApp", "I18nFooter", "create_session", "new_run_seed", "_sentence_fragments",
     "MapView", "FX_WRITEBACK_HZ", "FX_WRITEBACK_INTERVAL", "DECO_FRAME_HZ",
+    "set_fx_action_skip_enabled", "set_deco_idle_throttle",
     "AppCssMixin", "NavigationMixin", "BoardEditorMixin",
     "PanelsMixin", "SessionMixin",
 ]

@@ -467,12 +467,14 @@ def always_visible_category(cell: Any) -> str:
 
 
 def _always_visible_category(cell: Any) -> str:
-    wall_kind = str(getattr(cell, "wall_kind", "") or "")
-    if bool(getattr(cell, "solid", False)) and wall_kind in ALWAYS_VISIBLE_WALL_KINDS:
-        return "意识边界"
-    liquid_kind = str(getattr(cell, "liquid_kind", "") or "")
-    if int(getattr(cell, "liquid", 0) or 0) > 0 and liquid_kind in ALWAYS_VISIBLE_LIQUID_KINDS:
-        return "显影液"
+    # 转换只在真正要查表的字段上进行（2026-10-25）：普通地板格以前每格都做
+    # 两次 str() + 一次 int()，而两个集合命中都要求 solid/液体先成立。
+    if bool(getattr(cell, "solid", False)):
+        if str(getattr(cell, "wall_kind", "") or "") in ALWAYS_VISIBLE_WALL_KINDS:
+            return "意识边界"
+    if int(getattr(cell, "liquid", 0) or 0) > 0:
+        if str(getattr(cell, "liquid_kind", "") or "") in ALWAYS_VISIBLE_LIQUID_KINDS:
+            return "显影液"
     return ""
 
 
@@ -496,7 +498,44 @@ def _as_knowledge(snapshot: TerrainMemory, x: int, y: int, status: str,
     )
 
 
-def cell_knowledge(state: Any, x: int, y: int, *, visible=None,
+# ---- CY-6 可选内核调度（2026-10-27）----
+# cell_knowledge 每帧被调用上千次：若每次调用都读环境变量（实测 1000 次约
+# 2.4ms），光是开关判断就会吃掉整步收益。因此开关在首次调用时解析一次并缓存；
+# 进程内改环境（A/B 探针）后调用 refresh_kernel_switch() 重新解析即可。
+_KERNEL_STATE = 0  # 0=未解析 1=纯Python回退 2=内核
+_KERNEL_FN = None
+
+
+def refresh_kernel_switch() -> None:
+    """按 cy_kernels.enabled("knowledge") 重新解析内核开关（A/B 与测试用）。"""
+    global _KERNEL_STATE, _KERNEL_FN
+    _KERNEL_STATE = 0
+    _KERNEL_FN = None
+
+
+def _resolve_kernel_state() -> int:
+    global _KERNEL_STATE, _KERNEL_FN
+    kernel_fn = None
+    try:
+        from ...cy_kernels import enabled
+        use_kernel = bool(enabled("knowledge"))
+    except Exception:  # pragma: no cover - 开关异常时退回原实现
+        use_kernel = False
+    if use_kernel:
+        try:
+            from .knowledge_kernel import cell_knowledge as kernel_fn
+        except Exception:  # pragma: no cover - 内核缺失时退回原实现
+            kernel_fn = None
+            use_kernel = False
+    if use_kernel and kernel_fn is not None:
+        _KERNEL_FN = kernel_fn
+        _KERNEL_STATE = 2
+    else:
+        _KERNEL_STATE = 1
+    return _KERNEL_STATE
+
+
+def cell_knowledge(state: Any, x: int, y: int, visible=None,
                    memory_layer: dict | None = None,
                    developed: set | None = None) -> CellKnowledge:
     """按三层信息规则合并一格的可显示内容（不修改状态）。
@@ -511,7 +550,18 @@ def cell_knowledge(state: Any, x: int, y: int, *, visible=None,
     ``R{realm}:{depth}``）与 ``developed_for_depth()``（每格一次 ``str(depth)`` +
     ``setdefault``）——1017 格就是 1017 次字符串构造。整帧渲染请把这两份传进来；
     单格查询（悬停、详情）照旧不传，行为完全一致。
+
+    CY-6（2026-10-27）：函数体保持原实现不动，只在最前面加一次缓存好的开关
+    判断；内核开启时走编译内核 knowledge_kernel.cell_knowledge（逐字段等价），
+    关闭/缺失/未编译时执行的就是原来的这段代码。开关在首次调用时解析一次并
+    缓存（每格读环境变量实测约 2.4µs/次，会吃掉整步收益）；进程内改环境后
+    调用 refresh_kernel_switch() 重新解析。
     """
+    global _KERNEL_STATE
+    if _KERNEL_STATE == 0:
+        _resolve_kernel_state()
+    if _KERNEL_STATE == 2:
+        return _KERNEL_FN(state, x, y, visible, memory_layer, developed)
     x, y = int(x), int(y)
     if not (0 <= x < state.width and 0 <= y < state.height):
         return CellKnowledge(x=x, y=y, status="unknown")
@@ -521,41 +571,33 @@ def cell_knowledge(state: Any, x: int, y: int, *, visible=None,
         memory_layer = state.terrain_memory.get(state.layer_key()) or {}
     if developed is None:
         developed = state.developed_for_depth()
-    live: list = []
 
-    def snapshot():
-        """实时地形快照（只算一次；只有真要展示实时地形的分支才触发）。"""
-        if not live:
-            live.append(_cell_terrain(cell, turn))
-        return live[0]
-
-    def remembered():
-        """本格记忆快照；``memory_layer`` 已在调用方解析过，这里只查表。"""
-        return memory_layer.get((x, y))
-
+    # 实时地形快照只在「真要展示实时地形」的分支里构造一次（2026-10-21 任务1）；
+    # 2026-10-25 起不再为每格创建两个闭包，直接内联调用。
     if ((x,y) in visible if visible is not None else state.is_visible(x, y)):
-        current = snapshot()
+        current = _cell_terrain(cell, turn)
         return _as_knowledge(current, x, y, "visible", live=True, sources=("sight",),
                              elevation=current.elevation)
     if (x, y) in developed:
-        current = snapshot()
+        current = _cell_terrain(cell, turn)
         return _as_knowledge(current, x, y, "developed", live=True,
                              sources=("developed",), elevation=current.elevation)
-    if bool(getattr(state, "terrain_known", False)):
-        current = snapshot()
+    if (bool(getattr(state, "terrain_known", False))
+            or getattr(state, "realm_id", "") == "toy_memories"):
+        current = _cell_terrain(cell, turn)
         return _with_site(
             _as_knowledge(current, x, y, "terrain_known", live=True,
                           sources=("terrain_known",), elevation=current.elevation),
-            remembered(),
+            memory_layer.get((x, y)),
         )
     category = _always_visible_category(cell)
     if category:
-        current = snapshot()
+        current = _cell_terrain(cell, turn)
         # 恒显类别只公开自己的字段：看见边界或显影液标记不等于知道这一片地势。
         knowledge = _as_knowledge(current, x, y, "always_visible", live=True,
                                   sources=("always_visible", category), elevation=None)
-        return _with_site(knowledge, remembered())
-    memory = remembered()
+        return _with_site(knowledge, memory_layer.get((x, y)))
+    memory = memory_layer.get((x, y))
     if memory is not None:
         source = 'tutorial_chart' if memory.seen_turn == -1 and state.depth == 0 and not state.realm_id else 'memory'
         knowledge = _as_knowledge(memory, x, y, "memory", live=False,
@@ -588,6 +630,11 @@ def encode_terrain_memory(state: Any) -> dict[str, list[list]]:
 
 def decode_terrain_memory(raw: Any) -> dict[str, dict[tuple[int, int], TerrainMemory]]:
     """旧档缺字段 / 条目损坏时逐条跳过，绝不因知识数据拒绝载入整份存档。"""
+    from ...cy_kernels import enabled
+    if enabled("save"):
+        # CY-1 内核：等价解码 + 相同冻结快照复用（frozen dataclass 不可变）。
+        from ..save_kernel import decode_terrain_memory as kernel_decode
+        return kernel_decode(raw)
     decoded: dict[str, dict[tuple[int, int], TerrainMemory]] = {}
     if not isinstance(raw, dict):
         return decoded

@@ -71,6 +71,31 @@ def balance(state, *, resource='lucidity'):
     return total
 
 
+def prepay_one(state, *, min_floor: int = 1):
+    """提前结清**一格**真实药物债务（洞察「药效不等于痊愈」的原语）。
+
+    总债不变少（该付的格数照付），也不提前制造任何恢复：这里只是把最近一格的
+    扣款从"到期时"挪到"现在"。扣款仍走 ``settle_delta`` 的同一条 ``drug_debt``
+    通道，所以缓冲、记录与失败复盘看到的都是同一笔账。
+
+    ``min_floor``：宁可这一手什么都不做，也不把"主动提前结账"变成自杀——
+    付完会让该资源跌到 ≤ ``min_floor`` 时直接返回 None（让到期那笔去扣）。
+    """
+    migrate_legacy(state)
+    rows = [row for row in state.drug_debts
+            if int(row['remaining']) > 0 and float(row['next_due']) > state.time]
+    if not rows:
+        return None
+    row = min(rows, key=lambda r: float(r['next_due']))
+    if int(getattr(state, row['resource'], 0)) <= min_floor:
+        return None
+    settle_delta(state, row['resource'], -1, reason=REASON_DRUG_DEBT,
+                 source=row['source'] + '账单', channel='drug_debt')
+    # next_due 原样保留：剩下的格数仍按原来那一刻扣，提前结的那一格不会连锁提前。
+    row['remaining'] = int(row['remaining']) - 1
+    return row['resource'], str(row['source']), int(row['remaining'])
+
+
 def quote(state, item):
     if item.definition_id == 'unfinished_fullstop':
         return tr('本次新增心智债务 8 点，10 回合分期；登记时应付心智合计 {n} 点（含旧债），不覆盖其他账单。',

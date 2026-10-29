@@ -206,6 +206,13 @@ EN_TAMPER = {
         "Destination: not selected (press V and move the cursor on the map)",
     "落点：观察格 ({x},{y})（V 查看地图可改）":
         "Destination: cursor cell ({x},{y}) (V to change)",
+    "落点：({x},{y})（自动·V 查看地图可改）":
+        "Destination: ({x},{y}) (auto — press V to change it on the map)",
+    "落点：周围没有可用的落点": "Destination: no usable cell around",
+    "周围没有可用的落点": "no usable cell around",
+    "周围没有可以安置的落点。": "No reachable destination around to gather into.",
+    "落点：{where}（V 查看地图可改）": "Destination: {where} (V to change on the map)",
+    "({x},{y})（自动）": "({x},{y}) (auto)",
     "范围提示：{label} · {n} 处 · 排除 {excluded} 处":
         "Range: {label} · {n} targets · {excluded} excluded",
     "{label}（{n} 处）将按当前字词统一生效。":
@@ -252,6 +259,12 @@ EN_TAMPER = {
     "半径内听见的都会径直追来": "everything within the radius that hears it heads straight for you",
     "它仍不会察觉": "it still will not notice",
     "{sentence}，用的是「{name}」的力道": '{sentence}, with the force of “{name}”',
+    "〔{name}〕被{manner}地{action}，失去 {n} 点完整度":
+        '{name} is {manner} {action}, losing {n} integrity',
+    "〔{name}〕被{manner}地惊散 {n} 回合":
+        '{name} is {manner} scattered for {n} rounds',
+    "〔{name}〕被{manner}地打散，只剩原量的 1/{n}":
+        '{name} is {manner} dispersed, leaving 1/{n} of its volume',
     "{enemy}循声向你走来，可这一声没能传出去。":
         "{enemy} walks toward the sound, but the sound does not carry.",
     # ---- 地图篡改：材料专属字词「点燃 / 浸透」（docs §五/六）----
@@ -338,6 +351,14 @@ EN_TAMPER = {
     "把相邻格的弥散印象收进所选格；总量守恒，混合同格可能当场触发反应。":
         "Draw diffuse impressions from adjacent cells into the chosen cell; the "
         "total is conserved, and mixing in one cell may trigger a reaction on the spot.",
+    "把这片液态记忆聚进一个相邻落点：默认最近的可放格，V 查看地图可改；总量守恒。":
+        "Gather this liquid memory into an adjacent destination: the nearest cell "
+        "that can hold it by default; press V to change it on the map. The total "
+        "is conserved.",
+    "把这片弥散印象聚进一个相邻落点：默认最近的可放格，V 查看地图可改；总量守恒。":
+        "Gather this diffuse impression into an adjacent destination: the nearest "
+        "cell that can hold it by default; press V to change it on the map. The "
+        "total is conserved.",
     "这里没有可以拔起的植物。": "There is no plant here to uproot.",
     "相邻没有可以聚拢的东西。": "There is nothing adjacent to gather.",
     "你把「{name}」连根拔起。": "You tear {name} out by the roots.",
@@ -351,6 +372,7 @@ EN_TAMPER = {
     "蒸发": "Evaporate",
     "凝固": "Solidify",
     "沉降": "Settle",
+    "凝结": "Condense",
     "长势": "Growth",
     "干枯": "Withering",
     "形态": "Form",
@@ -362,12 +384,18 @@ EN_TAMPER = {
     "把部分液体按它自己的蒸发产物化为气体；不会蒸发的液体给可读拒绝。":
         "Convert part of the liquid into its own evaporation gas; liquids that do "
         "not evaporate get a readable refusal.",
+    "把部分液体化为气体：有自己的蒸发产物就用它，没有就化成水蒸气。":
+        "Turn part of the liquid into gas: use its own vapour if it has one, "
+        "otherwise it becomes steam.",
     "把可凝固的液体立成一堵新墙（完整度取墙种定义），液体消失。":
         "Turn a solidifiable liquid into a new wall (integrity from the wall "
         "definition); the liquid disappears.",
     "把部分气体凝回对应的液体；没有沉降产物的气体给可读拒绝。":
         "Condense part of the gas back into its liquid; gases without a settle "
         "product get a readable refusal.",
+    "把部分气体凝回对应的液体：有对应液体就用它，没有就凝成水。":
+        "Condense part of the gas back into liquid: use its own liquid if it has "
+        "one, otherwise it becomes water.",
     "这里没有可以催生的植物。": "There is no plant here that can grow.",
     "这株植物已经长到头了。": "This plant has already grown as far as it will.",
     "这里没有可以枯萎的植物。": "There is no plant here to wither.",
@@ -379,6 +407,11 @@ EN_TAMPER = {
     "这里没有可以沉降的气体。": "There is no gas here to settle.",
     "这种气体不会沉下来。": "This gas does not settle out.",
     "分量太少，沉不出东西来。": "There is too little to settle anything out.",
+    "这里没有可以凝结的气体。": "There is no gas here to condense.",
+    "〔{name}〕将化成{gas}": "{name} will turn into {gas}",
+    "〔{name}〕将化成气体": "{name} will turn into gas",
+    "〔{name}〕将凝成{liquid}": "{name} will condense into {liquid}",
+    "〔{name}〕将凝回液体": "{name} will condense back into liquid",
     "〔{name}〕将长高成丛": "{name} will grow into a tall clump",
     "〔{name}〕将提前干枯": "{name} will wither ahead of time",
     "〔{name}〕将按自己的蒸发产物化气": "{name} will evaporate into its own vapour",
@@ -390,6 +423,7 @@ EN_TAMPER = {
     "「{name}」蒸起一缕{gas}。": "{name} gives off a wisp of {gas}.",
     "「{name}」凝成了一堵{wall}。": "{name} sets into a {wall}.",
     "「{name}」沉下一层{liquid}。": "{name} settles out a layer of {liquid}.",
+    "「{name}」凝下一层{liquid}。": "{name} condenses a layer of {liquid}.",
     "以乱代想": "Pay with Chaos",
     "想象力少付 2 点，混乱度多涨 4 点；效果本身不变。":
         "Pay 2 less Imagination and gain 4 more Chaos; the effect itself is unchanged.",
@@ -401,3 +435,11 @@ EN_TAMPER = {
     "这个名字会被从眼前抹去。":
         "This name is wiped from sight.",
 }
+
+# ---- 地图篡改目标类别（2026-10-24 漏翻的「物件」）----
+# 2026-10-25：原译 `Object` 与装备阅读矩阵的语法角色「对象」撞成同一个英文，
+# `test_distinct_labels_keep_distinct_english` 判「不同中文撞同一英文」。这场合
+# 说的是摆在场上的实物（异象／墙体／物件三分），改译 `Prop` 才分得开。
+EN_TAMPER.update({
+    '物件': 'Prop',
+})

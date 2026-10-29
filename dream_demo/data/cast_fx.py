@@ -98,3 +98,10 @@ def skill_visual(skill):
 def visual_duration(visual):
     preset = FX_PROFILES[visual.profile]
     return preset.entry_seconds + preset.cast_seconds + preset.tail_seconds
+
+
+# 扩展包目录的构想：施法表现随目录行登记（effect.fx），与定义行同一批键。
+from .expansion.growth_runtime import ability_fx_rows as _expansion_fx_rows  # noqa: E402
+
+ABILITY_FX.update({key: CastVisual(**row)
+                   for key, row in _expansion_fx_rows().items()})

@@ -192,3 +192,14 @@ EQUIPMENT_ART.update({
     "library.card": _art("#675244", "#f5e9c4", "#9bb9ab", '╠▤', '借阅证'),
     "library.testimony": _art("#675244", "#f5e9c4", "#9bb9ab", '▒╤▒/.╵.', '残页'),
 })
+
+# Each expansion item carries one fixed source glyph, three semantic colors and
+# artwork fitted to its real occupied cells. Shape geometry remains independent.
+from ..data.expansion.catalog import ENTRIES as _EXPANSION_ENTRIES
+for _entry in _EXPANSION_ENTRIES:
+    if _entry['category'] != 'equipment' or not _entry.get('board_art'):
+        continue
+    _art_data = _entry['board_art']
+    EQUIPMENT_ART[_entry['id']] = EquipmentArt(
+        tuple(_art_data['palette']), _art_data['pattern'], _art_data['motif'],
+        _art_data['accent_glyphs'])

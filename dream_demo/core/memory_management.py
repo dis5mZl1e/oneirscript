@@ -19,7 +19,7 @@ def refusal(state):
     return None
 
 
-def unequip_memory(state, memory_id):
+def unequip_refusal(state, memory_id):
     blocked = refusal(state)
     if blocked is not None:
         return blocked
@@ -28,6 +28,13 @@ def unequip_memory(state, memory_id):
         return ActionResult(False, tr('这条记忆已经不在槽中。'))
     if state.inventory_used >= state.inventory_capacity:
         return ActionResult(False, tr('行囊已满，无法取下记忆碎片。'))
+    return None
+
+
+def unequip_memory(state, memory_id):
+    blocked = unequip_refusal(state, memory_id)
+    if blocked is not None:
+        return blocked
     item = state._make_item(memory_id)
     state.memory_fragments.remove(memory_id)
     state._drop_memory_effect(memory_id)
@@ -38,7 +45,7 @@ def unequip_memory(state, memory_id):
     return ActionResult(True, message)
 
 
-def equip_memory(state, instance_id):
+def equip_refusal(state, instance_id):
     blocked = refusal(state)
     if blocked is not None:
         return blocked
@@ -52,6 +59,15 @@ def equip_memory(state, instance_id):
         return ActionResult(False, tr('同一记忆已经装入。'))
     if len(state.memory_fragments) >= MEMORY_LIMIT + state._memory_slot_bonus():
         return ActionResult(False, tr('记忆槽已满，请先取下一条。'))
+    return None
+
+
+def equip_memory(state, instance_id):
+    blocked = equip_refusal(state, instance_id)
+    if blocked is not None:
+        return blocked
+    index = next(i for i, item in enumerate(state.inventory) if item.instance_id == instance_id)
+    item = state.inventory[index]
     state._consume_inventory_item(index)
     state.memory_fragments.append(item.definition_id)
     state._apply_memory_effect(item.definition_id)

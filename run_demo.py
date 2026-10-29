@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+# 2026-10-27 原生 GATE-B：character 后端下 painter 的移动首写 p50 约
+# 68.5ms vs textual 77.4ms（−11~12%），p95 −25%，空闲写请求约减半；
+# 图像/观察/浮层/无边框/headless 会自动回退 Textual。显式设置
+# ONEIRSCRIPT_WORLD_RENDER=textual 可关闭。
+os.environ.setdefault("ONEIRSCRIPT_WORLD_RENDER", "painter")
 
 from rich.console import Console
 
@@ -72,6 +79,9 @@ def main() -> bool | None:
     import os
     app=DreamApp(session)
     app.terminal_compatibility_notice=(args.compat_terminal or not os.environ.get('WEZTERM_PANE'))
+    if not args.terminal_attached:
+        from dream_demo.terminal_launch import fallback_reason
+        app.terminal_compatibility_notice = fallback_reason() or app.terminal_compatibility_notice
     app.run()
 
 

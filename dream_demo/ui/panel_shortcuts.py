@@ -39,7 +39,10 @@ class PanelShortcutsMixin:
         if action=='detail' and (self.aiming or self.sentence_aim is not None):
             self.toggle_aim_detail()
             return True
-        if self._inspection_active() or self.controls_help_open or self.qol_confirmation is not None:
+        sidebar_navigation = action in ('inventory', 'equipment', 'portents', 'insights', 'nearby',
+                                         'actions', 'tasks', 'workspace_prev', 'workspace_next')
+        if ((self._inspection_active() and not sidebar_navigation)
+                or self.controls_help_open or self.qol_confirmation is not None):
             return True
         if action == 'layers' and self.layer_observation is not None:
             self._layer_key('f3')
@@ -68,7 +71,7 @@ class PanelShortcutsMixin:
             else:
                 self.handle_tamper_key('escape')
             return True
-        if (self._modal_menu_open() or self.aiming or self.sentence_aim is not None
+        if (self._modal_menu_open(allow_inspection=sidebar_navigation) or self.aiming or self.sentence_aim is not None
                 or self.layer_observation is not None or self.qol_searching
                 or self.insight_replace_target is not None or self.memory_replace_target is not None):
             return True
@@ -96,15 +99,69 @@ class PanelShortcutsMixin:
             self._open_shortcut_page(action)
         elif action == 'item_detail':
             self._management_open_selected()
+        elif action == 'display_toggle':
+            # 2026-10-24 六工作区：总览页随 ROUTES 重排退场，Alt+W 只留构想固定。
+            if self.panel_mode == 'actions' and self._panel_subpage_id() == 'constructs':
+                self.handle_sidebar_tool('sidebar-pin')
         elif action in ('workspace_prev', 'workspace_next'):
             self._move_panel_tab(-1 if action == 'workspace_prev' else 1)
         elif action == 'history':
-            # The history is a home/menu feature, not a new in-run ability.
+            # 梦境历史（2026-10-24 键位治理 B7）：游戏内不再静默吞键——Esc 菜单
+            # 门槛（_can_open_pause_menu：panel_mode 已回 world、角色静止、无任何
+            # 面板/模式/动作）允许时打开暂停菜单并直达旧梦回忆页；不允许时维持
+            # 原状。暂停菜单态的原入口保留（panel_shortcuts 的模态卫兵在其前，
+            # 这条分支实际是兜底，不动它）。
             if self.panel_mode == 'pause':
                 self._open_history()
+            elif self.panel_mode == 'world' and self._can_open_pause_menu():
+                # 旧梦回忆借用暂停菜单的覆盖机制；仍只允许从事件记录页进入，
+                # 不因 Esc 菜单门槛放宽（2026-10-26）而改变 Alt+8 的旧语义。
+                self._open_ingame_history()
         else:
             self._toggle_panel(action)
         return True
+
+    def _open_ingame_history(self) -> None:
+        """游戏内直达旧梦回忆页（2026-10-24 键位治理 B7）。
+
+        历史页 UI（#history-page）挂在 #home 里，而 #home 在游戏内整体隐藏
+        （与 codex/settings 当年移出 #home 的原因相同，但本页未迁移）——所以
+        借用暂停菜单的覆盖机制：先 open_pause_menu 收起世界布局并复位焦点，
+        再点亮 #home、藏起标题/副标题/主菜单行，只露出回忆页。
+        Esc/Q 逐层退回暂停菜单（on_key 的 home_history 分支与
+        _close_ingame_history）；panel_mode 在此期间是 home_history，
+        已列入 _modal_menu_open，模态卫兵一律生效。
+        """
+        self.open_pause_menu()
+        self._open_history()
+        self.query_one("#pause-menu").styles.display = "none"
+        self.query_one("#home").styles.display = "block"
+        for selector in ("#home-title-row", "#home-subtitle-row", "#home-menu-row"):
+            try:
+                self.query_one(selector).styles.display = "none"
+            except Exception:  # pragma: no cover - 极端尺寸下缺控件的兜底
+                pass
+        self.query_one("#history-page").styles.display = "block"
+        self._refresh_history_view()
+
+    def _close_ingame_history(self) -> None:
+        """收起游戏内旧梦回忆覆盖层：回暂停菜单（B7 的返回路径）。
+
+        只在覆盖层真的开着时动作；#home 的三行装饰恢复默认 display，
+        暂停菜单重新亮出（panel_mode 回 pause，Esc 即「继续」）。
+        """
+        if self.panel_mode != "home_history":
+            return
+        self.panel_mode = "pause"
+        self.query_one("#home").styles.display = "none"
+        for selector in ("#home-title-row", "#home-subtitle-row", "#home-menu-row"):
+            try:
+                self.query_one(selector).styles.display = "block"
+            except Exception:  # pragma: no cover - 极端尺寸下缺控件的兜底
+                pass
+        self.query_one("#history-page").styles.display = "none"
+        self.query_one("#pause-menu").styles.display = "block"
+        self.refresh_view()
 
     def _shortcut_target(self):
         """Alt+D／Alt+C 的目标解析：只认**明确**的观察对象。

@@ -258,6 +258,7 @@ EN_UI: dict[str, str] = {
     "攻速": "Attack Speed",
     "移动": "Move",
     "视野": "Vision",
+    "听觉": "Hearing",
     "创伤": "Trauma",
     "获得": "Gained",
     "快捷目标：": "Shortcuts: ",
@@ -367,6 +368,7 @@ EN_UI: dict[str, str] = {
     "吸入": "inhalation",
     "生物": "Creature",
     "你自己": "yourself",
+    "（{kind}）": " ({kind})",
     "掉落物": "Drop",
     "事件": "Event",
     "联想反馈·{label}：在 {x},{y} 留下一点余温（强度 {strength}）。":
@@ -448,6 +450,28 @@ EN_MESSAGES: dict[str, str] = {
     "意识行囊已满，异常地点暂时无法交付显化物。":
         "Mind inventory full — the site cannot hand over its manifestation yet.",
     "记忆槽替换了 {name}。": "Memory slot replaced {name}.",
+    "缓冲生效：{name}。": "Buffered: {name}.",
+    "你把声音投到 ({x}, {y})：那边响了一声。": "You throw a sound to ({x}, {y}): it rings there once.",
+    "相邻没有可以敲的墙。": "No wall next to you can be knocked on.",
+    "你在 ({x}, {y}) 的墙上敲出节拍：接下来 {n} 回合每回合一响，墙碎即止。": "You knock a beat on the wall at ({x}, {y}): one pulse per turn for {n} turns, ending if the wall breaks.",
+    "{item}的敲击点已经不在了，节拍停了。": "The spot {item} was knocking is no longer there; the beat stops.",
+    "上一次诱引已经过期，或不在本层。": "The last lure has expired, or is not on this layer.",
+    "返场把 ({x}, {y}) 的那声诱引又放了一遍。": "Curtain call replays that lure at ({x}, {y}).",
+    "身边没有被真实照亮的格。": "Nothing around you is genuinely lit.",
+    "留影把当前光照区的 {n} 格地形轮廓记进了记忆。": "Afterimage records {n} tiles of terrain outline from the lit area.",
+    "那一格上没有你自己的构想场。": "No conception field of yours covers that tile.",
+    "那一格没有正在亮着的灯。": "Nothing on that tile is lit right now.",
+    "这盏灯已经被裁过——同一次不叠加。": "That lamp is already narrowed — this does not stack.",
+    "那一格放不下光——墙里没有照出去的路。": "Light cannot be placed there — a wall leaves nowhere to shine.",
+    "那一格本来就有光，换过去会把原来的灯弄丢。":
+        "That tile is already lit; moving the light there would lose the lamp it has.",
+    "你没有自己布下的临时光源可搬。": "You have no temporary light of your own to move.",
+    "光本来就在那一格。": "The light is already on that tile.",
+    "你挡住 ({x}, {y}) 的灯，把它收成朝自己这一侧的扇区，{n} 回合内照不到别处。":
+        "You shade the lamp at ({x}, {y}) into a cone toward yourself: for {n} turns it lights nothing else.",
+    "你把光从 ({ox}, {oy}) 搬到 ({x}, {y})：剩下的 {n} 回合照旧，没有续期。":
+        "You move the light from ({ox}, {oy}) to ({x}, {y}): the remaining {n} turns carry over, with no renewal.",
+    "你收回了 {name}：场不再继续生效，已投下的材料不返。": "You withdraw {name}: the field stops taking effect, and the material already spent is not returned.",
     "获得 {names}。": "Gained {names}.",
     "没有留下可携带的显化物。": "No carryable manifestation was left behind.",
     "回应异常地点：{event}。{insight}{reward}":
@@ -600,7 +624,8 @@ EN_MESSAGES: dict[str, str] = {
     "你对 {target} 造成一次接触创伤。":
         "You dealt a contact trauma to {target}.",
     "放大的身体挤不过这扇门。": "Your enlarged body can't squeeze through this door.",
-    "放大的身体挤不过这道缝隙。": "Your enlarged body can't squeeze through this gap.",
+    "放大的身体挤过缝隙，多花了些时间。":
+        "Your enlarged body squeezes through the gap, costing extra time.",
     "这一步没有花掉任何时间。": "This step cost no time.",
     "粘稠的梦拖住了你的脚步。": "The viscous dream drags at your steps.",
     "你沾染了「{name}」的征兆。": "You caught the “{name}” omen.",
@@ -1800,6 +1825,30 @@ EN_RUN_OPTIONS: dict[str, str] = {
         "Network neighbor knocking · {n} rounds left",
 }
 EN_UI.update({
+ '常规': 'General', '画面': 'Display', '声音': 'Audio', '按键': 'Keys', '数据': 'Data',
+ '新手教程': 'Tutorial', '发射来源': 'Firing sources', '操作提示': 'Controls',
+ '余量 {count}': 'Supply {count}',
+ '↑↓ 选择来源 · Enter/左键 设为当前': 'Up/Down select · Enter/click set source',
+ 'F 瞄准 · R 换弹': 'F aim · R reload',
+ 'Esc 退出瞄准': 'Esc cancel aim',
+ '推荐终端未启动': 'Recommended terminal did not start',
+ 'F 瞄准 · R 换弹 · Esc 退出瞄准': 'F aim · R reload · Esc cancel aim',
+ '瞄准中 ,/< 切换来源 · O 选择敌人': 'While aiming: ,/< sources · O enemy',
+ 'R换弹 · 其他键退出': 'R reload · Other keys exit',
+ '弹药耗尽 · 任意键退出': 'Empty · Any key exits',
+ 'Tab/Shift+Tab 换页 · ↑↓ 选择 · ←→ 调整 · Enter/Space 修改 · Q 返回':
+     'Tab/Shift+Tab pages · Up/Down select · Left/Right adjust · Enter/Space change · Q back',
+ '教程中不修改正式记录。': 'Practice does not modify saved records.',
+ '旧配置兼容项，不再生效；新手教程从普通存档栏独立进入。':
+     'Legacy compatibility setting; tutorial is a separate entry below normal save slots.',
+ '旧配置兼容项，不再生效；地图只保留小角标。':
+     'Legacy compatibility setting; only compact intent badges remain.',
+ '循环行动、行囊、构筑、自身、环境、日志；设置中换页': 'Cycle Act, Pack, Build, Self, Env, Log; change settings pages',
+ '面板选择；←→ 切本区分类；Tab/Shift+Tab 循环六个大菜单；方向主键可在设置中修改':
+     'Select entries; Left/Right change local categories; Tab/Shift+Tab cycle workspaces; movement keys are configurable',
+ '瞄准中切换发射来源': 'Change firing source while aiming',
+ 'R 沿用开局快速再开 · T 独立新手教程 · 其他键返回主页':
+     'R retry with the same choices · T standalone tutorial · Other keys return home',
     'PgUp/PgDn 滚动信息；Home/End 到首尾': 'PgUp/PgDn: scroll info; Home/End: top/bottom',
     '返回图像失败，已保留字符观察与草稿；F2 可重新选择地图模式。':
         'Image return failed. Character inspection and draft kept; use F2 to choose a map mode.',
@@ -1833,6 +1882,22 @@ EN_UI.update({
         'Previewing a tamper does not add chaos. Only the visible risk tier is shown here.',
     '当前篡改报价：想象力 {cost} · 混乱 +{delta} → {after}':
         'Current tamper quote: imagination {cost} · Chaos +{delta} → {after}',
+    # 混乱度「风险分档」说明（2026-10-27）：档位只描述副作用强度，概率不公开。
+    # 逐档行由 signal_status.chaos_tier_lines 从 RISK_TIERS／TIER_EFFECTS 现拼。
+    '风险分档': 'Risk tiers',
+    '档位只描述副作用的强度，具体触发概率不公开；混乱越高，同一类副作用的数值越大。':
+        'Tiers describe only how strong the side effects are; the actual trigger chance is not '
+        'shown. The higher the chaos, the larger the numbers of the same side effects.',
+    '{tier} {low}–{high}：{effects}': '{tier} {low}–{high}: {effects}',
+    '{label}（清醒创伤 {n}）': '{label} (lucidity trauma {n})',
+    '{label}（心智创伤 {n}）': '{label} (mind trauma {n})',
+    '{label}（清醒 {lucidity}／心智 {mind}）':
+        '{label} (lucidity {lucidity} / mind {mind})',
+    '{label}（{n} 处）': '{label} ({n} patches)',
+    '{label}（可能现身）': '{label} (may appear)',
+    '混乱极高时，篡改可能召来专属混乱异象，它们也可能自行靠近。':
+        'At extreme chaos, tampering may summon chaos-exclusive anomalies, and they may '
+        'close in on their own.',
     '返回 · Esc / Alt+N': 'Back · Esc / Alt+N',
 })
 
@@ -1943,13 +2008,10 @@ EN_UI.update({
     'F 进入发射瞄准 · Tab 切换来源 · R 换弹 · 发射按真实弹匣结算。':
         'F to aim · Tab switches source · R reloads · shots use the real magazine.',
     '原句：': 'Original: ',
-    '可改写对象 {n} 处；完整字词、条件与预览请在左侧界面查看。':
-        '{n} rewritable target(s); see the left panel for words, conditions and preview.',
+    '可改写对象 {n} 处。': '{n} rewritable target(s).',
     '打开篡改界面（左侧）': 'Open tamper screen (left)',
-    'C 键同样只打开左侧界面，不切换右侧面板。':
-        'C also opens only the left screen and never switches the right panel.',
+    '按 C 打开完整篡改界面。': 'Press C for the full tamper screen.',
     '视野里没有可以改写的名字。': 'No rewritable name in sight.',
-    'C 键仍可直接打开左侧篡改界面。': 'C still opens the left tamper screen directly.',
 })
 
 
@@ -1957,6 +2019,10 @@ EN_UI.update({
 EN_UI.update({
     '构筑': 'Build', '自身': 'Self', '总览': 'Overview', '周围': 'Nearby',
     '记忆': 'Memory', '数值': 'Stats', '记录': 'Events', '清除搜索': 'Clear search',
+    # 侧栏工具行后四个按钮（2026-10-25）：显示名由 _refresh_sidebar_tools 直给，
+    # 这里补的是 tooltip 与 compose 时的取词。前三个单字按钮同理，避免
+    # 「进游戏前 compose 出来是中文、刷新后才变英文」的闪烁。
+    '折叠': 'Fold', '搜': 'Find', '类': 'Type', '序': 'Sort',
     '已学构想：{n}': 'Learned conceptions: {n}',
     '选择下方内容，或直接在地图行动。': 'Choose a section below, or act on the map.',
     '已装备 {n} 件': '{n} items equipped', '记忆碎片：{n}': 'Memory fragments: {n}',
@@ -1971,12 +2037,30 @@ EN_UI.update({
 EN_UI.update({
     '详查': 'Full details', '数值与来源': 'Stats and sources', '周围对象': 'Nearby objects',
     '视野中没有可列出的对象。': 'No known objects in sight.',
+    '当前对象': 'Current focus',
+    'Enter 查看选中对象的格子详情；F3 / Alt+V 分层观察。':
+        'Enter opens the cell details of the selected object; F3 / Alt+V for observation layers.',
     '盘面占用：{used}/{total}': 'Board space: {used}/{total}',
-    '面板选择（←→/WASD 切本区分类，到端停留；五区用上方文字按钮，原业务快捷键保留）；方向主键可在设置中修改':
+    '面板选择（←→/WASD 切本区分类，到端停留；六区用上方文字按钮，原业务快捷键保留）；方向主键可在设置中修改':
         'Panel selection (Left/Right or WASD change categories and stop at the edges; use the five named tabs or existing direct shortcuts); movement keys are configurable',
 })
 
 EN_UI.update({'上一个右栏分区': 'Previous sidebar workspace', '下一个右栏分区': 'Next sidebar workspace'})
+
+# 右侧「操作·篡改」完整编辑器（2026-10-28）：提交后保持界面、C 键切地图浮层、
+# 以及旧简版摘要页移除后的空状态/重试入口。
+EN_UI.update({
+    '已切到地图侧篡改面板。': 'Switched to the map-side tamper panel.',
+    '这次改写之后，眼前没有可以继续改写的名字了。':
+        'After this rewrite, no name left in sight can be rewritten.',
+    '按 C 打开地图侧篡改面板 / Enter 重试':
+        'Press C for the map-side tamper panel / Enter to retry',
+    '重试：打开篡改界面': 'Retry: open the tamper panel',
+    '正在地图侧篡改。': 'Editing on the map side.',
+    '这一句也能在右栏改：Esc 先回右栏。':
+        'This line can also be edited in the right panel: Esc returns there first.',
+})
+
 
 # 测试模式存档栏（2026-10-23）：与普通槽位页同一套交互。
 EN_UI.update({
@@ -2039,4 +2123,571 @@ EN_UI.update({
  '展开／折叠总览内容':'Expand/collapse overview contents', '固定':'Pinned', '其他':'Other',
  '总览内容已收起；可用上方按钮展开。':'Overview collapsed; use the button above to expand.',
  '固定构想：{n}':'Pinned conceptions: {n}', '可在构想列表中手动固定常用构想。':'Pin frequent conceptions from the Cast list.',
+})
+
+EN_UI.update({
+ '固定构想／折叠总览':'Pin conception / fold overview', '当前行囊／构想搜索':'Search the current pack or conception list',
+ '行囊筛选／排序；征兆页 Alt+L 分类':'Pack filter/sort; Alt+L filters portents',
+ '当前物品比较、来源详情或任务物品':'Current item comparison, stat sources, or task items',
+ '固定构想；总览中展开或折叠':'Pin a conception; expand or collapse an overview',
+ '操作条件已经变化，请重新查看。':'Action conditions changed; review the entry again.',
+ '这个征兆已经结束。':'This portent has ended.',
+ '剩余 {n} 回合':'{n} turns remaining',
+ '展开':'Expand', '日志':'Journal',
+ '没有匹配物品；按 Alt+F 修改搜索，或切换分类。':'No matching items; press Alt+F to edit the search, or choose another category.',
+ '按键须为单个可打印字符或 Alt+字母／数字／方向键。':'Use one printable character, or Alt plus a letter, digit or arrow key.',
+ '面板唤起键必须使用 Alt+字母／数字／方向键。':'Panel shortcuts require Alt plus a letter, digit or arrow key.',
+ # —— 2026-10-24 键位治理批次（A1/A2/B5/B10）——
+ '面板唤起键；只打开界面，不执行其中操作。':'Panel shortcut: opens the interface only; never performs actions inside it.',
+ '右栏子标签：切到当前工作区的上一个子页签（到端停止）。':'Sidebar sub-tab: previous sub-route of the current workspace (stops at the ends).',
+ '右栏子标签：切到当前工作区的下一个子页签（到端停止）。':'Sidebar sub-tab: next sub-route of the current workspace (stops at the ends).',
+ '右栏光标键：向上选中/滚动；不是地图移动键，地图移动用方向键。':'Right-panel cursor key: move selection up / scroll. Not a movement key — the arrow keys move on the map.',
+ '右栏光标键：向下选中/滚动；不是地图移动键，地图移动用方向键。':'Right-panel cursor key: move selection down / scroll. Not a movement key — the arrow keys move on the map.',
+ '右栏光标键：向左切子标签；不是地图移动键，地图移动用方向键。':'Right-panel cursor key: previous sub-tab. Not a movement key — the arrow keys move on the map.',
+ '右栏光标键：向右切子标签；不是地图移动键，地图移动用方向键。':'Right-panel cursor key: next sub-tab. Not a movement key — the arrow keys move on the map.',
+ '进入分层观察后的默认观察层；观察层切换只在本次界面生效，不覆盖本机地图显示偏好。':'Default inspection layer for the layered view; layer switches last for this session only and never overwrite your map display preference.',
+ '焦点：地图':'Focus: map',
+ '焦点：面板':'Focus: panel',
+ '上一个 / 下一个子标签；到端停止（行囊与环境页没有子标签）':'Previous / next sidebar sub-tab; stops at the ends (the Pack and Env pages have no sub-tabs)',
+ '焦点跳栏：右栏行最左按 A 回地图；地图焦点按 D 回右栏（/ 循环切换焦点）':'Focus hop: at the leftmost sub-tab press A to return to the map; on the map press D to jump to the panel (/ cycles focus)',
+ '观察固定与盘面落点':'Observe pin & board landing policy',
+ '物品菜单或详情':'Item menu or details',
+ '确认攻击或替换':'Confirm attack or replacement',
+ '瞄准切换来源':'Cycle firing sources while aiming',
+ '凝听或调试放置':'Listen a turn or debug place',
+ '调试面板开关':'Toggle debug panel',
+ # —— 2026-10-24 右栏焦点提示与命中跳字（app.py 地图提示条，补英文包缺口）——
+ '右栏选择':'Panel',
+ '↑↓ 选择 · ←→ 切页':'↑↓ select · ←→ switch pages',
+ 'Esc 回地图':'Esc returns to the map',
+ '地图操作：方向键 移动 · F 发射 · X 观察 · / 右栏':'Map: arrows move · F fire · X observe · / panel',
+ '挡':'blocked',
+})
+
+# —— 2026-10-24 玩家优化 4 补充：联想盘常驻入口（页签行「盘」按钮）——
+EN_UI.update({
+    '盘': 'M',
+})
+
+# —— 2026-10-24 玩家优化 6：层详情面板（layer_info.py）与层型/修饰符含义 ——
+EN_UI.update({
+    '当前层': 'Current layer',
+    '层名': 'Name',
+    '层型': 'Form',
+    '修饰符': 'Modifier',
+    '修饰符：无——常规层，只有层型本身起作用。': 'Modifier: none — an ordinary layer; only the form itself applies.',
+    '点击顶部层信息行 / 任意键 关闭。': 'Click the layer line on top, or press any key, to close.',
+    '层信息读取失败。': 'Failed to read the layer info.',
+    # 层型含义
+    '房间被递归二分成规整的网格，墙体平直、通路端正。': 'Rooms are carved by recursive bisection into a tidy grid: straight walls, orderly passages.',
+    '房间的底子上墙缘被啃噬，碎屑与噪点撒满全层。': 'A room floor with gnawed wall edges; debris and static scatter the whole layer.',
+    '从一间房向外成片生长的街区，房间彼此贴靠。': 'Blocks grown outward from one seed room, walls pressed wall-to-wall.',
+    '天然洞窟，通路由平滑的洞腔连成。': 'Natural caverns; passages wind through smoothed chambers.',
+    '窄道蜿蜒的回溯迷宫，几乎每条路都通向别处。': 'A winding backtracker maze of narrow corridors; almost every path leads somewhere else.',
+    '一条极长的走廊层，长边约为短边的四倍。': 'One extremely long gallery; the long side is about four times the short one.',
+    '重复的房间模块与环形通路，容易迷路。': 'Repeating room modules and looping passages; easy to get lost.',
+    '开阔地面上散布着短墙与墙块，视野开阔而掩体稀少。': 'Open ground dotted with short walls and wall blocks; wide sightlines, little cover.',
+    '中央大厅配柱列与边室。': 'A central hall flanked by colonnades and side chambers.',
+    '一切开始的地方：没有崩解度，随时可以下潜。': 'Where it all begins: no dissolution, and you may descend at any time.',
+    '梦的尽头：崩解度在暗中累计，只显示回合数。': 'The end of the dream: dissolution accrues silently; only the turn count is shown.',
+    # 修饰符含义
+    '本层每条边放大约四分之一，地面更辽阔。': 'Each side of this layer is about a quarter larger; the ground stretches wider.',
+    '本层每条边缩短约五分之一，遭遇更密集。': 'Each side of this layer is about a fifth shorter; encounters come thicker.',
+    '气体的生成率与存留时间大增，留意吸入效果。': 'Gas spawns far more often and lingers far longer; mind what you breathe.',
+    '液体生成率大增，低洼处容易积水。': 'Liquids spawn far more often; lowlands pool easily.',
+    '植物覆盖率大增。': 'Plant cover rises sharply.',
+    '埋藏的建筑模板更多，稀有模板更常见。': 'More buried architectural templates, and rarer ones appear more often.',
+    '特殊与稀有地板的覆盖率大幅提升。': 'Special and rare floor coverage rises sharply.',
+})
+
+# 环境页左右分块与构想页两块（2026-10-24 深化批次）。
+EN_UI.update({
+    '—— 使用预览 ——': '— Usage Preview —',
+    '习得构想后，这里显示选中一发的形态与施放流程。':
+        'Once you learn constructs, this block shows the selected one\'s form and casting flow.',
+    '弹道': 'Projectile', '位移': 'Blink',
+    'Enter/左键 进入零消耗瞄准，确认时才支付。':
+        'Enter/left-click starts a free aim; you only pay on confirm.',
+    'Enter/左键 立即施放。': 'Enter/left-click casts at once.',
+    '↑↓ 选择构想 · Enter/左键 施放 · Esc 返回地图':
+        '↑↓ choose construct · Enter/left-click cast · Esc back to map',
+    '异象': 'Anomalies', '环境概述': 'Survey',
+    '（视野 {n} 格）': ' ({n} cells in sight)',
+    '总耐久': 'total durability', '总液量': 'total volume', '总气量': 'total gas',
+    '株': 'plants', '均值': 'Mean',
+    '视野内没有墙体固体。': 'No solid walls in sight.',
+    '视觉遮蔽': 'Sight blocked', '遮蔽气/高丛': 'obscuring gas/tall growth',
+    '听觉盲区': 'Sound blind spots', '静步': 'silent steps',
+    '可燃气': 'flammable gas',
+    'Enter 格子详情 · F3/Alt+V 分层观察 · ↑↓ 选择异象':
+        'Enter cell detail · F3/Alt+V layers · ↑↓ pick anomaly',
+    # 2026-10-24 玩家定稿：键位行移到右栏底部 #panel-help，紧邻完整键位表。
+    '↑↓ 选构想 · Enter 施放 · Esc 返回 · 键位表':
+        '↑↓ pick construct · Enter cast · Esc back · keys',
+    '↑↓ 选来源 · Enter 设为当前 · F 瞄准 · R 换弹 · 键位表':
+        '↑↓ pick source · Enter set current · F aim · R reload · keys',
+    'Enter 详情 · F3/Alt+V 分层 · ↑↓ 选异象 · 键位表':
+        'Enter details · F3/Alt+V layers · ↑↓ anomaly · keys',
+})
+
+# —— 2026-10-24 键位定稿：方向键/数字恒移动，WASD 恒控右栏（/ 可交给左浮层）
+# （key_routing / app / controls_help）。
+EN_UI.update({
+    '光标区域：地图（方向键/数字移动；WASD 仍控制右栏）':
+        'Cursor area: map (arrows/digits move; WASD still drives the panel)',
+    '环境风险': 'Environmental risks',
+    'WASD / 滚轮 滚动 · Esc / 点击顶部层信息行 关闭。': 'WASD / wheel: scroll · Esc / click the layer header: close.',
+    '接触效果': 'Contact effects',
+    '吸入效果': 'Inhalation effects',
+    '可燃液体': 'Flammable liquid',
+    '地图尺寸': 'Map size',
+    '探索进度': 'Exploration',
+    '本层停留': 'Time on this layer',
+    '视野内': 'In sight',
+    '光标区域：右侧面板（WASD 选择切页；方向键/数字移动）':
+        'Cursor area: right panel (WASD select and page; arrows/digits move)',
+    '光标区域：左侧浮层（WASD 在浮层内选择）':
+        'Cursor area: left overlay (WASD selects inside the overlay)',
+    '右栏': 'Panel',
+    'WASD 选择 · ←→ 切页': 'WASD select · ←→ switch pages',
+    '方向键/数字移动 · / 切区域': 'arrows/digits move · / switch area',
+    # 右栏焦点提示「Enter 会做什么」（`ui/app/app.py::PANEL_ENTER_HINTS`）。
+    # 这些走 `tr(enter)`，漏登时英文模式下右栏提示会夹一句中文。
+    'Enter 使用/装备': 'Enter use/equip',
+    'Enter 卸下/改装': 'Enter unequip/modify',
+    'Enter 查看构筑': 'Enter view build',
+    'Enter 查看征兆': 'Enter view omens',
+    'Enter 查看自身': 'Enter view self',
+    'Enter 查看数值': 'Enter view stats',
+    'Enter 查看条目': 'Enter view entry',
+    'Enter 执行选中行动': 'Enter run selected action',
+    'Enter 查看周围': 'Enter look around',
+    'Enter 查看任务': 'Enter view tasks',
+    'Enter 继续': 'Enter continue',
+    'Enter 执行选中项': 'Enter run selection',
+    '地图：方向键 / 数字 移动 · WASD 右栏 · / 切区域':
+        'Map: arrows / digits move · WASD panel · / switch area',
+    '左栏：WASD 在浮层内选择 · / 切区域':
+        'Left overlay: WASD selects inside it · / switch area',
+    '移动角色（始终，与区域无关）；小键盘 5 等待可在设置中关闭':
+        'Move the player (always, regardless of area); keypad 5 wait can be disabled in settings',
+    '恒控右栏：W/S 选择 · A/D 切页；左浮层开着时按 / 把 WASD 交给浮层':
+        'Always drives the panel: W/S select · A/D switch pages; with a left overlay open, / hands WASD to it',
+    '切换 WASD 的区域：地图 / 右栏都控右栏，左浮层开着可切给浮层（永不控地图）':
+        'Switch the WASD area: map and panel both drive the panel; with a left overlay open it can take WASD (never the map)',
+    '梦层的边角又渗出一道轮廓——{name}在远处成形。':
+        'A shape seeps out at the edge of the dream — {name} forms in the distance.',
+    '{name}的碎片落进梦里——崩解度 +1。':
+        'Fragments of {name} fall into the dream — dissolution +1.',
+    '你把它推得嵌进阻碍里——{name}碎开了。':
+        'You shove it hard into the obstruction — {name} breaks apart.',
+    '周围区域噪音：{n}/20（最近 {turns} 回合）':
+        'Ambient noise: {n}/20 (last {turns} turns)',
+    '来自你周围区域的真实声音，来源不一定是自己。':
+        'Real sound around your area — not necessarily from you.',
+    '{where}的尾音分辨出来了：{verdict}。':
+        'The tail of {where} resolves: {verdict}.',
+    '声音的方位或远近在两声之间变了，那是移动中的东西':
+        'The bearing or distance shifted between the two sounds — something is moving',
+    '两声的方位与远近都一样，那是固定节律的声响，不是走过来的脚步':
+        'Both sounds share bearing and distance — a fixed rhythm, not footsteps approaching',
+    '借外部灯的亮光，{n} 格地形轮廓记进了记忆。':
+        'Borrowed lamplight: {n} terrain outlines written to memory.',
+    '那个方向': 'that direction',
+    '那处声响': 'that sound',
+    '静音折线落在 ({x}, {y})：跨过这两段缝的声音都少一格余量，视线照旧。':
+        'Quiet fold at ({x}, {y}): sound crossing either seam loses one unit of headroom; sight is untouched.',
+    '积水的年龄：({x}, {y}) 的液体正在{change}。':
+        'Age of the standing water: the liquid at ({x}, {y}) is {change}.',
+    '积聚': 'gathering',
+    '消退': 'ebbing',
+    '阴影会移动：({x}, {y}) 的遮挡轮廓与上次亲见不同。':
+        'Shadows move: the occlusion at ({x}, {y}) differs from the last time you saw it.',
+    '不追最后一声：{name}上次确认的调查目标是 ({x}, {y})。':
+        'No chasing the last sound: {name} last confirmed an investigation target at ({x}, {y}).',
+    '你已经习得这个构想。': 'You have already learned this construct.',
+    '你已经拥有这个洞察。': 'You already have this insight.',
+    '请先安置或放弃待选的洞察。': 'Place or dismiss the pending insight first.',
+    '请先安置或放弃待选的记忆。': 'Place or dismiss the pending memory first.',
+    '事件线索兑现：{name}。': 'Event clue pays off: {name}.',
+    '这次奖励机会已经结束。': 'This reward opportunity has ended.',
+    '这个目标不在当前线索中。': 'That target is not among the current clues.',
+    '请选择要追寻的目标。': 'Choose which target to pursue.',
+    '这个目标目前不能获得。': 'That target cannot be obtained right now.',
+    '{name}：{description}': '{name}: {description}',
+    '返回原事件': 'Back to the event',
+    '这个条目不是成长内容。': 'That entry is not growth content.',
+    '追寻{clue}（与原奖励择一）': 'Pursue {clue} (in place of the original reward)',
+    '这件显化物只能从指定来源获得。': 'This manifested item can only come from its designated source.',
+    '合唱里有一条 {gap} 回合的间隙：先 {a}，后 {b}。两条声线分开记着，不并成一处。':
+        'A gap of {gap} turns splits the chorus: first {a}, then {b}. '
+        'Two separate sound lines, never merged into one place.',
+    '记住的反折面：({x}, {y}) 脚下的材料换了，那条反射记录作废。':
+        'Remembered reflecting face: the material under ({x}, {y}) changed, '
+        'so that bounce note is out of date.',
+    '记住的反折面：本回合核对了 {n} 处亲眼所见的反射面。':
+        'Remembered reflecting face: {n} firsthand surfaces checked this turn.',
+    '认光源而非亮斑：{n} 格是它自己在发光——{cells}，半径 {r}。':
+        'Read the source, not the bright spot: {n} cells glow by themselves — '
+        '{cells}, radius {r}.',
+    '认光源而非亮斑：{n} 格的亮借自眼前确认过的灯——{cells} 归 ({sx}, {sy})。':
+        'Read the source, not the bright spot: {n} cells borrow their light from a '
+        'lamp already in view — {cells} belong to ({sx}, {sy}).',
+    '认光源而非亮斑：{n} 格的亮换了来处——{cells} 现在归 ({sx}, {sy}) 那盏灯。':
+        'Read the source, not the bright spot: {n} cells changed light source — '
+        '{cells} now come from the lamp at ({sx}, {sy}).',
+    '认光源而非亮斑：{n} 格亮着，可眼前没有一盏确认过的灯解释得了它们——{cells}；不据此猜灯在哪。':
+        'Read the source, not the bright spot: {n} cells are lit, yet no lamp in view '
+        'accounts for them — {cells}; that is not a hint about where a lamp hides.',
+    '认光源而非亮斑：{n} 格此刻说不清来处，最近一次确认的仍是 ({sx}, {sy}) 那盏灯。':
+        'Read the source, not the bright spot: {n} cells have no source they can show '
+        'right now; the last one confirmed was the lamp at ({sx}, {sy}).',
+    '先断哪根：断「{line}」落不到任何接收端——那根线不牵着机关。':
+        'Which wire to cut first: severing “{line}” reaches no receiver — '
+        'that line is not holding any mechanism.',
+    '先断哪根：断「{line}」会落到 {receivers}。':
+        'Which wire to cut first: severing “{line}” falls on {receivers}.',
+    '先断哪根：「{line}」眼下不带电，断了不改变什么——它牵着 {receivers}。':
+        'Which wire to cut first: “{line}” carries no current right now, so cutting '
+        'it changes nothing — it runs to {receivers}.',
+    '先断哪根：另有 {n} 根已见线路的落点一并记下。':
+        'Which wire to cut first: {n} more seen lines noted as well.',
+    '先断哪根：「{line}」的落点和上次确认不一样了——现在牵着 {receivers}。':
+        'Which wire to cut first: “{line}” no longer lands where it was last '
+        'confirmed — it now runs to {receivers}.',
+    '先断哪根：{n} 根线牵着没看清的接收端——只说可能有未明连线，不给坐标。':
+        'Which wire to cut first: {n} lines run to receivers still unseen — '
+        'possible uncharted links are noted, never coordinates.',
+    '蒸气的出口：本回合 {n} 格新起了气——{cells}，自 ({sx}, {sy}) 推进。':
+        'Where the steam escapes: {n} cells caught vapor this turn — {cells}, '
+        'pushed in from ({sx}, {sy}).',
+    '蒸气的出口：另有 {n} 格新推进的落点一并记下。':
+        'Where the steam escapes: {n} more cells the front reached are noted as well.',
+    '蒸气的出口：本回合 {n} 格起了气，可上一回合没看见挨着它的气——{cells}；不猜来向。':
+        'Where the steam escapes: {n} cells caught vapor, yet no gas beside them was '
+        'seen last turn — {cells}; the direction is not guessed.',
+    '蒸气的出口：本回合 {n} 格的气退了——{cells}。':
+        'Where the steam escapes: {n} cells lost their vapor this turn — {cells}.',
+    '留意熄灯顺序：({ax}, {ay}) 先于 ({bx}, {by}) 熄灭，两次亲见分别隔 {g1}、{g2} 回合。':
+        'Watch the lights out: ({ax}, {ay}) went dark before ({bx}, {by}); the two witnessed gaps were {g1} and {g2} turns.',
+    '留意熄灯顺序：这一对的上游是亲眼见过的「{label}」 ({x}, {y})。':
+        'Watch the lights out: upstream of this pair is “{label}” at ({x}, {y}), seen with your own eyes.',
+    '留意熄灯顺序：这一对的控制端两次都没看见，按未知记下。':
+        'Watch the lights out: neither control end was seen for this pair — noted as unknown.',
+    '留意熄灯顺序：另有 {n} 对已确认的先后一并记下。':
+        'Watch the lights out: {n} more confirmed orders are noted as well.',
+    '留意熄灯顺序：({ax}, {ay}) 与 ({bx}, {by}) 两次的先后相反，这条推演作废。':
+        'Watch the lights out: ({ax}, {ay}) and ({bx}, {by}) came out in the opposite order the two times — this deduction is void.',
+    '留意熄灯顺序：{n} 对灯在同一回合熄灭，分不出先后——{pairs}。':
+        'Watch the lights out: {n} pairs of lamps went dark in the same turn, so no order can be told — {pairs}.',
+    '亮处未必安全：({x}, {y}) 的「{label}」站在亮区里，它此刻正看得见你（视距 {v}）。':
+        'Bright places aren’t always safe: “{label}” at ({x}, {y}) stands in a lit area and can see you right now (vision {v}).',
+    '亮处未必安全：({x}, {y}) 的「{label}」站在亮区里，眼下隔着遮挡，但你已经在它视距 {v} 之内。':
+        'Bright places aren’t always safe: “{label}” at ({x}, {y}) stands in a lit area; the line is blocked for now, but you are already within its vision {v}.',
+    '亮处未必安全：另有 {n} 个亮区里已确认的视觉型异象一并记下。':
+        'Bright places aren’t always safe: {n} more confirmed visual anomalies standing in light are noted as well.',
+    '同拍才接：另有 {n} 对可提交端口一并记下。':
+        'Same-turn pairing: {n} more pairs of submittable ports are noted as well.',
+    '同拍才接：另有 {n} 对读数改口一并记下。':
+        'Same-turn pairing: {n} more pairs whose reading changed are noted as well.',
+    '同拍才接：「{left}」与「{right}」只过不带记忆的接线，落在「{recv}」时同一回合到。':
+        'Same-turn pairing: “{left}” and “{right}” run only through wiring that remembers nothing, so they arrive at “{recv}” in the same turn.',
+    '同拍才接：「{left}」与「{right}」眼下不同拍——中间那只「{el}」记得住上一回合。':
+        'Same-turn pairing: “{left}” and “{right}” are not on the same beat — “{el}” in between remembers the previous turn.',
+    '同拍才接：「{left}」与「{right}」的下级接得太密，这一眼读不完——未明的延迟标未知。':
+        'Same-turn pairing: “{left}” and “{right}” fan out too densely to read in one glance — the delay is marked unknown.',
+    '同拍才接：「{left}」与「{right}」之间有一截接线没看清——未明的延迟标未知，不猜第几回合到。':
+        'Same-turn pairing: a stretch of wiring between “{left}” and “{right}” was never seen — the delay is marked unknown instead of guessing which turn it lands on.',
+    '看见回流：({x}, {y}) 的出口在退——这一格少了 {n} 单位{medium}，不像是管子往它那边送的样子。原因还得自己再看一眼。':
+        'Spot the Backflow: the outlet at ({x}, {y}) is receding — this tile lost {n} units of {medium}, which is not how a tube feeds it. Look again before naming a cause.',
+    '看见回流：({x}, {y}) 的出口没退，倒是 ({sx}, {sy}) 的源多回来 {n} 单位{medium}——这一眼只报方向反了。原因还得自己再看一眼。':
+        'Spot the Backflow: the outlet at ({x}, {y}) held, but the source at ({sx}, {sy}) took back {n} units of {medium} — this glance only reports that the direction reversed. Look again before naming a cause.',
+    '看见回流：({x}, {y}) 的出口退了 {o} 单位{medium}，({sx}, {sy}) 的源反倒多回 {s} 单位——两头都在倒着走。原因还得自己再看一眼。':
+        'Spot the Backflow: the outlet at ({x}, {y}) gave back {o} units of {medium} while the source at ({sx}, {sy}) took back {s} — both ends running the wrong way. Look again before naming a cause.',
+    '看见回流：另有 {n} 处已见出口的逆流一并记下。':
+        'Spot the Backflow: {n} more changed visible outlets are noted as well.',
+    '看见回流：重新看到 ({x}, {y}) 的出口——读数从 {was} 变成 {now}。这一眼仍只报数，不替它说原因。':
+        'Spot the Backflow: looked at the outlet at ({x}, {y}) again — the reading went from {was} to {now}. This glance still only reports numbers, not a cause.',
+    '看见回流：另有 {n} 处重新看到的出口读数一并记下。':
+        'Spot the Backflow: {n} more re-read outlets are noted as well.',
+    '看见回流：{n} 处报过的逆流还没重新看到出口的新读数——不替它们猜原因。':
+        'Spot the Backflow: {n} reported backflows have not been seen again with a new outlet reading — no cause is guessed for them.',
+    '沿这一向我确认过的地形只到 {n} 格，再往外是没亲自走过的地方。它不报边界之外有什么。':
+        'Along this bearing my confirmed ground reaches only {n} tiles; past it is ground I have not walked myself. It says nothing about what lies past the edge.',
+    '边界更深：({x}, {y}) 的出口在{bearing}、约 {distance} 格外——{tail}':
+        'The Boundary Runs Deeper: the exit at ({x}, {y}) lies to the {bearing}, about {distance} tiles off — {tail}',
+    '这一向我连一格确认过的地形都没有，边界在哪说不清。':
+        'Along this bearing I have not confirmed a single tile of ground, so I cannot say where the edge is.',
+    '出口还在已确认的地形里，走得过去。':
+        'The exit is still inside confirmed ground — walkable.',
+    '边界更深：另有 {n} 处看得见的出口一并记下。':
+        'The Boundary Runs Deeper: {n} more visible exits are noted as well.',
+    '边界更深：重新对上 ({x}, {y}) 的出口——现在在{bearing}、约 {distance} 格外，{tail}':
+        'The Boundary Runs Deeper: the exit at ({x}, {y}) lines up again — now to the {bearing}, about {distance} tiles off, {tail}',
+    '边界更深：另有 {n} 处出口改了读数一并记下。':
+        'The Boundary Runs Deeper: {n} more exits with changed readings are noted as well.',
+    '留给对方一拍：({x}, {y}) 的「{label}」这一招「{skill}」连听两回蓄势，两次起手之间隔了 {gap} 回合。它不预测下一回收在哪里。':
+        'Leave It a Beat: the rhythm of "{skill}" from "{label}" at ({x}, {y}) -- two wind-ups I heard, {gap} turns between the starts. It does not predict where the next one lands.',
+    '留给对方一拍：另有 {n} 条节拍读数一并记下。':
+        'Leave It a Beat: {n} more rhythm readings are noted as well.',
+    '留给对方一拍：「{label}」换了要蓄势的那一招——先前「{skill}」那条节拍不作数了。':
+        'Leave It a Beat: "{label}" switched which move it is winding up -- the rhythm I had for "{skill}" no longer counts.',
+    '留给对方一拍：另有 {n} 条作废一并记下。':
+        'Leave It a Beat: {n} more voided rhythms are noted as well.',
+})
+
+# ---- 光与土构想第二批（2026-10-25）：借昼 / 逐格熄灯 / 犁沟 / 抬沿 ----
+EN_UI.update({
+    "那不是一盏灯。": "That is not a lamp.",
+    "那盏灯不在你能碰的地方。": "That lamp is not somewhere you can reach.",
+    "那一格没有亮着的灯。": "No lamp on that tile is burning.",
+    "那盏灯已经暗到借不出光。": "That lamp is too dim to lend any light.",
+    "你脚下本来就比那盏灯亮。": "The ground you stand on is already brighter than that lamp.",
+    "你从 ({x}, {y}) 那盏灯借了三回合光：脚下亮起来，那盏灯暗了一档。":
+        "You borrow three turns of light from the lamp at ({x}, {y}): your footing lights up and that lamp drops a step.",
+    "可见范围里没有你能碰的灯。": "No lamp you can work is in sight.",
+    "你记下 {n} 盏灯：接下来每回合熄一盏，机关灯不在此列。":
+        "You mark {n} lamps: one goes dark each turn, and locked mechanism lamps are not among them.",
+    "这条沟要三格都看得见，且都不在保护面上。":
+        "The furrow needs all three tiles in sight and none of them on a protected surface.",
+    "那一段已经到底了。": "That stretch is already at the bottom.",
+    "挖出来的土没地方放——两侧都接不下这一档。":
+        "The dug soil has nowhere to go: neither side can take that step.",
+    "你在这一段犁出三格沟，挖出的 {n} 档土堆到两侧。":
+        "You plough a three-tile furrow there and pile the {n} steps of soil on either side.",
+    "你脚下这一格没有可以取土的邻格。": "The tile you stand on has no neighbour to take soil from.",
+    "你脚下这一格不能挖。": "You cannot dig the tile you are standing on.",
+    "取土和落沿的两格都得看得见、且不在保护面上。":
+        "Both the soil source and the rim tile must be in sight and off protected surfaces.",
+    "那一格已经是最高的低沿了。": "That tile is already the highest a low rim goes.",
+    "取土那一格已经到底了。": "The soil source is already at the bottom.",
+    "你从 ({sx}, {sy}) 取了一档土，把 ({x}, {y}) 抬成一道低沿。":
+        "You take a step of soil from ({sx}, {sy}) and raise ({x}, {y}) into a low rim.",
+})
+
+# ---- 电路与边界构想第三批（2026-10-25）：短接 / 析出 / 复核脉冲 / 边界回折 ----
+EN_UI.update({
+    "那一格上没有可以短接的端口。": "There is no port on that tile to jumper.",
+    "那是设施自己的接线，不归你改。": "That wiring belongs to the facility; it is not yours to change.",
+    "你把 ({x}, {y}) 那个端口短接了三回合：这段时间它一直是通的。":
+        "You jumper the port at ({x}, {y}) hot for three turns: it reads as live the whole time.",
+    "那一格里没有能接出来的东西。": "There is nothing in that tile to draw out.",
+    "你手上没有能接住它的空容器。": "You are not carrying an empty container to catch it.",
+    "容器里已经装了别的东西。": "The container already holds something else.",
+    "容器已经满了。": "The container is already full.",
+    "接不出来了——这一格里的东西不归你动。": "It will not draw out: what is in that tile is not yours to move.",
+    "你把 ({x}, {y}) 里的一组分接进 {item}，反应不会被倒着走。":
+        "You draw a component out of ({x}, {y}) into {item}; no reaction runs backwards for it.",
+    "本层还没有你自己发出的信号可复核。": "You have sent no signal of your own on this layer to recheck.",
+    "那个端口已经不在了。": "That port is no longer there.",
+    "那处端口不是能复送的脉冲。": "That port is not a pulse you can resend.",
+    "你把 ({x}, {y}) 那一次脉冲又送了一遍：机关自己的次数限制没有回到起点。":
+        "You send the pulse at ({x}, {y}) again: the mechanism's own count does not go back to the start.",
+    "两头得隔开一点：太近了不用折，太远了折不过去。":
+        "The two ends need some distance: too close and there is nothing to fold, too far and it will not fold.",
+    "两头都得是空位。": "Both ends have to be empty ground.",
+    "那一头你还没亲自走到过。": "You have not walked to that end yourself yet.",
+    "那一头压在机关面上——折不通。": "That end sits on a mechanism surface: the fold will not take.",
+    "你把边界折了一道：({ax}, {ay}) 与 ({bx}, {by}) 之间只隔一步。":
+        "You fold the boundary once: ({ax}, {ay}) and ({bx}, {by}) are now a single step apart.",
+})
+
+# ---- 构想第四批（2026-10-25）：开气窗 / 压膛 / 退壳 / 排线 / 迟发 / 缓拍 / 封炉 / 冷铸 / 代为护理 ----
+EN_UI.update({
+    "那一格不是已经有的开口。": "That tile is not an opening that already exists.",
+    "那是保护面——气窗不开在保护墙上。": "That is a protected surface: vents do not go into protected walls.",
+    "这一段已经开过气窗了。": "A vent is already open on this stretch.",
+    "你在 ({x}, {y}) 开了个气窗：这一段的气会散得更快，{n} 回合后自己合上。":
+        "You open a vent at ({x}, {y}): gas here clears faster, and it closes by itself in {n} turns.",
+    "弹匣是空的——压不了膛。": "The magazine is empty; nothing to press in.",
+    "上一发还压在里面没打出去。": "The last round is still pressed in and unfired.",
+    "你多压了一发：下一发打出去会多穿 {n} 档。":
+        "You press in an extra round: the next shot pierces {n} more steps.",
+    "手上没有能打空的弹匣。": "You are not holding a magazine you can empty.",
+    "你把弹匣里剩下的 {n} 发一次打空，地上落了一层壳。":
+        "You empty the remaining {n} rounds at once; a layer of casings drops.",
+    "你脚下这一格没有方向可量。": "There is no bearing to measure from the tile you stand on.",
+    "这一向上没有看得见的格子。": "No tile along that bearing is in sight.",
+    "你沿这一向把弹道排出来：{n} 格记进了记忆，一枪没开。":
+        "You lay the trajectory out along that bearing: {n} tiles go into memory, not a shot fired.",
+    "没有可以压进膛的弹。": "There is no round to press in.",
+    "你先把这一发压在那里：({x}, {y}) 会在 {n} 回合后响一枪，那里没有人。":
+        "You press the round in place: ({x}, {y}) will crack one shot in {n} turns, and nobody is there.",
+    "那一格上没有端口。": "There is no port on that tile.",
+    "那处端口不是能缓一缓的脉冲。": "That port is not a pulse you can slow down.",
+    "那处端口上没有还没走完的信号。": "No signal is still running at that port.",
+    "你把 ({x}, {y}) 那一次信号压慢了一拍，它多留了一回合。":
+        "You slow the signal at ({x}, {y}) by a beat; it lingers one more turn.",
+    "那一格上没有能临时封住的破口容器。":
+        "There is no cracked vessel on that tile to seal for now.",
+    "那一格里的东西凝不住——要么没有液体，要么已经在凝了。":
+        "What is on that tile will not set: either there is no liquid, or it is already setting.",
+    "你把 ({x}, {y}) 里的 {n} 单位就地凝住了，那块地方现在走不过人。":
+        "You set the {n} units at ({x}, {y}) where they stand; nobody walks through that spot now.",
+    "那一格上不是能接受护理的人。": "There is nobody on that tile who can take the care.",
+    "得挨着才施得了手。": "You have to be right beside them to do this.",
+    "你身上没有可以递过去的恢复品。": "You are carrying nothing restorative to hand over.",
+    "你把 {item} 递给了 {name}：恢复算在它身上，账还记在你名下。":
+        "You hand {item} to {name}: the recovery counts for them, the debt stays in your name.",
+})
+
+# ---- 洞察 A 批（2026-10-25）：墙后的空腔／反应留下出口／药效不等于痊愈 ----
+EN_UI.update({
+    "墙后的空腔：({x}, {y}) 后面的回声{band}——{shape}。里面有什么、怎么进去，这一手听不出来。":
+        "Hollow in the wall: the echo behind ({x}, {y}) is {band} — {shape}. "
+        "What is inside and how to get there is not something this knock can tell.",
+    "很短": "very short",
+    "偏短": "short",
+    "偏长": "on the long side",
+    "很长": "very long",
+    "墙后立刻又是实的": "the wall is solid again right behind it",
+    "墙后只有一线空处": "there is only a sliver of space behind it",
+    "墙后是一片不大的空处": "it opens into a small pocket of space",
+    "墙后连着更大的空处": "it opens into a larger hollow",
+    "反应留下出口：把{item}倒进 ({x}, {y}) 会生成{product}——"
+    "这是已知会产气的最近一格；没见过的通路不能当安全。":
+        "A reaction leaves an exit: pouring {item} onto ({x}, {y}) produces {product} — "
+        "the nearest tile known to give off gas. A route you have not seen is not a safe one.",
+    "药效不等于痊愈：你把「{item}」的一格账提前结了——{resource} −1，还剩 {n} 格；"
+    "总债没有变少，也没有提前恢复什么。":
+        "Medicine is not recovery: you settle one instalment of “{item}” early — "
+        "{resource} −1, {n} instalments left. The total debt is no smaller, and nothing healed early.",
+})
+
+# ---- 洞察 B 批（2026-10-25）：数清空响／光圈的边缘 ----
+EN_UI.update({
+    "数清空响：{name} 这一仓是你自己打空的——下一次换弹的第一步会快一点，"
+    "该付的费用一分不少。":
+        "Counting the empty clicks: you emptied {name} yourself — the first step of its next "
+        "reload goes a little faster, and the usual cost is still paid in full.",
+    "光圈的边缘：你在明暗交界停了一手——下一步跨进暗处，露光少一格；"
+    "踏进别的真实光源就作废。":
+        "The edge of the lit circle: you paused on the light-dark boundary — the next step into "
+        "the dark shows one tile less of you. Stepping into any other real light voids it.",
+})
+
+# ---- 洞察 C 批（2026-10-25）：先让它沉下去 ----
+EN_UI.update({
+    "先让它沉下去：({x}, {y}) 刚相变完，这时候取液沾不上表面附着——"
+    "身上的东西该发作还是发作。":
+        "Let it settle first: ({x}, {y}) has just changed phase — taking liquid now leaves no "
+        "surface residue on you, though whatever you already carry still acts as it would.",
+    "先让它沉下去：这一格刚相变完，表面附着没有跟上你——"
+    "身上的东西该发作还是发作。":
+        "Let it settle first: this tile only just changed phase, so the surface residue does not "
+        "latch onto you — whatever you already carry still acts as it would.",
+})
+
+# ---- 洞察 D 批（2026-10-25）：落笔之前 ----
+EN_UI.update({
+    "落笔之前：你把 ({x}, {y}) 那发朝向{old}的构想转到{new}——"
+    "落点、范围与剩下的 {n} 回合一个数都不动。":
+        "Before the pen touches: you turn the pending construct at ({x}, {y}) from {old} to "
+        "{new} — the landing tile, the reach and the {n} turns still on the clock all stay put.",
+})
+
+# ---- 洞察 E 批（2026-10-25）：先看落差／不把亮灯当通电／一声两种来处 ----
+EN_UI.update({
+    "先看落差：脚下的地势比 {where} 高——从这里倒液会先往那边走，"
+    "这一份可以分两段确认。":
+        "Mind the drop first: the ground under you is higher than {where} — liquid poured here "
+        "will run that way first, so this measure can be confirmed in two stages.",
+    "先看落差：这一手只走了一半，剩下的还在容器里——"
+    "看过这一段的反应，再倒一次才倒完。":
+        "Mind the drop first: this pour only went half way — the rest is still in the container. "
+        "Watch what this part does, then pour again to finish.",
+    "不把亮灯当通电：附近那条线亮着，不等于通着电——你身上还有 {n} 层积电；"
+    "贴着一个端口断开、验过电再接线，能泄掉一层，灯灭不算断电。":
+        "A lit wire is not a live check: the line nearby glows, but glowing is not being live — "
+        "you still carry {n} layers of charge. Break the line at a port you can reach, verify it, "
+        "and rewiring sheds one layer; a dark lamp is not the power being off.",
+    "不把亮灯当通电：你就着这条线断了电、验了一下——身上泄掉一层积电，"
+    "灯亮不亮都不算断电。":
+        "A lit wire is not a live check: you broke the line here and verified it — one layer of "
+        "charge bleeds off you. Whether the lamp glows says nothing about the power.",
+    "一声两种来处：这一声是经传声筒从 ({x}, {y}) 转过来的——"
+    "原声在那一头，不在这边。":
+        "One sound, two places: this one was relayed through the speaking tubes from ({x}, {y}) — "
+        "the original sound is at that end, not here.",
+    "一声两种来处：这一声是传声筒转过来的，入口 ({x}, {y}) 你没亲眼见过——"
+    "另一头不替你追。":
+        "One sound, two places: this one came through the speaking tubes, and you have not seen "
+        "the mouth at ({x}, {y}) yourself — the other end is not traced for you.",
+    "经传声筒转发，入口：({x},{y})": "relayed through the speaking tubes, mouth: ({x},{y})",
+    "经传声筒转发（入口未见）": "relayed through the speaking tubes (mouth unseen)",
+})
+
+# ---- 洞察 F 批（2026-10-25）：桌面不是地面／听出填装间隙／留下最后一条路 ----
+EN_UI.update({
+    "桌面不是地面：你多站了一回合，慢慢把东西取下来——"
+    "陷阱没踩响，石台照旧发了信号。":
+        "A table is not the floor: you stood one extra turn and lifted the thing off slowly — "
+        "the trap never fired, and the slab still sent its signal.",
+    "桌面不是地面：{where} 底下有机关——多站一回合慢慢取，陷阱就不响；"
+    "石台照旧发信号，机关石台也照旧触发。":
+        "A table is not the floor: there is a mechanism under {where} — stand one extra turn and "
+        "take it slowly, and the trap stays quiet; the slab still signals, and trigger slabs "
+        "still trigger.",
+    "听出填装间隙：{name} 还差 {n} 步装填——这一步的声音大约传到 {step} 格，"
+    "最后那一步更响（{done} 格）。":
+        "Hearing the reloading gap: {name} is {n} step(s) short — that step carries about "
+        "{step} tiles, and the last one is louder ({done} tiles).",
+    "留下最后一条路：{where} 一堵上，你已经知道的那片就断了——"
+    "没见过的通路不能当退路。":
+        "Keep one route open: block {where} and the part you already know is cut off — a route "
+        "you have never seen is not a way back.",
+})
+
+# ---- 洞察 G 批（2026-10-25）：先看掩体边／不白退一发／空仓不是失手 ----
+EN_UI.update({
+    "先看掩体边：这面掩体两侧都被堵着——要换个出手的位置，得先挪身。":
+        "Mind the edge of cover: both sides of this cover are blocked — a different firing "
+        "position means moving first.",
+    "先看掩体边：{where} 能从掩体旁边出手，人不用挪；"
+    "越过掩体的弹道还是按老规矩算。":
+        "Mind the edge of cover: {where} lets you shoot from beside the cover without moving; "
+        "any path over the cover is still traced the usual way.",
+    "不白退一发：{name} 膛里还有 {n} 发——退壳会打掉 {fired} 发，"
+    "最后那一发留在膛里，随时能打出去。":
+        "Not a wasted round: {name} still has {n} in the magazine — dumping it fires {fired} "
+        "and keeps the last one chambered, ready to go.",
+    "不白退一发：{name} 膛里只剩 {n} 发——退壳就真打空了，留不下东西。":
+        "Not a wasted round: {name} is down to {n} — dumping it really does empty the magazine, "
+        "with nothing kept back.",
+    "空仓不是失手：{name} 看见你枪口空着，你就势慢条斯理地做出一次装填——"
+    "机括响在自己脚下，看它敢不敢顺着这声音过来。":
+        "An empty magazine is not a miss: {name} saw your muzzle run dry, so you take your time "
+        "through a fake reload — the mechanism clicks at your own feet; let it dare to come to "
+        "that sound.",
+    "你把弹匣里剩下的 {n} 发一次打空，地上落了一层壳——"
+    "最后那一发留在膛里，随时能打出去。":
+        "You dump the remaining {n} rounds at once and a layer of casings hits the floor — the "
+        "last one stays chambered, ready to fire.",
+    "假装填": "Fake Reload",
+    "留意产物：({x}, {y}) 这一格在走你见过的那条反应——{kind}与{gas}出的是{product}，"
+    "没见过的组合不替你反演。":
+        "Watching the product: ({x}, {y}) is running a reaction you have seen before — {kind} "
+        "and {gas} give {product}. A combination you have never seen is not worked out for you.",
+    "熔断前的气味：脚下这块压电地板已经蓄了 {n} 层，再有 {left} 层就要放电——"
+    "这只报你踩着的那一格，墙后的线路它闻不出来。":
+        "The smell before the fuse blows: this piezoelectric floor underfoot holds {n} layers, "
+        "{left} more and it discharges. It reports only the tile you stand on; wiring behind "
+        "walls gives off no smell.",
+    "看完再签：{name} 桌上的这一笔要抽走 {what}——按下之前都还能退，"
+    "付不出就不会成交。":
+        "Read before signing: this offer on {name}'s table takes {what} — you can still back out "
+        "before choosing, and an offer you cannot pay for will not close.",
+    "{item} ×{n}（行囊里有 {owned}）": "{item} ×{n} ({owned} in the pack)",
+    "摄入物/易逝物 ×{n}（行囊里有 {owned}）":
+        "food or perishables ×{n} ({owned} in the pack)",
+    "可支付的携带意象 ×{n}（行囊里有 {owned}）":
+        "payable carried images ×{n} ({owned} in the pack)",
+    "页码没有走动：({x}, {y}) 这一页就是这一刻记下的——"
+    "它和你眼前看到的是同一段走廊。":
+        "The page has not turned: ({x}, {y}) was written down at this very moment — it is the "
+        "same corridor you are looking at.",
+    "页码没有走动：({x}, {y}) 这一页还是 {age} 回合前记下的，"
+    "中间没再翻过——旧页当不了同一段走廊的凭据。":
+        "The page has not turned: ({x}, {y}) was last written {age} turn(s) ago and has not been "
+        "turned since — a stale page is no evidence of the same corridor.",
 })

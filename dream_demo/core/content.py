@@ -201,6 +201,7 @@ def items_of_rarity(rarity: str, categories: tuple[str, ...] | None = None) -> t
         item_id for item_id, definition in ITEM_DEFINITIONS.items()
         if definition.get("rarity") == rarity
         and definition.get("loot", True) is not False
+        and not definition.get("expansion_catalog_id")
         and (categories is None or definition["category"] in categories)
     )
 
@@ -266,14 +267,25 @@ def equipment_pool_for_depth(depth: int) -> tuple[str, ...]:
     - 28–30 ：T3×2 为主 + 门之回廊独特件（约 2/22）。
     """
     if depth >= 28:
-        return DEEP_BOUNDARY_EQUIPMENT_POOL + UNCONSCIOUS_EQUIPMENT_POOL * 2
-    if depth >= 21:
-        return UNCONSCIOUS_EQUIPMENT_POOL * 2 + HALLUCINATION_EQUIPMENT_POOL
-    if depth >= 18:
-        return HALLUCINATION_EQUIPMENT_POOL * 2 + UNCONSCIOUS_EQUIPMENT_POOL
-    if depth >= 11:
-        return HALLUCINATION_EQUIPMENT_POOL * 2 + EQUIPMENT_POOL
-    return EQUIPMENT_POOL
+        base = DEEP_BOUNDARY_EQUIPMENT_POOL + UNCONSCIOUS_EQUIPMENT_POOL * 2
+    elif depth >= 21:
+        base = UNCONSCIOUS_EQUIPMENT_POOL * 2 + HALLUCINATION_EQUIPMENT_POOL
+    elif depth >= 18:
+        base = HALLUCINATION_EQUIPMENT_POOL * 2 + UNCONSCIOUS_EQUIPMENT_POOL
+    elif depth >= 11:
+        base = HALLUCINATION_EQUIPMENT_POOL * 2 + EQUIPMENT_POOL
+    else:
+        base = EQUIPMENT_POOL
+    # G-permission practical reworks join the existing random equipment route.
+    # D-permission rows stay out until their matching event offer exists.
+    from ..data.expansion import by_category
+    expansion_pool = tuple(
+        entry["id"] for entry in by_category("equipment")
+        if (entry.get("integration_status") == "runtime"
+            and entry.get("source_permission") == "G"
+            and int(entry.get("min_depth", 0) or 0) <= int(depth))
+    )
+    return base + expansion_pool
 
 
 # 无意识领域异象池：普通（4）/ 强烈（4）。核心执念（初啼之核）严格限制于 27 层。
@@ -499,6 +511,8 @@ def event_effective_options(state: Any, event: Any) -> tuple[dict[str, Any], ...
     from .tamper_views import resolve_tamper_options, target_for_event
 
     options = tuple(getattr(event, "options", ()) or ())
+    from .expansion_rewards import event_options
+    options = event_options(state, event, options)
     return resolve_tamper_options(state, target_for_event(state, event), options)
 
 
@@ -798,7 +812,7 @@ def event_option_parts(option: Mapping[str, Any]) -> tuple[tuple[str, dict[str, 
     for key, label in (("mind", "心智"), ("lucidity", "清醒度"), ("imagination", "想象力")):
         amount = int(option.get(key, 0) or 0)
         if amount:
-            parts.append(("{label} {sign}{n}", {"label": label, "sign": "+" if amount > 0 else "−", "n": abs(amount)}))
+            parts.append(("{label} {sign}{n}", {"label": tr(label), "sign": "+" if amount > 0 else "−", "n": abs(amount)}))
     return tuple(parts) if parts else (("无额外结算", {}),)
 
 

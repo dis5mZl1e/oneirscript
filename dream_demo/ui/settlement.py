@@ -161,7 +161,7 @@ class SettlementScreen(OrnamentBorderMixin, ScrollView, can_focus=False, inherit
         else:
             self._review_lines = []
         if state.run_start_choices:
-            self._prompt = tr("R 沿用开局快速再开（跳过教学） · T 沿用开局重做教学 · 其他键返回主页")
+            self._prompt = tr("R 沿用开局快速再开 · T 独立新手教程 · 其他键返回主页")
         self.active = True
         self.frame = 0
         self.scroll_y = self.scroll_target_y = 0

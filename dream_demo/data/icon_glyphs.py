@@ -5,7 +5,7 @@ occupies one terminal column followed by a reserved space, never a raw wide char
 The font builder uses OFL Noto Emoji/Symbols outlines in the reading grid.
 ART retains the original studies for reference; it is not rendered or built.
 """
-from rich.cells import set_cell_size
+from ..cell_size import set_cell_size
 from ..env_compat import flag as env_flag
 
 FAMILY = 'Dream Strata Icons'
@@ -287,6 +287,25 @@ MAP_ICON_EXTRA_3 = (
     ('plant.glass_shroom', '✱', 'plant'),
     ('plant.thorn_vine', '✽', 'plant'),
     ('plant.bubble_algae', '°', 'plant'),
+    # 三位面专属 15 种（2026-10-26）：图片地图缩小时也要认得出是「哪一种」，
+    # 不能 15 种共用一朵花的轮廓。
+    ('plant.millennium.tape_tangle', '≋', 'plant'),
+    ('plant.millennium.dial_reed', '♬', 'plant'),
+    ('plant.millennium.contact_whisker', '⌁', 'plant'),
+    ('plant.millennium.frame_shard', '▥', 'plant'),
+    ('plant.millennium.frame_shard_flat', '▭', 'plant'),
+    ('plant.millennium.heat_filament', '❈', 'plant'),
+    ('plant.library.page_ridge', '▤', 'plant'),
+    ('plant.library.page_ridge_flat', '▬', 'plant'),
+    ('plant.library.binding_tangle', '⋈', 'plant'),
+    ('plant.library.ink_wick', '▱', 'plant'),
+    ('plant.library.blank_felt', '□', 'plant'),
+    ('plant.library.abrasion_tabs', '▨', 'plant'),
+    ('plant.hospital.suture_tangle', '⌘', 'plant'),
+    ('plant.hospital.filter_tuft', '▦', 'plant'),
+    ('plant.hospital.shutter_fold', '◧', 'plant'),
+    ('plant.hospital.pressure_sac', '◔', 'plant'),
+    ('plant.hospital.infusion_ampoule', '◖', 'plant'),
 )
 
 # 已有槽位改为专门构图时只替换该位置、不改变槽序/码位。
@@ -360,8 +379,8 @@ ICONS = {
     'carried_dependent': {'codepoint': 0xE102, 'art': 'medal', 'fallback': '⚜ '},
     'carried_habit': {'codepoint': 0xE103, 'art': 'tool', 'fallback': '⚒ '},
     'plant.mushroom': {'codepoint': 0xE180, 'art': 'mushroom', 'fallback': '♧ '},
-    'plant.moon_shroom': {'codepoint': 0xE181, 'art': 'moon_shroom', 'fallback': '♧ '},
-    'plant.hollow_shroom': {'codepoint': 0xE182, 'art': 'hollow_shroom', 'fallback': '♧ '},
+    'plant.moon_shroom': {'codepoint': 0xE181, 'art': 'moon_shroom', 'fallback': '☾ '},
+    'plant.hollow_shroom': {'codepoint': 0xE182, 'art': 'hollow_shroom', 'fallback': '◒ '},
     'hospital.sporebud': {'codepoint': 0xE183, 'art': 'sporebud', 'fallback': '♧ '},
     'plant.night_queen': {'codepoint': 0xE184, 'art': 'flower', 'fallback': '✾ '},
     'plant.whisper_fern': {'codepoint': 0xE185, 'art': 'fern', 'fallback': '✾ '},
@@ -400,6 +419,25 @@ for _offset, _spec in enumerate(MAP_ICON_SPECS):
         'map_shape': _spec.get('shape'),
     }
     ICONS['map:' + _spec['key']] = _entry
+
+# The expansion keeps its own append-only PUA band. These glyphs are backed by
+# a per-codepoint font registration in catalog.json rather than the legacy
+# family aliases above.
+from .expansion.catalog import ENTRIES as _EXPANSION_ENTRIES
+for _entry in _EXPANSION_ENTRIES:
+    ICONS[_entry['icon_key']] = {
+        'codepoint': _entry['icon_codepoint'],
+        'art': 'expansion.' + _entry['id'],
+        'fallback': _entry['terminal_fallback'],
+        'ascii_fallback': _entry['ascii_fallback'],
+        'source_character': _entry['source_character'],
+        'source_kind': _entry['source_kind'],
+        'source_codepoint': _entry['source_codepoint'],
+        'source_font': _entry['source_font'],
+        'source_family': _entry['source_family'],
+        'source_font_sha256': _entry['source_font_sha256'],
+        'license_key': _entry['license_key'],
+    }
 
 
 def icon_text(key):

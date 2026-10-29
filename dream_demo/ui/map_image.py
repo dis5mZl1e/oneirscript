@@ -12,6 +12,8 @@ from PIL import Image, ImageDraw
 
 from ..core.map_scene import SceneCell, SceneSnapshot
 from ..materials import CONTAINER_KINDS
+from ..cy_kernels import enabled as _kernel_enabled
+from .raster_kernel import update_cells as _kernel_update_cells
 
 UNKNOWN = (7, 7, 11)
 MEMORY_DIM = 0.42
@@ -132,7 +134,7 @@ def _inside(rect, x: int, y: int) -> bool:
 
 def _glyph_scale(cell: SceneCell, cw: int, ch: int, continuous: bool, dot: bool) -> float:
     if cell.actors:
-        if min(cw, ch) < SMALL_CELL or (cell.gas and cell.liquid):
+        if min(cw, ch) < SMALL_CELL:
             return .72
         return .82
     if cell.items or cell.events:
@@ -290,7 +292,8 @@ def _draw_elevation_cell(scene, cell, x, y, draw, image, px, py, cw, ch, visual)
 
 def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24, 24),
                        show_grid: bool = False, lights=(), backgrounds=None, effect_glyphs=None,
-                       fog_backgrounds=None) -> Image.Image:
+                       fog_backgrounds=None, glyph_layers=None,
+                       protected_cells=frozenset()) -> Image.Image:
     """Original-colour material textures around actual, uniformly scaled glyphs.
 
     ``fog_backgrounds`` 是允许压过迷雾的显式线索底色（声音波次）：与
@@ -432,6 +435,17 @@ def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24,
                            scale=_glyph_scale(cell,cw,ch,continuous,dot))
         elif cell.actors:
             draw_glyph(image, symbol('manifestation','themed'), '#e67878', (px, py, cw, ch), scale=.82)
+        if glyph_layers and cell.status in ('visible','developed'):
+            layers = glyph_layers.get((x, y))
+            if layers:
+                protected = (x, y) in protected_cells
+                for _index, layer in sorted(enumerate(layers),
+                        key=lambda item: (item[1].z, item[1].event_id, item[0])):
+                    if protected and max(abs(layer.offset[0]), abs(layer.offset[1])) < 0.25:
+                        continue
+                    _draw_glyph_layer(image, layer, px, py, cw, ch)
+        # Real markers and legacy top-level glyphs (including damage numbers)
+        # follow optional character FX, so decorations cannot obscure them.
         if corner:
             # 特殊地板被主体覆盖时保留固定左下角标；角标本身仍是该地板的字形，
             # 不是统一的色点（极小格退化为高对比色块）。
@@ -476,8 +490,22 @@ def _image_pan_reuse_enabled() -> bool:
     return env_get('IMAGE_PAN_REUSE', '1') != '0'
 
 
+def _draw_glyph_layer(image, layer, px, py, cw, ch):
+    """把世界格内的一层独立字符画到像素位置（格内 offset/scale/alpha）。"""
+    from .map_presentation import draw_glyph
+    x = px + int(round(float(layer.offset[0]) * cw))
+    y = py + int(round(float(layer.offset[1]) * ch))
+    color = layer.color
+    alpha = max(0.0, min(1.0, float(layer.alpha)))
+    if alpha <= 0.0:
+        return
+    draw_glyph(image, layer.glyph, color, (x, y, cw, ch),
+               scale=float(layer.scale), alpha=alpha)
+
+
 @lru_cache(maxsize=4096)
-def _tile(cell, visual, realm, cell_px, show_grid, background, fog_background, effect, observe_layer='', effect_scale=None):
+def _tile(cell, visual, realm, cell_px, show_grid, background, fog_background, effect,
+          observe_layer='', effect_scale=None, layers=None, protected=False):
     # effect_scale distinguishes an animation mark from the same plain character
     # in this LRU key; only marked projectile glyphs use a calibrated ink size.
     cell = replace(cell,x=0,y=0)
@@ -486,19 +514,74 @@ def _tile(cell, visual, realm, cell_px, show_grid, background, fog_background, e
     return _render_scene_image(snapshot,cell_px=cell_px,show_grid=show_grid,
                                backgrounds={(0,0):background} if background else None,
                                effect_glyphs={(0,0):effect} if effect else None,
-                               fog_backgrounds={(0,0):fog_background} if fog_background else None)
+                               fog_backgrounds={(0,0):fog_background} if fog_background else None,
+                               glyph_layers={(0,0):layers} if layers else None,
+                               protected_cells=frozenset({(0,0)}) if protected else frozenset())
 
 
-def _cell_token(cell, visual, background, fog_background, effect):
+def draw_movement_presentation(image, scene: SceneSnapshot,
+                               screen_position: tuple[float, float], cell_px,
+                               *, backgrounds=None, fog_backgrounds=None):
+    """Draw the player at a fractional viewport position over the current scene.
+
+    The snapshot still contains the authoritative player at its committed cell.
+    Restore that cell without the player, then draw the captured player glyph at
+    the sampled display position. The returned map cells cover the sprite and
+    restored cell so incremental image transport can invalidate them safely.
+    """
+    player_pos = next((pos for pos, cell in scene.cells.items()
+                       if any(actor.relation == 'player' for actor in cell.actors)), None)
+    if player_pos is None:
+        return ()
+    cell = scene.cells.get(player_pos)
+    visual = scene.visuals.get(player_pos)
+    if cell is None or visual is None or not visual.text:
+        return ()
+
+    from .map_presentation import draw_glyph
+
+    left, top, width, height = scene.viewport
+    world_x, world_y = player_pos
+    if not (left <= world_x < left + width and top <= world_y < top + height):
+        return ()
+    ground_cell = replace(
+        cell, actors=tuple(actor for actor in cell.actors if actor.relation != 'player'))
+    ground_visual = replace(visual, text='')
+    cw, ch = cell_px
+    tile = _tile(ground_cell, ground_visual, scene.realm_id, cell_px, False,
+                 (backgrounds or {}).get(player_pos),
+                 (fog_backgrounds or {}).get(player_pos), None,
+                 scene.observe_layer)
+    image.paste(tile, ((world_x - left) * cw, (world_y - top) * ch))
+
+    sx, sy = screen_position
+    x, y = round(sx * cw), round(sy * ch)
+    draw_glyph(image, visual.text, visual.color, (x, y, cw, ch))
+
+    # Glyphs are clipped to one cell-sized rectangle, which may straddle a tile
+    # boundary while moving. Include all intersected cells plus the restored one.
+    right = sx + 1.0 - 1e-9
+    bottom = sy + 1.0 - 1e-9
+    touched = {(world_x, world_y)}
+    for cell_y in range(max(0, int(sy)), min(height, int(bottom) + 1)):
+        for cell_x in range(max(0, int(sx)), min(width, int(right) + 1)):
+            touched.add((left + cell_x, top + cell_y))
+    return tuple(sorted(touched))
+
+
+def _cell_token(cell, visual, background, fog_background, effect,
+                layers=None, protected=False):
     """按格内容键：不含 viewport，所以平移后绝对坐标的旧 token 仍可比较。"""
     return (cell, visual, background, fog_background, effect,
-            getattr(effect[0], 'raster_scale', None) if effect else None)
+            getattr(effect[0], 'raster_scale', None) if effect else None,
+            layers, bool(protected))
 
 
 def _paste_cell(image, pos, cell, visual, realm_id, cell_px, show_grid, token,
                 observe_layer, left, top):
     tile = _tile(replace(cell, x=0, y=0), visual, realm_id, cell_px, show_grid,
-                 token[2], token[3], token[4], observe_layer, token[5])
+                 token[2], token[3], token[4], observe_layer, token[5],
+                 token[6], token[7])
     image.paste(tile, ((pos[0]-left)*cell_px[0], (pos[1]-top)*cell_px[1]))
 
 
@@ -538,7 +621,7 @@ class SceneImageCache:
 
     # -- 整张重建（与旧实现逐像素一致） --------------------------------
     def _rebuild(self, scene, geometry, viewport, backgrounds, effect_glyphs, reason,
-                 fog_backgrounds=None):
+                 fog_backgrounds=None, glyph_layers=None, protected_cells=frozenset()):
         cell_px, show_grid = geometry[0], geometry[1]
         cw, ch = cell_px
         left, top, width, height = viewport
@@ -547,6 +630,8 @@ class SceneImageCache:
         backgrounds = backgrounds or {}
         effect_glyphs = effect_glyphs or {}
         fog_backgrounds = fog_backgrounds or {}
+        glyph_layers = glyph_layers or {}
+        protected_cells = protected_cells or frozenset()
         inside = True
         for pos, cell in scene.cells.items():
             x, y = pos
@@ -555,7 +640,8 @@ class SceneImageCache:
             visual = scene.visuals.get(pos)
             effect = effect_glyphs.get(pos)
             token = _cell_token(cell, visual, backgrounds.get(pos),
-                                fog_backgrounds.get(pos), effect)
+                                fog_backgrounds.get(pos), effect,
+                                glyph_layers.get(pos), pos in protected_cells)
             tokens[pos] = token
             _paste_cell(image, pos, cell, visual, scene.realm_id, cell_px,
                         show_grid, token, scene.observe_layer, left, top)
@@ -591,7 +677,8 @@ class SceneImageCache:
             return 'sparse'
         return ''
 
-    def _pan(self, scene, viewport, backgrounds, effect_glyphs, fog_backgrounds=None):
+    def _pan(self, scene, viewport, backgrounds, effect_glyphs, fog_backgrounds=None,
+             glyph_layers=None, protected_cells=frozenset()):
         cell_px, show_grid = self.geometry[0], self.geometry[1]
         cw, ch = cell_px
         left, top, width, height = viewport
@@ -609,7 +696,28 @@ class SceneImageCache:
         backgrounds = backgrounds or {}
         effect_glyphs = effect_glyphs or {}
         fog_backgrounds = fog_backgrounds or {}
+        glyph_layers = glyph_layers or {}
+        protected_cells = protected_cells or frozenset()
         painted = 0
+        if _kernel_enabled("raster"):
+            # CY-5：脏格筛选整段交给编译内核，粘贴仍走同一个 _paste_cell。
+            tokens, _, painted = _kernel_update_cells(
+                scene.cells, scene.visuals, viewport, backgrounds, effect_glyphs,
+                fog_backgrounds, glyph_layers, protected_cells, tokens,
+                lambda pos, cell, visual, token: _paste_cell(
+                    image, pos, cell, visual, scene.realm_id, cell_px, show_grid,
+                    token, scene.observe_layer, left, top),
+                cov=(cov_left, cov_top, cov_right, cov_bottom),
+                strict_inside=True,
+            )
+            if tokens is None:
+                raise _PanFallback('sparse')
+            self.image = image
+            self.viewport = viewport
+            self.cells = tokens
+            self._dense = True
+            self.painted_cells += painted
+            return
         for pos, cell in scene.cells.items():
             x, y = pos
             if not (left <= x < left+width and top <= y < top+height):
@@ -617,7 +725,8 @@ class SceneImageCache:
             visual = scene.visuals.get(pos)
             effect = effect_glyphs.get(pos)
             token = _cell_token(cell, visual, backgrounds.get(pos),
-                                fog_backgrounds.get(pos), effect)
+                                fog_backgrounds.get(pos), effect,
+                                glyph_layers.get(pos), pos in protected_cells)
             if (cov_left <= x < cov_right and cov_top <= y < cov_bottom
                     and tokens.get(pos) == token):
                 continue
@@ -632,15 +741,30 @@ class SceneImageCache:
         self._dense = True
         self.painted_cells += painted
 
-    def _update(self, scene, viewport, backgrounds, effect_glyphs, fog_backgrounds=None):
+    def _update(self, scene, viewport, backgrounds, effect_glyphs, fog_backgrounds=None,
+                glyph_layers=None, protected_cells=frozenset()):
         cell_px, show_grid = self.geometry[0], self.geometry[1]
         left, top, width, height = viewport
         backgrounds = backgrounds or {}
         effect_glyphs = effect_glyphs or {}
         fog_backgrounds = fog_backgrounds or {}
+        glyph_layers = glyph_layers or {}
+        protected_cells = protected_cells or frozenset()
         image = self.image
         inside = True
         painted = 0
+        if _kernel_enabled("raster"):
+            tokens, inside, painted = _kernel_update_cells(
+                scene.cells, scene.visuals, viewport, backgrounds, effect_glyphs,
+                fog_backgrounds, glyph_layers, protected_cells, self.cells,
+                lambda pos, cell, visual, token: _paste_cell(
+                    image, pos, cell, visual, scene.realm_id, cell_px, show_grid,
+                    token, scene.observe_layer, left, top),
+            )
+            self.cells = tokens
+            self._dense = inside and len(scene.cells) == width*height
+            self.painted_cells += painted
+            return
         for pos, cell in scene.cells.items():
             x, y = pos
             if not (left <= x < left+width and top <= y < top+height):
@@ -648,7 +772,8 @@ class SceneImageCache:
             visual = scene.visuals.get(pos)
             effect = effect_glyphs.get(pos)
             token = _cell_token(cell, visual, backgrounds.get(pos),
-                                fog_backgrounds.get(pos), effect)
+                                fog_backgrounds.get(pos), effect,
+                                glyph_layers.get(pos), pos in protected_cells)
             if self.cells.get(pos) == token:
                 continue
             self.cells[pos] = token
@@ -658,32 +783,35 @@ class SceneImageCache:
         self._dense = inside and len(scene.cells) == width*height
         self.painted_cells += painted
 
-    def render(self, scene, cell_px, show_grid, backgrounds, effect_glyphs, fog_backgrounds=None):
+    def render(self, scene, cell_px, show_grid, backgrounds, effect_glyphs, fog_backgrounds=None,
+               glyph_layers=None, protected_cells=frozenset()):
         cell_px = (int(cell_px[0]), int(cell_px[1]))
         viewport = tuple(int(value) for value in scene.viewport)
         geometry = (cell_px, bool(show_grid), scene.realm_id, scene.observe_layer)
         if self.geometry != geometry:
             self._rebuild(scene, geometry, viewport, backgrounds, effect_glyphs,
                           'first' if self.geometry is None else 'geometry',
-                          fog_backgrounds)
+                          fog_backgrounds, glyph_layers, protected_cells)
             return self.image
         if self.image is None or self.viewport is None:
             self._rebuild(scene, geometry, viewport, backgrounds, effect_glyphs, 'no-image',
-                          fog_backgrounds)
+                          fog_backgrounds, glyph_layers, protected_cells)
             return self.image
         if viewport == self.viewport:
             width, height = viewport[2], viewport[3]
             if self._dense and len(scene.cells) != width*height:
                 # 稠密帧突然缺格：旧实现会留残影；整张重建保证与无缓存渲染一致。
                 self._rebuild(scene, geometry, viewport, backgrounds, effect_glyphs, 'sparse',
-                              fog_backgrounds)
+                              fog_backgrounds, glyph_layers, protected_cells)
                 return self.image
-            self._update(scene, viewport, backgrounds, effect_glyphs, fog_backgrounds)
+            self._update(scene, viewport, backgrounds, effect_glyphs, fog_backgrounds,
+                         glyph_layers, protected_cells)
             return self.image
         blocker = self._pan_blocker(scene, geometry, viewport)
         if not blocker:
             try:
-                self._pan(scene, viewport, backgrounds, effect_glyphs, fog_backgrounds)
+                self._pan(scene, viewport, backgrounds, effect_glyphs, fog_backgrounds,
+                          glyph_layers, protected_cells)
                 self.pan_reuses += 1
                 return self.image
             except _PanFallback as fallback:
@@ -692,23 +820,26 @@ class SceneImageCache:
                 # 残影/错位风险高于性能收益：任何异常都整张重建。
                 blocker = 'error'
         self._rebuild(scene, geometry, viewport, backgrounds, effect_glyphs,
-                      blocker or 'fallback', fog_backgrounds)
+                      blocker or 'fallback', fog_backgrounds, glyph_layers, protected_cells)
         return self.image
 
 
 def render_scene_image(scene: SceneSnapshot, *, cell_px=(24,24), show_grid=False,
                        lights=(), backgrounds=None, effect_glyphs=None,
-                       fog_backgrounds=None, cache=None):
+                       fog_backgrounds=None, cache=None, glyph_layers=None,
+                       protected_cells=frozenset()):
     """Reuse unchanged cell rasters across actions and decorative frames."""
+    glyph_layers = glyph_layers or {}
     if lights or scene.observe_layer in ('elevation', 'floor', 'low', 'middle', 'high'):
         # 光照与等高边界都看邻格，按格缓存不适用。
         return _render_scene_image(scene,cell_px=cell_px,show_grid=show_grid,lights=lights,
                                     backgrounds=backgrounds,effect_glyphs=effect_glyphs,
-                                    fog_backgrounds=fog_backgrounds)
+                                    fog_backgrounds=fog_backgrounds,
+                                    glyph_layers=glyph_layers,protected_cells=protected_cells)
     cw,ch = max(2,int(cell_px[0])),max(2,int(cell_px[1]))
     if cache is not None:
         return cache.render(scene,(cw,ch),show_grid,backgrounds,effect_glyphs,
-                            fog_backgrounds)
+                            fog_backgrounds,glyph_layers,protected_cells)
     left,top,width,height = scene.viewport
     image = Image.new('RGB',(width*cw,height*ch),UNKNOWN)
     fog_backgrounds = fog_backgrounds or {}
@@ -721,6 +852,7 @@ def render_scene_image(scene: SceneSnapshot, *, cell_px=(24,24), show_grid=False
         tile = _tile(replace(cell,x=0,y=0),scene.visuals.get(pos),scene.realm_id,(cw,ch),
                      show_grid,(backgrounds or {}).get(pos),fog_backgrounds.get(pos),effect,
                      scene.observe_layer,
-                     getattr(effect[0],'raster_scale',None) if effect else None)
+                     getattr(effect[0],'raster_scale',None) if effect else None,
+                     glyph_layers.get(pos), pos in protected_cells)
         image.paste(tile,((pos[0]-left)*cw,(pos[1]-top)*ch))
     return image

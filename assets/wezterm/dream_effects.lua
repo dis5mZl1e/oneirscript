@@ -50,7 +50,8 @@ return function(wezterm, config, assets)
     if s.mode == 'clear' then return result end
     result[#result + 1] = {
       source = { File = assets .. '/still.png' },
-      width = 1024, height = 512, repeat_x = 'Mirror', repeat_y = 'Mirror', opacity = 0.65,
+      -- One viewport-sized texture avoids dark atlas edges at mirrored seams.
+      width = '100%', height = '100%', repeat_x = 'NoRepeat', repeat_y = 'NoRepeat', opacity = 0.65,
       hsb = { hue = palette.hue, saturation = 0.7, brightness = 0.65 },
     }
     if s.mode == 'static' then
@@ -58,14 +59,14 @@ return function(wezterm, config, assets)
     end
     result[#result + 1] = {
       source = { File = { path = assets .. '/mist.png', speed = 0.45 } },
-      width = 1024, height = 512, repeat_x = 'Mirror', repeat_y = 'Mirror',
+      width = '100%', height = '100%', repeat_x = 'NoRepeat', repeat_y = 'NoRepeat',
       horizontal_align = 'Center', vertical_align = 'Middle',
       opacity = 0.30 * s.focus + 0.05 * s.pulse,
       hsb = { hue = palette.hue, saturation = 0.7, brightness = 0.65 },
     }
     result[#result + 1] = {
       source = { File = { path = assets .. '/ribbons.png', speed = 0.30 } },
-      width = 1024, height = 512, repeat_x = 'Mirror', repeat_y = 'Mirror', horizontal_align = 'Center',
+      width = '100%', height = '100%', repeat_x = 'NoRepeat', repeat_y = 'NoRepeat', horizontal_align = 'Center',
       opacity = 0.20 * s.focus, hsb = { hue = palette.hue, saturation = 0.55, brightness = 0.8 },
     }
     if s.pulse > 0.001 then

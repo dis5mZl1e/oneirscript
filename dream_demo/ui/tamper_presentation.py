@@ -39,15 +39,24 @@ class ChoiceHit:
         return self.row == row and self.start_col <= col < self.end_col
 
 
-def adjacent_choices(left, right, width):
+def adjacent_choices(left, right, width, *, split_from=44):
     """Rows contain (Text, semantic entry, key); empty column space is inert."""
     from rich.cells import cell_len
-    split = width >= 44
+    split = width >= split_from
     left_width = (width - 3) // 2 if split else width
     right_width = width - left_width - 3 if split else width
     def wrap(entries, available):
-        return [(line, entry, key) for text, entry, key in entries
-                for line in folded_lines(text, available)]
+        from .panels import paper_pad
+        from .paper_zones import ZONE_STRIP
+        out = []
+        for text, entry, key in entries:
+            heading = entry == -1 and text.plain.startswith(('──', '——'))
+            for line in folded_lines(text, available):
+                if heading:
+                    line.stylize('bold underline')
+                    line = paper_pad(line, ZONE_STRIP, available)
+                out.append((line, entry, key))
+        return out
     left = wrap(left, left_width); right = wrap(right, right_width)
     lines, rows, hits = [], [], []
     if not split:

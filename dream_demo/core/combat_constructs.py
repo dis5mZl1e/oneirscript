@@ -38,7 +38,11 @@ def form_of(ability_id: str) -> str:
 
 
 def aim_range(state, ability_id: str) -> int:
-    return int(meta(ability_id).get('range') or 1)
+    base = int(meta(ability_id).get('range') or 1)
+    if form_of(ability_id) not in (FORM_LAUNCH, FORM_THROW):
+        return base
+    from ..equipment.expansion_runtime import construct_range_bonus
+    return base + construct_range_bonus(state)
 
 
 def default_direction(state) -> tuple[int, int]:
@@ -75,10 +79,12 @@ def _direction(state, target, direction):
 
 
 def _pay(state, ability_id: str, definition: dict) -> None:
-    cost = state._scaled_ability_cost(int(definition['cost']))
+    from ..equipment.expansion_runtime import adjust_construct_cost
+    cost = adjust_construct_cost(
+        state, ability_id, state._scaled_ability_cost(int(definition['cost'])))
     state._pay_ability_cost(cost)
-    state.ability_cooldowns[ability_id] = state._scaled_ability_cooldown(
-        int(definition['cooldown']))
+    cooldown = state._scaled_ability_cooldown(int(definition['cooldown']))
+    state.ability_cooldowns[ability_id] = cooldown
 
 
 def _spend_use(state) -> None:
@@ -87,6 +93,8 @@ def _spend_use(state) -> None:
 
 def _sound(state, x: int, y: int, radius: int) -> None:
     if radius > 0:
+        from ..equipment.expansion_runtime import relocate_construct_sound
+        x, y = relocate_construct_sound(state, x, y)
         state._sound_pulse(x, y, radius, by_player=True)
 
 
@@ -706,11 +714,13 @@ def _screen_cells(state, dx: int, dy: int):
 
 
 def _release_area(state, ability_id: str, definition: dict, target, direction):
+    from ..equipment.expansion_runtime import radius_bonus
     dx, dy = _direction(state, target, direction)
     state.facing = (dx, dy)
     shape = str(meta(ability_id).get('shape') or '')
     if shape == 'ring3':
-        cells = _ring_cells(state, state.player.x, state.player.y, 3)
+        radius, _extra = radius_bonus(state, ability_id)
+        cells = _ring_cells(state, state.player.x, state.player.y, 3 + radius)
     elif shape == 'ring2':
         cells = _ring_cells(state, state.player.x, state.player.y, 2)
     else:
@@ -741,6 +751,7 @@ def _release_area(state, ability_id: str, definition: dict, target, direction):
 
 
 def _fault_ring(state, cells) -> str:
+    from ..equipment.expansion_runtime import construct_damage_bonus, on_construct_hit
     cellset = set(cells)
     walls = ground = 0
     for x, y in cells:
@@ -766,8 +777,13 @@ def _fault_ring(state, cells) -> str:
             state._lose_mind(2, combat=True)
         else:
             state._kill_full_reward = True
-            entity.integrity = max(0, entity.integrity - 2)
+            damage = 2 + construct_damage_bonus(state, entity)
+            _damage_number_before = entity.integrity
+            entity.integrity = max(0, entity.integrity - damage)
+            from .hit_events import note_integrity_loss
+            note_integrity_loss(state, entity, _damage_number_before)
             hurt += 1
+            on_construct_hit(state, entity, killed=entity.integrity <= 0)
             if entity.integrity > 0:
                 px = _sign(entity.x - state.player.x)
                 py = _sign(entity.y - state.player.y)
@@ -789,12 +805,24 @@ def release(state, ability_id: str, target=None, direction=None,
     definition = ABILITY_DEFINITIONS.get(ability_id)
     if definition is None or not is_combat(ability_id):
         return ActionResult(False, tr('未知的构想。'))
+    from ..equipment.expansion_runtime import (
+        after_construct, begin_construct, consume_construct_range, end_construct,
+    )
     form = form_of(ability_id)
-    if form == FORM_MELEE:
-        return _release_melee(state, ability_id, definition, target, direction,
-                              landing=landing)
-    if form == FORM_LAUNCH:
-        return _release_launch(state, ability_id, definition, target, direction)
-    if form == FORM_THROW:
-        return _release_throw(state, ability_id, definition, target, direction)
-    return _release_area(state, ability_id, definition, target, direction)
+    begin_construct(state, ability_id, target)
+    try:
+        if form == FORM_MELEE:
+            result = _release_melee(state, ability_id, definition, target, direction,
+                                    landing=landing)
+        elif form == FORM_LAUNCH:
+            result = _release_launch(state, ability_id, definition, target, direction)
+        elif form == FORM_THROW:
+            result = _release_throw(state, ability_id, definition, target, direction)
+        else:
+            result = _release_area(state, ability_id, definition, target, direction)
+        after_construct(state, result)
+        if result.changed and form in (FORM_LAUNCH, FORM_THROW):
+            consume_construct_range(state)
+        return result
+    finally:
+        end_construct(state)

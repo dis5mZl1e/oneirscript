@@ -22,6 +22,9 @@ from ..constants import SIGHT_OBSCURE_MIN
 from ..entities import Cell
 from . import cache, glow
 from ...data.anomalies import ANOMALY_DEFINITIONS  # noqa: E402
+# CY-3 开关的模块级绑定（与 persistence / materials_sim / app 同一种写法）：
+# 仍然每次调用现读活环境，只是省掉函数内 `from ... import enabled` 的重复 import。
+from ...cy_kernels import enabled as _kernel_enabled  # noqa: E402
 
 
 class SightMixin:
@@ -71,7 +74,10 @@ class SightMixin:
         # 一个正面通道；旧实现把它写死在这里，异象侧完全读不到（docs §14.1 末行）。
         radius += 4 if self.ability_turns.get("farsight", 0) > 0 else 0
         # ---- 平减阶段：同族取最大后相加，无光绒墙贴近与失焦各自成族 ----
-        radius += profile.flat + self._region_sight_penalty()
+        from ...equipment import gear_light
+        # 光类装备（2026-10-25 批次二）：磨砂护目片的「暗处辨认距离缩短」走同一条
+        # 平减通道；没带光类装备时这一句只是一次行囊扫描，不会编译装备。
+        radius += profile.flat + self._region_sight_penalty() + gear_light.vision_flat(self)
         if profile.blur:
             # 失焦（错贴标签）：只对本项设「最多减到 3」。别的强限视不会因为失焦
             # 被解除，失焦也不会把已经很低的视野重新抬起来。
@@ -84,8 +90,9 @@ class SightMixin:
         if ratio < 1.0:
             radius = int(radius * ratio)
         # ---- 致盲覆盖：普通视觉归零；光源延伸与照彻都不能把它复活 ----
+        # 磨砂护目片把「强光致盲」缓冲成一半而不是清零（批次二），未佩戴时仍是 0。
         if profile.blinds:
-            radius = 0
+            radius = gear_light.blind_radius(self, radius)
         self._sight_radius_cache = (key, radius)
         return radius
 
@@ -141,9 +148,60 @@ class SightMixin:
             return False, definition.sight_attenuation
         return False, 1.0
 
-    def _sight_reaches(self, x1: int, y1: int, bonus: int = 0) -> bool:
+    def _sight_obstruction(self, cell: Cell) -> tuple[bool, int]:
+        """这一格对视线的遮挡效果：返回 (是否完全挡死, 额外削减的剩余视距)。
+
+        玩家口径（2026-10-24 裁定）：**高度决定遮挡**。
+
+        - 透明墙（TRANSPARENT_WALLS，如玻璃幕墙）始终完全透光，不论高度；
+        - 门（DOOR_KINDS）保持原有的显式例外：无论开合都挡死视线。开着的门
+          solid=False、height=0，所以必须按墙种先判，不能被高度漏过；
+        - 2 格高的植物（高丛）保持原有的挡死；
+        - 高度 >= 3：完全挡死（压实聚合墙／意识边界这类「高墙」）；
+        - 高度 == 2：不挡死，但吃掉墙后最多 3 格的剩余视距；
+        - 高度 <= 1：完全不挡（木桌子、石台、陷阱石台／机关石台、记忆容器／
+          思绪容器、潮解纸墙、枕木、云块……玩家可以看过去）。
+
+        高度优先读 cell.height；历史存档／直改格子里 height == 0 的实心墙退回
+        到墙种目录的 height（_open_door 会把开着的门压成 0，但它在上面的门种
+        分支已先行判掉；可步行特征墙的 height 由 configure_wall 写入，不依赖
+        这条兜底）。
+
+        性能：每格一次整数比较 + 最多一次 WALL_DEFINITIONS 字典查询，不分配
+        容器，供 _sight_reaches / _has_line_of_sight 的逐格热循环共用。
+        """
+        kind = cell.wall_kind
+        if kind:
+            # 透明墙先判：玻璃幕墙这类高度 3 的透明墙仍要完全透光。
+            if kind in TRANSPARENT_WALLS:
+                return False, 0
+            if kind in DOOR_KINDS:
+                return True, 0
+        if cell.plant and plant_height(cell.plant) >= 2:
+            return True, 0
+        # 高度是**固体**的属性：被清掉/可穿行的格子（solid=False）即使残留
+        # height（旧场景改写、直改测试夹具），也不该凭空挡住视线。
+        if not cell.solid:
+            return False, 0
+        if not kind:
+            # 没有墙种的实心格无法按材料/高度分类（多见于地图边界与手改夹具），
+            # 保持旧口径：保守地当作挡死，不让「不明实心格」变成隐形通道。
+            return True, 0
+        height = cell.height
+        if height <= 0:
+            # 兜底：旧档／直改格子没写 height 的实心墙按目录高度算。
+            height = int(getattr(wall_def(kind), "height", 0) or 0)
+        if height >= 3:
+            return True, 0
+        if height == 2:
+            return False, 3
+        return False, 0
+
+    def _sight_reaches(self, x1: int, y1: int, bonus: int = 0, *,
+                       use_kernel: bool | None = None) -> bool:
         return self._observer_sight_reaches(self.player, x1, y1,
-                                           self.effective_sight_radius()+bonus)
+                                           self.effective_sight_radius()+bonus,
+                                           use_kernel=use_kernel)
 
     def can_see(self, observer, x: int, y: int) -> bool:
         if not (0 <= x < self.width and 0 <= y < self.height):
@@ -161,7 +219,29 @@ class SightMixin:
         if bonus:
             # §14.1：强光延伸同受比例缩视，站进灯里不能完整抵消全部减视野效果。
             bonus = int(bonus * self._vision_scale(observer))
+        shadow = 0
+        from ...equipment import gear_light
+        if observer is self.player:
+            # 光类装备的逐格修正（正面锥 +1／背后 −1／遮光面切格）：遮住即不可见，
+            # 与 ``visible_cells`` 及逐格实时可见判定共用同一张表，不会两套口径打架。
+            shift = gear_light.cell_shift(self, x, y)
+            if shift is None:
+                return False
+            bonus += shift
+            bonus = max(bonus, gear_light.extra_span(self, x, y, radius))
+        elif (x, y) == (self.player.x, self.player.y):
+            # 异象看你时：漏光的刀（更显眼）与黑布背心／遮片（更不显眼）只改这一次
+            # 半径比较，不改它看别的东西的视距。
+            radius += gear_light.seen_delta(self, observer)
+            # 洞察「光圈的边缘」：停在明暗交界留的那一手，只在暗处少露一格光。
+            from ..expansion_insights import dim_edge_shadow, dim_edge_spend
+            shadow = dim_edge_shadow(self)
+            radius += shadow
         if distance > radius+bonus:
+            if shadow and distance == radius + bonus - shadow:
+                # 差这一格：正是「光圈的边缘」把它挡下的，用掉即失效
+                # （所谓「减少**一次**视觉暴露」）。
+                dim_edge_spend(self)
             return False
         return self._observer_sight_reaches(observer, x, y, radius+bonus)
 
@@ -209,18 +289,38 @@ class SightMixin:
         self.messages.append(message)
         return ActionResult(True,message)
 
-    def _observer_sight_reaches(self, observer, x1: int, y1: int, radius: int) -> bool:
+    def _observer_sight_reaches(self, observer, x1: int, y1: int, radius: int,
+                                use_kernel: bool | None = None) -> bool:
         """沿布雷森汉姆视线逐格推进，把视野当作一条会耗尽的预算。
 
         每推进一格耗 1 点预算；黑烟立刻截断；灰尘云把「尚未走完的剩余预算」
         按倍率收缩（已走过的部分不受影响，其他方向的射线也不受影响）。预算
         用浮点，因此衰减之后仍能走完最后一格的部分距离。
 
+        遮挡按高度结算（见 :meth:`_sight_obstruction`）：高度 ≥3、门、高丛
+        直接截断；高度 2 的固体只从「墙后」的剩余预算里扣 3 格（墙格本身与它
+        之前的格子照常可见）；高度 ≤1 与透明墙完全不挡。
+
         ``bonus`` 给这次射线额外增加一点预算（发光地衣的照亮延长，见
         core/vision/glow.py）。它只让射线**走得远一点**，不能让它穿过墙、
         门、黑烟或高丛——遮挡判定与步数累加都在同一条循环里，因此「延长
         视距但不穿透遮挡」是免费的。
+
+        性能（2026-10-27 A5）：CY-3 开关由**一个可见集计算**的开头解析一次
+        （``visible_cells`` / ``live_sight``）再经 ``use_kernel`` 传进来。旧写法
+        是每调用一次本函数就 ``enabled("sight")`` 一次：一次 ``wait`` 动作的
+        ``visible_cells`` 重算会对约 630 个候选格各调一次，纯重复付费约
+        1.3ms/动作。``use_kernel=None`` 表示「没有批内值」（``can_see``／
+        ``glow.reveals`` 等单格入口），此时仍在这里现读，因此开关不跨调用缓存。
         """
+        if use_kernel is None:
+            # 单格入口没有批内开关可复用：现读，保证运行时切换
+            # ONEIRSCRIPT_CY_KERNEL_SIGHT 在下一次调用立即生效。
+            use_kernel = _kernel_enabled("sight")
+        if use_kernel:
+            # CY-3：编译内核只接管射线循环；规则判定仍在 state 方法上。
+            from .sight_kernel import observer_sight_reaches
+            return observer_sight_reaches(self, observer, x1, y1, radius)
         x0, y0 = observer.x, observer.y
         if (x0, y0) == (x1, y1):
             # 自己脚下这一格始终可读：致盲把普通视觉归零后，玩家自身与所在格
@@ -237,6 +337,8 @@ class SightMixin:
         x, y = x0, y0
         step = 0
         skill_blocked = self._skill_sight_blockers() if hasattr(self, "_skill_sight_blockers") else set()
+        from ..construct_environments import light_curtain_cells
+        skill_blocked = skill_blocked | light_curtain_cells(self)
         while (x, y) != (x1, y1):
             doubled = 2 * error
             if doubled > -dy:
@@ -253,13 +355,16 @@ class SightMixin:
             cell = self.cell(x, y)
             if (x, y) in skill_blocked:
                 return False
-            # 门恒阻视线，无论开合：开着的门 wall_kind 仍是门种但 solid=False，
-            # 必须按墙种拦截，不能被上面的 solid 判定漏过。
-            if cell.wall_kind in DOOR_KINDS or (cell.solid and cell.wall_kind not in TRANSPARENT_WALLS):
+            # 高度决定遮挡（2026-10-24 玩家口径）：1 格高的固体让视线完全通过；
+            # 2 格高只吃掉墙后最多 3 格的剩余预算；3 格及以上挡死。门与高丛、
+            # 透明墙的例外在 _sight_obstruction 里统一。
+            blocks, penalty = self._sight_obstruction(cell)
+            if blocks:
                 return False
-            # 2 格高的植物（高丛）同样遮挡视线；1 格高的（低草/发光地衣/蘑菇）不挡。
-            if plant_height(cell.plant) >= 2:
-                return False
+            if penalty:
+                # 只削减「墙后」的剩余预算：走到墙格本身花掉的 step 不受影响，
+                # 因此墙格自身与它之前的格子照常可见。
+                budget = max(float(step), budget - penalty)
             blocked, attenuation = self._gas_sight_effect(cell)
             if blocked:
                 return False
@@ -286,7 +391,20 @@ class SightMixin:
             return self.effective_sight_radius() > 0
         if getattr(self, "debug_full_vision", False):
             return True
-        if self._sight_reaches(x, y):
+        from ...equipment import gear_light
+        # 光类装备（2026-10-25 批次二）的逐格修正：正面锥 +1、背后 −1、遮光面/
+        # 遮片把整格切掉。没有光类装备时 ``cell_shift`` 直接返回 0。
+        shift = gear_light.cell_shift(self, x, y)
+        if shift is None:
+            return False
+        # 本函数按格调用（is_visible／面板／边框），一次判定最多走两条射线；
+        # 开关在这里解析一次再传下去（2026-10-27 A5）。同一调用内的可见性不依赖
+        # 开关中途变化，逐射线现读等于为同一次判定付两遍 enabled()。
+        use_kernel = _kernel_enabled("sight")
+        if self._sight_reaches(x, y, shift, use_kernel=use_kernel):
+            return True
+        span = gear_light.extra_span(self, x, y, self.effective_sight_radius())
+        if span and self._sight_reaches(x, y, span, use_kernel=use_kernel):
             return True
         return glow.reveals(self, x, y)
 
@@ -339,6 +457,11 @@ class SightMixin:
             # 致盲（docs 261022 §14.1）：普通视觉归零后，光源延伸与照彻都不能把它复活，
             # 可见集合只剩脚下这一格（地图记忆与背包／面板照常）。
             return cache.store(self, key, {(self.player.x, self.player.y)})
+        # CY-3 开关：**本次重算**开头解析一次（2026-10-27 A5）。下面每格最多调
+        # 3 次 _sight_reaches，旧写法逐格 enabled("sight")——实测 ≈630 次/动作
+        # ≈1.3ms。粒度只到「一次可见集计算」：不跨调用、不跨动作缓存，下一次
+        # 重算再读，运行时切换 ONEIRSCRIPT_CY_KERNEL_SIGHT 依旧下一拍立即生效。
+        use_kernel = _kernel_enabled("sight")
         # §11 P0：一次视野解析内复用光源半径；退出后恢复原状态，避免跨动作
         # 使用过期光照。没有缓存的 is_visible 调用仍按单次 source_radius 判定。
         previous_glow_cache = getattr(self, "_glow_radius_cache", None)
@@ -369,15 +492,44 @@ class SightMixin:
                 # 反过来，规则与 glow.sight_bonus 逐项一致：多来源取最高、遮挡仍
                 # 走同一条 _has_line_of_sight 射线、V=0 已在上面提前返回。
                 bonus_by_cell = glow.sight_bonus_map(self, sources) if sources else {}
+                # 光类装备（批次二）：一张「正面锥／背后／遮光面」表，一次解析只算
+                # 一遍；没有光类装备时 overlay 为 None，下面两处判断都直接跳过。
+                from ...equipment import gear_light
+                table = gear_light.overlay(self)
+                extra = set(table["extra"]) if table else set()
+                if extra:
+                    # 被引到远处的光可能落在视距圈外，扫描窗口按它再放一圈。
+                    reach = max(reach, max(max(abs(ex - player_x), abs(ey - player_y))
+                                           for ex, ey in extra))
                 cells = set()
                 for y in range(max(0, player_y - reach), min(self.height, player_y + reach + 1)):
                     for x in range(max(0, player_x - reach), min(self.width, player_x + reach + 1)):
-                        if self._sight_reaches(x, y):
+                        shift = 0
+                        if table is not None:
+                            shift = gear_light.shift_of(table, x, y)
+                            if shift is None:
+                                continue
+                        if self._sight_reaches(x, y, shift, use_kernel=use_kernel):
                             cells.add((x, y))
                             continue
                         bonus = bonus_by_cell.get((x, y), 0)
-                        if bonus and self._sight_reaches(x, y, bonus):
+                        if shift > 0:
+                            bonus = max(bonus, shift)
+                        if bonus and self._sight_reaches(x, y, bonus,
+                                                         use_kernel=use_kernel):
                             cells.add((x, y))
+                            continue
+                        if (x, y) in extra:
+                            # 被引过去／闪出来的光：那几格算「亮着」，看得见多远处
+                            # 都按同一条带预算的射线结算（墙后照样不行）。
+                            span = gear_light.extra_span(self, x, y, radius)
+                            if span and self._sight_reaches(x, y, span,
+                                                            use_kernel=use_kernel):
+                                cells.add((x, y))
+                # 本帧的延长表顺手发布给逐格问句（glow.sight_bonus），免得同一
+                # 步里 can_see／reveals 再逐格重扫 49 格光源窗口。
+                glow.publish_frame(self, key, radius + glow.MAX_SIGHT_BONUS,
+                                   bonus_by_cell)
         finally:
             if previous_glow_cache is None:
                 try:
@@ -417,12 +569,15 @@ class SightMixin:
         return effects
 
     def _has_line_of_sight(self, x0: int, y0: int, x1: int, y1: int) -> bool:
-        """Integer Bresenham visibility; opaque solids and tall plants block sight.
+        """Integer Bresenham visibility; blocking follows cell height.
 
-        例外：玻璃幕墙等透明墙体仍然坚实（阻挡移动与弹道），但不阻断视线——
-        因此隔着幕墙可以看到对面的地形、液体与异象。黑烟是「类墙体」气体，
-        浓度足够时同样挡死视线；灰尘云的视野衰减只在玩家的视野预算里生效
-        （见 _sight_reaches），这里保持布尔判定供异象感知使用。
+        与玩家视野预算共用 :meth:`_sight_obstruction` 的高度口径，但这是布尔
+        接口、没有半径：高度 2 的固体**通过**（它只削减视距，不会完全挡住），
+        高度 ≥3、门、2 格高植物挡死。透明墙体（玻璃幕墙等）仍然坚实（阻挡
+        移动与弹道）但不阻断视线——因此隔着幕墙可以看到对面的地形、液体与
+        异象。黑烟是「类墙体」气体，浓度足够时同样挡死视线；灰尘云的视野衰减
+        只在玩家的视野预算里生效（见 _sight_reaches），这里保持布尔判定供异象
+        感知与光照传播使用。
         """
         dx = abs(x1 - x0)
         dy = abs(y1 - y0)
@@ -435,12 +590,14 @@ class SightMixin:
         skill_blocked = (
             self._skill_sight_blockers() if hasattr(self, "_skill_sight_blockers") else set()
         )
+        from ..construct_environments import light_curtain_cells
+        skill_blocked = skill_blocked | light_curtain_cells(self)
         while (x, y) != (x1, y1):
             if (x, y) != (x0, y0):
                 cell = self.cell(x, y)
-                if cell.solid and cell.wall_kind not in TRANSPARENT_WALLS:
-                    return False
-                if cell.plant and plant_height(cell.plant) >= 2:
+                # 高度决定遮挡（2026-10-24）：布尔接口把高度 2 当作「可通过」，
+                # 只保留完全挡死的类别。
+                if self._sight_obstruction(cell)[0]:
                     return False
                 if self._gas_sight_effect(cell)[0]:
                     return False

@@ -1,6 +1,6 @@
 """异象主动技能数据定义层（设计提案 v1.0 · 2026-10-08）。
 
-数据源：同目录 `anomaly_skills.json`，保留原技能数据表的值。
+数据源：`梦层异象主动技能开发表.xlsx`（仓库根目录，openpyxl 只读解析）。
 本模块在导入时一次性读取《技能参数》《技能效果》《异象配置》《演出预设》
 《调参规则》五张工作表，并合入 hospital.py 的专属位面成品参数：
 
@@ -23,15 +23,17 @@
 
 from __future__ import annotations
 
-import math
 import json
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-_DATA_PATH = Path(__file__).with_suffix(".json")
-SkillTables = Mapping[str, list[list[Any]]]
+_WORKBOOK_PATH = Path(__file__).resolve().parents[2] / "梦层异象主动技能开发表.xlsx"
+# 预转换产物（tools/export_anomaly_skills_json.py 生成）：存在时导入期只读
+# 本文件，不依赖 openpyxl 与 xlsx（网页端 Pyodide 构建的前提）。
+_PREBUILT_PATH = Path(__file__).resolve().parent / "anomaly_skills.json"
 
 _TIER_NAME_TO_INT = {"普通": 0, "强烈": 1, "核心": 2}
 TIER_NAMES = ("普通", "强烈", "核心")
@@ -131,7 +133,7 @@ class AnomalySkillConfig:
 
 
 # ---------------------------------------------------------------------------
-# 运行数据解析
+# xlsx 解析
 # ---------------------------------------------------------------------------
 
 def _to_int(value: Any) -> int:
@@ -159,7 +161,7 @@ def _rows_by_header(ws: Any, header_first_cell: str) -> list[dict[str, Any]]:
     """定位表头行（首个单元格匹配），返回其下所有非空首列行字典。"""
     header: list[str] | None = None
     rows: list[dict[str, Any]] = []
-    for row in ws:
+    for row in ws.iter_rows(values_only=True):
         cells = list(row)
         if header is None:
             if cells and _to_str(cells[0]) == header_first_cell:
@@ -171,11 +173,15 @@ def _rows_by_header(ws: Any, header_first_cell: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _load_data() -> SkillTables:
-    return json.loads(_DATA_PATH.read_text(encoding="utf-8"))
+def _load_workbook() -> Any:
+    import openpyxl  # 懒导入：有预转换 JSON 时运行期不需要该依赖
+
+    if not _WORKBOOK_PATH.exists():
+        raise RuntimeError(f"异象主动技能开发表不存在：{_WORKBOOK_PATH}")
+    return openpyxl.load_workbook(_WORKBOOK_PATH, read_only=True, data_only=True)
 
 
-def _parse_skills(wb: SkillTables) -> dict[str, SkillDef]:
+def _parse_skills(wb: openpyxl.Workbook) -> dict[str, SkillDef]:
     params = {r["技能ID"]: r for r in _rows_by_header(wb["技能参数"], "技能ID")}
     effects = {r["技能ID"]: r for r in _rows_by_header(wb["技能效果"], "技能ID")}
     definitions: dict[str, SkillDef] = {}
@@ -211,7 +217,7 @@ def _parse_skills(wb: SkillTables) -> dict[str, SkillDef]:
     return definitions
 
 
-def _parse_fx_profiles(wb: SkillTables) -> dict[str, FxProfile]:
+def _parse_fx_profiles(wb: openpyxl.Workbook) -> dict[str, FxProfile]:
     profiles: dict[str, FxProfile] = {}
     for r in _rows_by_header(wb["演出预设"], "预设ID"):
         pid = _to_str(r.get("预设ID"))
@@ -278,7 +284,7 @@ _TUNING_NUMERIC_KEYS = {
 }
 
 
-def _parse_tuning(wb: SkillTables) -> Mapping[str, Any]:
+def _parse_tuning(wb: openpyxl.Workbook) -> Mapping[str, Any]:
     values: dict[str, Any] = {}
     raw_notes: dict[str, str] = {}
     for r in _rows_by_header(wb["调参规则"], "参数/来源"):
@@ -373,7 +379,7 @@ def _tier_from_text(tier_name: str) -> int | None:
 
 
 def _parse_bindings(
-    wb: SkillTables,
+    wb: openpyxl.Workbook,
     definitions: Mapping[str, SkillDef],
 ) -> tuple[dict[str, tuple[SkillBinding, ...]], dict[str, AnomalySkillConfig]]:
     bindings: dict[str, list[SkillBinding]] = {}
@@ -433,12 +439,109 @@ def _build() -> tuple[
     dict[str, AnomalySkillConfig],
     Mapping[str, Any],
 ]:
-    wb = _load_data()
-    definitions = _parse_skills(wb)
-    fx = _parse_fx_profiles(wb)
-    tuning = _parse_tuning(wb)
-    bindings, configs = _parse_bindings(wb, definitions)
+    if _PREBUILT_PATH.exists():
+        return _load_prebuilt()
+    wb = _load_workbook()
+    try:
+        definitions = _parse_skills(wb)
+        fx = _parse_fx_profiles(wb)
+        tuning = _parse_tuning(wb)
+        bindings, configs = _parse_bindings(wb, definitions)
+    finally:
+        wb.close()
     return definitions, bindings, fx, configs, tuning
+
+
+# ---------------------------------------------------------------------------
+# 预转换 JSON：xlsx 派生数据（技能/绑定/演出/配置/调参五份）的离线快照。
+# 生成工具 tools/export_anomaly_skills_json.py；格式只增不改（version 字段）。
+# ---------------------------------------------------------------------------
+
+_PREBUILT_VERSION = 1
+
+
+def _parse_workbook() -> tuple[
+    dict[str, SkillDef],
+    dict[str, tuple[SkillBinding, ...]],
+    dict[str, FxProfile],
+    dict[str, AnomalySkillConfig],
+    Mapping[str, Any],
+]:
+    wb = _load_workbook()
+    try:
+        definitions = _parse_skills(wb)
+        fx = _parse_fx_profiles(wb)
+        tuning = _parse_tuning(wb)
+        bindings, configs = _parse_bindings(wb, definitions)
+    finally:
+        wb.close()
+    return definitions, bindings, fx, configs, tuning
+
+
+def dump_prebuilt(path: Path | None = None) -> Path:
+    """把当前 xlsx 解析结果写成预转换 JSON（构建期工具调用，勿在运行期用）。"""
+    from dataclasses import asdict
+
+    definitions, bindings, fx, configs, tuning = _parse_workbook()
+    target = path or _PREBUILT_PATH
+    payload = {
+        "version": _PREBUILT_VERSION,
+        "skills": {sid: asdict(d) for sid, d in definitions.items()},
+        "bindings": {
+            aid: [
+                {
+                    "anomaly_id": b.anomaly_id, "skill_id": b.skill_id,
+                    "slot": b.slot, "priority": b.priority, "phase": b.phase,
+                    "overrides": dict(b.overrides), "override_note": b.override_note,
+                }
+                for b in slots
+            ]
+            for aid, slots in bindings.items()
+        },
+        "fx_profiles": {pid: asdict(p) for pid, p in fx.items()},
+        "configs": {aid: asdict(c) for aid, c in configs.items()},
+        "tuning": {k: v for k, v in tuning.items() if k != "_notes"},
+        "tuning_notes": dict(tuning["_notes"]),
+    }
+    target.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8")
+    return target
+
+
+def _load_prebuilt() -> tuple[
+    dict[str, SkillDef],
+    dict[str, tuple[SkillBinding, ...]],
+    dict[str, FxProfile],
+    dict[str, AnomalySkillConfig],
+    Mapping[str, Any],
+]:
+    try:
+        payload = json.loads(_PREBUILT_PATH.read_text(encoding="utf-8"))
+        if payload.get("version") != _PREBUILT_VERSION:
+            raise RuntimeError(f"预转换版本不符：{payload.get('version')}")
+        definitions = {
+            sid: SkillDef(**{**d, "damage_by_band": tuple(d["damage_by_band"])})
+            for sid, d in payload["skills"].items()
+        }
+        bindings = {
+            aid: tuple(
+                SkillBinding(
+                    anomaly_id=b["anomaly_id"], skill_id=b["skill_id"],
+                    slot=b["slot"], priority=b["priority"], phase=b["phase"],
+                    overrides=b["overrides"], override_note=b["override_note"])
+                for b in slots)
+            for aid, slots in payload["bindings"].items()
+        }
+        fx = {pid: FxProfile(**p) for pid, p in payload["fx_profiles"].items()}
+        configs = {aid: AnomalySkillConfig(**c) for aid, c in payload["configs"].items()}
+        values = dict(payload["tuning"])
+        values["_notes"] = MappingProxyType(dict(payload["tuning_notes"]))
+        tuning = MappingProxyType(values)
+        return definitions, bindings, fx, configs, tuning
+    except Exception as error:
+        raise RuntimeError(f"预转换 JSON 解析失败（{error}）；请重跑 "
+                           f"tools/export_anomaly_skills_json.py 或删除该文件回退 xlsx") from error
 
 
 SKILL_DEFINITIONS, ANOMALY_SKILL_BINDINGS, FX_PROFILES, ANOMALY_SKILL_CONFIGS, TUNING = _build()
@@ -644,6 +747,41 @@ for aid, skills in TAMPER_BINDINGS.items():
     ANOMALY_SKILL_CONFIGS[aid] = AnomalySkillConfig(aid, TAMPER_ANOMALIES[aid]['name'], tier,
         1, 30, 1, 3, '篡改风险专属', '不进投放池', '已实装')
 
+# ---- 混乱极高专属异象（2026-10-27 玩家需求）----
+# 玩家要求：专属异象「比较强、有强力技能」。六技能基础创伤 8–11，按强烈
+# 异象阶级上限结算（深层顶到 6/7 点）；两个控制项（失焦征兆、迟帧光场）
+# 无直接创伤。施法/结算复用 EnemySkillMixin 既有 handler，只有两个范围技能
+# 与吸血/掏空在 core/chaos_skills.py 里补少量专属 handler（不重写引擎）。
+# 位置必须在 hospital/library/tamper 三批专属注册之后、2026-10-15 混乱化
+# 调参 pass 之前，这样新技能的射程/格数/持续也走同一套统一口径。
+from .chaos_anomalies import (
+    CHAOS_ANOMALIES,
+    CHAOS_BINDINGS,
+    CHAOS_SKILLS,
+    CHAOS_SKILL_META,
+    CHAOS_SKILL_TEXTS,
+)
+
+for key, name, tier, cd, windup, reach, cells, power, duration in CHAOS_SKILLS:
+    sid = 'chaos.' + key
+    effect, condition, counter = CHAOS_SKILL_TEXTS[key]
+    shape, channel, fx_profile, recovery = CHAOS_SKILL_META[key]
+    damage_by_band = tuple(
+        0 if power <= 0 else min(math.ceil(power * band_multiplier(b)), damage_cap(tier, b))
+        for b in range(4)
+    )
+    SKILL_DEFINITIONS[sid] = SkillDef(
+        sid, name, '混乱意象', tier, cd, windup, reach, shape, cells, power,
+        damage_by_band, channel, duration, recovery, fx_profile,
+        effect, condition, counter, '已实装')
+for aid, skills in CHAOS_BINDINGS.items():
+    tier = ('普通异象', '强烈异象', '核心执念').index(CHAOS_ANOMALIES[aid]['anomaly_kind'])
+    ANOMALY_SKILL_BINDINGS[aid] = tuple(
+        SkillBinding(aid, sid, i, i, 1) for i, sid in enumerate(skills))
+    ANOMALY_SKILL_CONFIGS[aid] = AnomalySkillConfig(
+        aid, CHAOS_ANOMALIES[aid]['name'], tier, 1, 27, 1, 3,
+        '混乱极高专属', '不进投放池', '已实装')
+
 # ---------------------------------------------------------------------------
 # 2026-10-15 混乱化改造调参 pass：异象技能全面放开射程、格数与持续时间。
 # 「很多技能实际上是视野内或无限范围，但都被规定了小范围」——统一放开：
@@ -663,11 +801,14 @@ for _sid, _def in list(SKILL_DEFINITIONS.items()):
     if _kw:
         SKILL_DEFINITIONS[_sid] = replace(_def, **_kw)
 
-_EXPECTED_SKILL_COUNT = 43 + len(HOSPITAL_SKILLS) + len(LIBRARY_SKILLS) + len(TAMPER_SKILLS)
-_EXPECTED_ANOMALY_COUNT = 56 + len(HOSPITAL_BINDINGS) + len(LIBRARY_BINDINGS) + len(TAMPER_BINDINGS)
+_EXPECTED_SKILL_COUNT = (43 + len(HOSPITAL_SKILLS) + len(LIBRARY_SKILLS)
+                        + len(TAMPER_SKILLS) + len(CHAOS_SKILLS))
+_EXPECTED_ANOMALY_COUNT = (56 + len(HOSPITAL_BINDINGS) + len(LIBRARY_BINDINGS)
+                           + len(TAMPER_BINDINGS) + len(CHAOS_BINDINGS))
 _EXPECTED_BINDING_COUNT = (87 + sum(map(len, HOSPITAL_BINDINGS.values()))
                            + sum(map(len, LIBRARY_BINDINGS.values()))
-                           + sum(map(len, TAMPER_BINDINGS.values())))
+                           + sum(map(len, TAMPER_BINDINGS.values()))
+                           + sum(map(len, CHAOS_BINDINGS.values())))
 # 槽位数量阶级规则：普通 0–2 / 强烈 2–3 / 核心 4。
 _SLOT_LIMITS = ((0, 2), (2, 3), (4, 4))
 

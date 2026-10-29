@@ -7,7 +7,7 @@
 
 本模块是纯逻辑：UI 侧每帧调用 :func:`tutorial_pump`（推进）、
 :tfunc:`tutorial_card_text`（教程卡文案）与 :func:`tutorial_target_cells`
-（地图高亮），Esc 跳步走 :func:`tutorial_skip_step`。n 键下潜由
+（地图高亮），Delete 跳步走 :func:`tutorial_skip_step`。n 键下潜由
 ``GameState.descend`` 直接收束引导，不经这里。
 """
 
@@ -28,7 +28,7 @@ TUTORIAL_STEPS: tuple[dict[str, Any], ...] = (
         "body": (
             "这里是所有梦开始的地方。\n"
             "左侧是梦境本身；右侧是意识面板——心智、清醒度与想象力，"
-            "事件记录与七个页签都在那边。"
+            "事件记录与六个页签都在那边。"
         ),
         "key": "任意键",
         "goal": "随便按一个键",
@@ -60,11 +60,11 @@ TUTORIAL_STEPS: tuple[dict[str, Any], ...] = (
         "id": "panel",
         "title": "意识面板",
         "body": (
-            "按 Tab 打开行囊。行囊、携带意象（T）、征兆（V）、洞察（I）、"
-            "观测（K）、操作（?）都列在右侧。\n"
+            "按 Alt+1 打开行囊。Tab 循环切换行动、行囊、构筑、自身、环境、日志；"
+            "各菜单还可点击顶部文字按钮打开。\n"
             "面板下方那行小字，是随时可查的键位备忘。"
         ),
-        "key": "Tab",
+        "key": "Alt+1",
         "goal": "打开行囊",
         "station": None,
     },
@@ -107,11 +107,10 @@ TUTORIAL_STEPS: tuple[dict[str, Any], ...] = (
         "id": "autowalk",
         "title": "让梦带你走",
         "body": (
-            "按 X 观察、再按 O 开启辅助：一条淡黄的路径会铺到 ◎ 与你之间，"
-            "按 Enter 沿它走过去。\n"
-            "直接用鼠标点远处同样可以——抵达 ◈ 时若踩着东西，顺手就会捡起。"
+            "按 X 观察，用方向键移动 ? 辅助选中区，按 Enter 前往可达位置。\n"
+            "直接左键点远处也可寻路；行走中任意键取消，该按键只刹停。"
         ),
-        "key": "X → O → Enter",
+        "key": "X → 方向键 → Enter",
         "goal": "自动走到 ◈",
         "station": "autowalk_target",
     },
@@ -268,7 +267,7 @@ def tutorial_pump(state) -> str | None:
 
 
 def tutorial_skip_step(state) -> str:
-    """Esc：跳过当前步骤进入下一步（已确认的交互口径）。
+    """Delete：跳过当前步骤进入下一步（已确认的交互口径）。
 
     最后一步也被跳过时直接结束引导（等价于「n 键随时离开」之外的出口）。
     """
@@ -300,7 +299,7 @@ def tutorial_end(state, message: str | None = None) -> str:
 def tutorial_target_cells(state) -> dict[tuple[int, int], str]:
     """当前步骤的地图高亮：{格子: 叠加字形}。引导未激活返回空表。
 
-    玩偶步的目标跟随实体实时位置（玩偶会踱步）；其余步骤用固定站点。
+    玩偶是固定练习靶；目标读取它当前仍存活的位置，其余步骤用固定站点。
     """
     if state.tutorial.get('version') == COURSE_TEMPLATE_VERSION:
         from .origin_course import current
@@ -370,7 +369,7 @@ def tutorial_card_text(state, width: int = 34):
         step=current(state)
         if step is None: return Text()
         text=Text(localized(step,'title'),style='bold #9fdaca')
-        text.append('\n'+tr('目标与操作见任务日志；Esc 跳过，N 随时离开。'),style='#e6c46a')
+        text.append('\n'+tr('目标与操作见任务日志；Delete 跳过，Esc 返回/暂停，N 随时离开。'),style='#e6c46a')
         return text
 
     if not tutorial_active(state):
@@ -392,7 +391,7 @@ def tutorial_card_text(state, width: int = 34):
         style="yellow",
     )
     text.append(
-        tr("Esc 跳过此步 · n 随时下潜离开"),
+        tr("Delete 跳过此步 · Esc 返回/暂停 · n 随时下潜离开"),
         style="grey58",
     )
     return text

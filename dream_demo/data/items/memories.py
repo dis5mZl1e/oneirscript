@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..expansion.growth_runtime import memory_item_rows
+
 ITEMS = {
     "lighthouse_keeper_memory": {
         "name": "守塔人的夜班表", "category": "记忆碎片", "slot": "记忆槽",
@@ -26,9 +28,12 @@ ITEMS = {
         "effect": "memory", "memory_effect": "雨声的钝化",
     },
     "rain_machine_memory": {
+        # 2026-10-26 平衡审计：原挂「机械的耐性」（心智上限 +10，稀有档），
+        # 与「三十层的电梯按钮」同值同效果，稀有度白给。改挂少见档的「守夜的余温」
+        # （+8），把 +10 留给真正的稀有件。
         "name": "雨夜的机械声", "category": "记忆碎片", "slot": "记忆槽",
         "description": "记得某种不会停机的雨。", "color": "bright_green",
-        "effect": "memory", "memory_effect": "机械的耐性",
+        "effect": "memory", "memory_effect": "守夜的余温",
     },
     "rain_machine_memory_2": {
         "name": "收音机里的雨", "category": "记忆碎片", "slot": "记忆槽",
@@ -177,3 +182,7 @@ ITEMS = {
         "color": "#90c8b0", "effect": "memory", "memory_effect": "电路的辨音",
     },
 }
+
+# 扩展包记忆碎片：目录里 integration_status=="runtime" 的行在这里物化成实物，
+# 与手写碎片共用同一段 id 空间、同一套槽位与稀有度池。
+ITEMS.update(memory_item_rows())

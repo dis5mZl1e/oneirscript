@@ -15,6 +15,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Footer, Header, Input, Static
 
 from ...audio import sfx
+from ...env_compat import get as _env_get
 from ...music import music_scene
 from ...config import ConfigManager, SettingChange
 from ...user_config import load_user_config
@@ -25,6 +26,7 @@ from ...menu_pages import CodexPageState, SettingsPageState, render_codex_detail
 from ...mapgen import region_for_depth
 from ...materials import TRANSPARENT_WALLS, gas_def, liquid_def, wall_def, plant_height
 from ...persistence import GameSession, OutdatedSaveError, SaveManager
+from ...cy_kernels import enabled as _kernel_enabled
 from ...symbols import symbol
 
 # §12 D：真实电光的装饰预算。超过就按步长降采样，保留空间分布，
@@ -32,10 +34,19 @@ from ...symbols import symbol
 ELECTRIC_LIGHT_MAX = 16
 from .._native import _trace_native, select_mouse_driver
 from .. import glyphs
+from ..sidebar_lock import stamp_title_lock
+from ..terse import enabled as _terse_enabled
 from ..home_title import home_title_text
 from ..home_scene import HomeScene, DreamStatic, DreamVertical, DreamHorizontal, dream_title_text
 from ..frame_geometry import compose_fx, projectile_color
+from ..world_renderer import world_render_mode
 from ..map_particles import MapParticles
+from ..visual_timeline import VisualClock
+from ..static_updates import update_static_if_changed
+from ..visual_compositor import flatten_visual_text
+from ..visual_semantics import impact_number_style, impact_origin_color
+from ...core.visual_events import drain_visual_events
+from .fx_kernel import scan_viewport as _kernel_scan_viewport
 from ..ornament_frame import OrnamentPane
 from ..input import InputMixin
 from ..qol import QoLUIMixin
@@ -47,7 +58,7 @@ from ..newgame_options import NewGameOptionsView, options_text, summary_text, de
 from ..tutorial_card import TutorialCard
 from ..settlement import SettlementScreen
 from ..effects import (FXEngine, FxSnapshot, FxSource, FxHit, FxWave, FxProjectile, FxCombatPulse, FxCast,
-                      BORDER_EVENT_COLORS, RIPPLE_LIFE, RIPPLE_MAX_RADIUS,
+                      AURA_COLOR, BORDER_EVENT_COLORS, RIPPLE_LIFE, RIPPLE_MAX_RADIUS,
                       RIPPLE_MIN_RADIUS, RIPPLE_RESET_TURNS, PROJECTILE_LIFE,
                       PROJECTILE_TOTAL, overlay_style, projectile_flight_time, PROJECTILE_END_LIFE,
                       projectile_repeat_delay,projectile_replay_time,
@@ -75,6 +86,7 @@ from ..styles import GAME_FRAME_SECONDS
 from ..styles import HOME_PANEL_MODES
 from ..styles import LAYER_LABEL_STYLE
 from ..styles import MAP_ZOOM_LEVELS
+from ..styles import RIGHT_PANEL_MODES
 
 # ---------------------------------------------------------------------------
 # FX 写回节流（2026-09-21，性能 P0）
@@ -98,6 +110,210 @@ FX_WRITEBACK_INTERVAL = 1.0 / FX_WRITEBACK_HZ
 # 5Hz 下每次推进 2.4 档（一圈 4 秒 → 每帧走一圈的 5%），肉眼仍是连续的 chase。
 # 实测这一项就值约 3.5 个百分点（见 perf_compare 的 nodeco 与 now 之差）。
 DECO_FRAME_HZ = 5.0
+# 空闲降频（2026-10-26）：真实输入 2s 后装饰边框从 5Hz 降到 2Hz；任何输入
+# 立刻恢复。5Hz 装饰实测占总空闲 CPU 约 12 个百分点（暂停 _deco_timer 后
+# 16.4% → 4.3%），降频不改变流光顺序与相位，只是更新更稀。
+DECO_IDLE_HZ = 2.0
+DECO_IDLE_AFTER = 2.0
+# ONEIRSCRIPT_DECO_IDLE_THROTTLE=0 可退回全程 5Hz（排障/录屏用）。
+_DECO_IDLE_THROTTLE = str(_env_get("DECO_IDLE_THROTTLE", "1")).strip().lower() not in (
+    "0", "off", "false", "no")
+
+
+def set_deco_idle_throttle(enabled: bool) -> None:
+    """测试/探针用：切换空闲降频。"""
+    global _DECO_IDLE_THROTTLE
+    _DECO_IDLE_THROTTLE = bool(enabled)
+
+
+# painter 装饰节流（2026-10-27 A2）：painter 接管世界帧时，装饰边框刷新只会把
+# OrnamentPane 标脏，而它不是 WorldCanvas → WorldPainter 的 world_only=False →
+# 每次装饰 tick 都退回 Textual **整屏合成**（文档口径 11–19ms/次）。painter 下
+# 把名义频率降到 DECO_PAINTER_HZ（默认 1Hz，边框从「呼吸」变「极慢呼吸」，
+# 仍能看出明暗流动），运行时路径生效；注入 t 的测试/探针路径保持原 5Hz 口径。
+# ONEIRSCRIPT_DECO_PAINTER_HZ 可覆盖默认值（>0 的浮点）；
+# ONEIRSCRIPT_DECO_PAINTER_THROTTLE=0 整体回退（排障/录屏）。
+DECO_PAINTER_HZ = 1.0
+try:
+    _deco_painter_hz_env = float(str(_env_get("DECO_PAINTER_HZ", "") or "").strip())
+except ValueError:
+    _deco_painter_hz_env = 0.0
+if _deco_painter_hz_env > 0:
+    DECO_PAINTER_HZ = _deco_painter_hz_env
+_DECO_PAINTER_THROTTLE = str(_env_get("DECO_PAINTER_THROTTLE", "1")).strip().lower() not in (
+    "0", "off", "false", "no")
+
+
+def set_deco_painter_throttle(enabled: bool) -> None:
+    """测试/探针用：切换 painter 下的装饰节流（False = 退回原 5Hz 口径）。"""
+    global _DECO_PAINTER_THROTTLE
+    _DECO_PAINTER_THROTTLE = bool(enabled)
+
+
+def set_deco_painter_hz(hz: float) -> None:
+    """测试/探针用：覆盖 painter 下的装饰量化频率（必须 >0）。"""
+    global DECO_PAINTER_HZ
+    hz = float(hz)
+    if not hz > 0:
+        raise ValueError("deco painter hz must be > 0")
+    DECO_PAINTER_HZ = hz
+
+
+# 图像后端的装饰节流（2026-10-28 第一步）：图像+原生层下地图由独立窗口绘制，
+# 但 OrnamentPane 的边框呼吸仍走 Textual：每次装饰 tick 把四条边框标脏，
+# 终端侧实测会付一次 11–19ms 的整屏合成（5Hz ≈ 5–9% 空闲 CPU）。这里把
+# 图像模式世界视图的名义频率从 5Hz 压到 DECO_IMAGE_HZ（默认 2Hz，肉眼仍是
+# 连续呼吸，只是推进更稀），不改变流光顺序/相位/主题色。
+# ONEIRSCRIPT_DECO_IMAGE_HZ 可覆盖频率（>0 浮点）；
+# ONEIRSCRIPT_DECO_IMAGE_THROTTLE=0 整体回退（排障/录屏/A-B）。
+DECO_IMAGE_HZ = 2.0
+try:
+    _deco_image_hz_env = float(str(_env_get("DECO_IMAGE_HZ", "") or "").strip())
+except ValueError:
+    _deco_image_hz_env = 0.0
+if _deco_image_hz_env > 0:
+    DECO_IMAGE_HZ = _deco_image_hz_env
+_DECO_IMAGE_THROTTLE = str(_env_get("DECO_IMAGE_THROTTLE", "1")).strip().lower() not in (
+    "0", "off", "false", "no")
+
+
+def set_deco_image_throttle(enabled: bool) -> None:
+    """测试/探针用：切换图像模式下的装饰节流（False = 退回 5Hz 口径）。"""
+    global _DECO_IMAGE_THROTTLE
+    _DECO_IMAGE_THROTTLE = bool(enabled)
+
+
+def set_deco_image_hz(hz: float) -> None:
+    """测试/探针用：覆盖图像模式下的装饰量化频率（必须 >0）。"""
+    global DECO_IMAGE_HZ
+    hz = float(hz)
+    if not hz > 0:
+        raise ValueError("deco image hz must be > 0")
+    DECO_IMAGE_HZ = hz
+
+# 非平滑回退优化（2026-10-26）：普通动作不再在动作内强制合成整帧 FX；
+# refresh_view 的 _fx_repaint 或 20Hz FX tick 会补画。ONEIRSCRIPT_FX_ACTION_SKIP=0
+# 可退回旧行为，供 A/B 与排障。
+_FX_ACTION_SKIP_ENABLED = str(_env_get("FX_ACTION_SKIP", "1")).strip().lower() not in (
+    "0", "off", "false", "no")
+
+
+def set_fx_action_skip_enabled(enabled: bool) -> None:
+    """测试/探针用：同进程切换动作内 FX 合成跳过。"""
+    global _FX_ACTION_SKIP_ENABLED
+    _FX_ACTION_SKIP_ENABLED = bool(enabled)
+
+
+# F1′（2026-10-28）：进入冻结画面时补一帧「擦除帧」。
+# 全屏模态 / 观察 / 分层观察会把 FX 时钟停住，命中跳字、受创涟漪、施法波、
+# 短光就停在屏上（分层观察的地图仍然可见，最容易看见残留）。这里在进入冻结的
+# 那一拍把**瞬态表现队列**清空、并用同一时钟 force 重画一次；不推进时钟、不改
+# 规则状态。ONEIRSCRIPT_FX_MODAL_CLEAR=0 可回退成「冻结保留最后一帧」。
+def _fx_freeze_clear_enabled() -> bool:
+    return str(_env_get("FX_MODAL_CLEAR", "1") or "1").strip().lower() not in (
+        "0", "off", "false", "no")
+
+# 命中表现（2026-10-24，docs/手感与键盘操作优化分析-2026-10-24.md §4）：
+# 20Hz 时钟下 0.18s 抖动 = 3–4 个实际帧；强调只亮一帧半；数字前 0.45s
+# 保持可读，再用 0.25s 淡出。全部按 FX 时钟计算，不用 wall clock。
+IMPACT_SHAKE_LIFE = 0.18
+IMPACT_EMPHASIS_LIFE = 0.10
+IMPACT_NUMBER_LIFE = 0.70
+IMPACT_NUMBER_READABLE = 0.45
+IMPACT_CUE_MAX = 16
+IMPACT_ENEMY_COLOR = "#fff3d6"
+IMPACT_BLOCK_COLOR = "#9fd7ff"
+IMPACT_KILL_COLOR = "#ffd166"
+
+# 重击强度档（阶段 C2）：同一套 cue 按**实际创伤**分档，否则 1 点蹭伤和
+# 12 点重击看起来一模一样。重击阈值 8 与音效对齐（context_actions 的
+# `wound_heavy` 同样是单次损失 ≥8），听觉与视觉不会各说各话。
+IMPACT_LIGHT_MAX = 2
+IMPACT_HEAVY_MIN = 8
+
+
+def _visual_signature(frame) -> int:
+    """多层字符帧的稳定签名；空帧恒为 0，旧画面 digest 逐像素等价。"""
+    if frame is None or frame.is_empty:
+        return 0
+    return hash((frame.sorted_layers(), tuple(sorted(frame.backgrounds.items()))))
+
+
+def _subject_cells(state) -> frozenset:
+    """图像多层字符的主体保护格（角色/物品/事件主体）。"""
+    cells = {(state.player.x, state.player.y)}
+    cells.update((e.x, e.y) for e in state.enemies if getattr(e, 'integrity', 1) > 0)
+    cells.update((e.x, e.y) for e in state.events if not getattr(e, 'resolved', False))
+    cells.update((item.x, item.y) for item in state.world_items)
+    return frozenset(cells)
+IMPACT_TIERS = {
+    "blocked": {"shake_life": 0.0, "shake": (0, 0), "gain": 0.0,
+                "emphasis": 0.0, "readable": IMPACT_NUMBER_READABLE,
+                "number_life": IMPACT_NUMBER_LIFE, "bold": False},
+    "light": {"shake_life": 0.14, "shake": (1, 0), "gain": 0.8,
+              "emphasis": 0.06, "readable": IMPACT_NUMBER_READABLE,
+              "number_life": IMPACT_NUMBER_LIFE, "bold": False},
+    "normal": {"shake_life": IMPACT_SHAKE_LIFE, "shake": (2, 1), "gain": 1.0,
+               "emphasis": IMPACT_EMPHASIS_LIFE, "readable": IMPACT_NUMBER_READABLE,
+               "number_life": IMPACT_NUMBER_LIFE, "bold": False},
+    "heavy": {"shake_life": 0.24, "shake": (3, 1), "gain": 2.0,
+              "emphasis": 0.16, "readable": 0.60,
+              "number_life": 0.90, "bold": True},
+}
+
+# 命中定格（阶段 C1）：40–70ms 的表现层停留。定格期间输入、回合结算与音效
+# 照常推进，只是抖动停在冲出的峰值、跳字停在起始格；「减少动态效果」关闭它。
+IMPACT_HITSTOP_MS = 55
+IMPACT_HITSTOP_MAX_MS = 70
+
+
+def impact_tier(event) -> str:
+    """按实际创伤给命中分档；被挡下优先，击杀一律升到重击档。"""
+    if event.get("blocked"):
+        return "blocked"
+    amount = int(event.get("amount", 0) or 0)
+    if event.get("killed") or amount >= IMPACT_HEAVY_MIN:
+        return "heavy"
+    if amount <= IMPACT_LIGHT_MAX:
+        return "light"
+    return "normal"
+
+
+def impact_tier_spec(event) -> dict:
+    return IMPACT_TIERS[impact_tier(event)]
+
+
+# 焦点边框只压暗非焦点一侧：线型与色相归区域主题（换层换线型是既有契约），
+# 压暗量取 45%——在 #101018 地图底上仍看得见，又明显弱于焦点侧。
+UNFOCUSED_BORDER_DIM = 0.45
+
+# 右栏焦点提示里「Enter 会做什么」的逐页说明（P0：选中时直接说明动作）。
+PANEL_ENTER_HINTS = {
+    "inventory": "Enter 使用/装备",
+    "equipment": "Enter 卸下/改装",
+    "build_overview": "Enter 查看构筑",
+    "portents": "Enter 查看征兆",
+    "self_overview": "Enter 查看自身",
+    "self_stats": "Enter 查看数值",
+    "catalog": "Enter 查看条目",
+    "actions": "Enter 执行选中行动",
+    "nearby": "Enter 查看周围",
+    "tasks": "Enter 查看任务",
+    "world": "Enter 继续",
+}
+
+
+def _fade_hex(color: str, amount: float) -> str:
+    """按比例压暗一个 #rrggbb（淡出用；命名色原样返回，宁可亮着也不崩）。"""
+    value = color.lstrip("#")
+    if len(value) != 6:
+        return color
+    try:
+        channels = [int(value[index:index + 2], 16) for index in (0, 2, 4)]
+    except ValueError:
+        return color
+    factor = max(0.15, min(1.0, amount))
+    return "#{:02x}{:02x}{:02x}".format(*(int(channel * factor) for channel in channels))
 
 
 from ..widgets import (
@@ -143,10 +359,11 @@ from .panels import PanelsMixin
 from .session import SessionMixin
 from ..tamper_world import TamperWorldUIMixin
 from ..self_audit import SelfAuditMixin
+from ..layer_info import LayerInfoMixin, status_layer_label
 
 from ..layer_observation import LayerObservationMixin
 from ..live_map import LiveMapMixin
-from ..signal_status import SignalStatusMixin
+from ..signal_status import SignalStatusMixin, merged_tail_text, noise_preview
 from ..panel_shortcuts import PanelShortcutsMixin
 from ..terrain_preview import TerrainPreviewMixin
 
@@ -176,8 +393,8 @@ def _sound_visual_view_cells(cells, visible, left: int, top: int,
                              width: int, height: int) -> tuple[tuple[int, int], ...]:
     """把声波世界格过滤成「当前视野外、且在视口内」的视口格。
 
-    2026-10-22 玩家要求：视野内所有格子不渲染声音特效；只让视野外听到
-    声波的格显示当前蓝色静态标记。
+    Current vision stays untouched; authorized out-of-sight cells form the
+    square-cell ripple shared by both terminal renderers.
     """
     out = []
     for wx, wy in cells:
@@ -189,21 +406,26 @@ def _sound_visual_view_cells(cells, visible, left: int, top: int,
     return tuple(out)
 
 
-def _sound_visual_fog_styles(waves, styles) -> dict[tuple[int, int], str]:
+def _sound_visual_fog_styles(waves, styles, t=None) -> dict:
     """声波格的显式底色（图像后端单独消费）。
 
     声波按规则只落在视野外，而图像后端的常规叠加层要求格子可见；混在
     ``backgrounds`` 里会被整片丢掉。这里按波次格拆出一份可压过迷雾的底色。
     """
-    cells = {cell for wave in waves for cell in wave.cells}
-    return {pos: styles[pos] for pos in cells if pos in styles}
+    if t is None:
+        cells = {cell for wave in waves for cell in wave.cells}
+        return {pos: styles[pos] for pos in cells if pos in styles}
+    from ..sound_ripple import wave_colors
+    return wave_colors(waves, t, SOUND_WAVE_LIFE)
 
 
 from ..sidebar_workspaces import SidebarWorkspacesMixin
 from ..sidebar_management import SidebarManagementMixin
+from ..tutorial_coach import TutorialCoachMixin
+from ..left_event_log import LeftEventLogMixin
 
 
-class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMixin, PanelShortcutsMixin, SignalStatusMixin, LiveMapMixin, LayerObservationMixin, NavigationMixin, BoardEditorMixin, PanelsMixin, SessionMixin, AppCssMixin, QoLUIMixin, GraphicsMixin, PanelViewMixin, InputMixin, DebugPanelMixin, SelfAuditMixin, TamperWorldUIMixin, TamperUIMixin, App[None]):
+class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMixin, PanelShortcutsMixin, SignalStatusMixin, LiveMapMixin, LayerObservationMixin, LayerInfoMixin, NavigationMixin, BoardEditorMixin, PanelsMixin, SessionMixin, AppCssMixin, QoLUIMixin, GraphicsMixin, PanelViewMixin, InputMixin, DebugPanelMixin, SelfAuditMixin, TamperWorldUIMixin, TamperUIMixin, App[None]):
     """主类：mixin 组合（拆分见 docs/megafile-refactor-plan.md）。"""
 
     # 主页光标的两轴地图（行 × 列），id 与 compose() 里的控件一一对应：
@@ -258,6 +480,8 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         Binding("g", "pickup_action", tr("捡起")),
         Binding("f", "aim_fire", tr("发射")),
         Binding("r", "reload_weapon", tr("换弹"), show=False),
+        Binding('tab', 'app.focus_next', show=False, priority=True),
+        Binding('shift+tab', 'app.focus_previous', show=False, priority=True),
         # 面板光标锁定：锁定后 wasd/方向键/小键盘只移动面板光标（键盘滚动
         # 事件记录等），~ 或 Esc 或点击地图解锁。底栏可点击进入。
         # 键位只登记「~」一条：物理键 ` 与 ~（含 Shift）在 InputMixin.on_key
@@ -297,22 +521,42 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         self.refresh_view()
 
     def refresh_view(self) -> None:
+        if self.tutorial_session and (self.session.state.run_over
+                or not self.session.state.tutorial.get('active')):
+            self._finish_tutorial_session()
+            return
         self._sidebar_before_refresh()
+        self._sync_map_task_focus()
         if self.panel_mode == 'inventory' and self.panel_selection not in self._inventory_visible_indices():
             self._qol_reselect_inventory(focus=False, reset_scroll=False)
         self._refresh_view_contents()
         self._refresh_qol()
         if self.layer_observation is None:
-            self.query_one('#panel-help').update(tr('完整键位表 · 点击 / Alt+H'))
+            self._refresh_panel_help()
         self._sync_layer_observation_ui()
         self._map_startup_notice()
         if not self.home_mode:
             self._refresh_signal_status()
             self._refresh_self_audit(self.session.state)
+            self._refresh_layer_info(self.session.state)
         elif self._inspection_active():
             self.close_signal_detail()
             self._close_self_audit(refresh=False)
+            self._close_layer_info(refresh=False)
         self._sidebar_after_refresh()
+        if self._coach_enabled():
+            # UI-only objectives must survive opening/closing a view between
+            # timer ticks; record the real current interface on each transition.
+            from ...core.origin_course import observe_ui, pump
+            observe_ui(self)
+            pump(self.session.state)
+        self._refresh_tutorial_coach()
+
+    def _paint_world_early(self, *widgets) -> None:
+        """painter 模式下动作内提前写地图；textual/canvas 模式是空操作。"""
+        painter = getattr(self, "_world_painter", None)
+        if painter is not None:
+            painter.paint_early(widgets)
 
     def _refresh_view_contents(self) -> None:
         self._sync_music()
@@ -381,6 +625,10 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         if configured_show_details != self._configured_show_details:
             self._configured_show_details = configured_show_details
             self.details_expanded = configured_show_details
+        # 少字模式：可展开注释默认收起；玩家自己按 \ 展开后不再压回去
+        # （_terse_details_manual 由输入层在该键上置位）。
+        if _terse_enabled(self.config) and not getattr(self, '_terse_details_manual', False):
+            self.details_expanded = False
         map_view = self.query_one("#map", MapView)
         map_view.symbol_mode = mode
         map_view.observe_cursor = (self.sentence_aim['cursor'] if self.sentence_aim is not None
@@ -398,10 +646,43 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             map_view.assist_cells = None
         self._sync_tutorial_highlight(map_view, state)
         map_view.animated_combat = self.config.get("fx_quality") != "off"
-        map_view.update_state(state)
+        map_visible = not (self.home_mode or self.panel_mode in {
+            'pause', 'pause_settings', 'pause_codex', 'board_editor'})
+        deferred_base = False
+        deferred_shared = False
+        if map_visible:
+            if (world_render_mode() == "painter" and not self.home_mode and not state.run_over
+                    and self.layer_observation is None):
+                deferred_shared = True
+                map_view._next_frame_defer = (self._fx_active, True)
+                try:
+                    deferred_base = map_view.update_state(state)
+                except Exception:
+                    map_view.finish_pending_shared_scene()
+                    raise
+                finally:
+                    map_view._next_frame_defer = None
+            else:
+                map_view.update_state(state)
         # 基帧刚重画：立刻补回 FX 叠加层，避免先闪一帧没有光照/没有液气底色的
         # 纯基准帧（"每回合闪一下"，见 _fx_repaint 的说明）。
-        self._fx_repaint(map_view, state)
+        if map_visible:
+            try:
+                try:
+                    self._fx_repaint(map_view, state)
+                finally:
+                    # If FX could not publish a completed frame, show the new
+                    # base rather than leaving the previous turn on screen.
+                    if deferred_base and map_view.fx_base_overwritten:
+                        map_view.update_scene(map_view.last_base_text)
+                if getattr(map_view, "_base_changed", True):
+                    self._paint_world_early(map_view)
+            finally:
+                if deferred_shared:
+                    # 角色模式的首帧不需要 shared_scene（只给后续图像/观察/
+                    # 悬停用）。build_scene/present_scene 约 18ms，移出同步动作，
+                    # 放到本帧刷新后完成；下次 update_state 开头也会兜底完成。
+                    self.call_after_refresh(map_view.finish_pending_shared_scene)
         # 调试面板（测试模式 L 键）：开时显示并刷新两列内容，关时隐藏。
         debug_panel = self.query_one("#debug-panel")
         if self.debug_panel_open and not self.home_mode:
@@ -506,12 +787,13 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         # 万一有哪条路径漏了守卫，这里也会把面板拉回事件记录，右侧不会残留
         # 「存档槽/开始新游戏」文案，按键路由也不会被卡在面板分支。
         if self.panel_mode in HOME_PANEL_MODES:
-            self.panel_mode = "world"
+            self.panel_mode = self._default_panel_mode()
             self.panel_selection = 0
             self.panel_scroll = 0
         self._refresh_world_view(state)
-        self.query_one('#panel-help').update(tr('完整键位表 · 点击 / Alt+H'))
-        self.query_one('#panel-help').display = self.sidebar_workspace == 'actions'
+        self._refresh_panel_help()
+        self.query_one('#panel-help').display = (
+            bool(self._panel_context_hint()) or self.sidebar_workspace == 'actions')
 
     def _apply_region_theme(self, depth: int, realm_id: str = "") -> None:
         """按所在区域换肤：**面板底色**、地图边框线型/颜色、顶栏底色与前景色、状态栏前景色。
@@ -551,9 +833,15 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         # 保持边框完整闭合，区域名只在侧栏状态行显示。
         side_pane = self.query_one("#side-pane")
         side_pane.styles.border = (theme.border_style, theme.border_color)
+        # 换肤会重写两条边框，焦点高亮必须随之重算（缓存键含主题，但这里
+        # 直接作废更稳妥：回主页再进同一区时也能立刻恢复焦点高亮）。
+        self._focus_style_key = None
         quality = str(self.config.get('fx_quality') or 'off')
+        focused = self._focused_pane_selector()
         for pane in (map_pane, side_pane):
-            pane.paint_ornament(depth, quality, 0.0, self._symbol_mode() != 'ascii', realm_id=realm_id)
+            dim = 1.0 if f"#{pane.id}" == focused else UNFOCUSED_BORDER_DIM
+            pane.paint_ornament(depth, quality, 0.0, self._symbol_mode() != 'ascii',
+                                realm_id=realm_id, focus_dim=dim)
         # 面板底色随区域换（2026-09-21 三改）：右侧状态面板 / 左侧浮层 / 消息气泡
         # 三处**一起**改成当地区域的面板色——它们是同一个「框」，颜色必须同步，
         # 否则浮层与右栏会分家（tests/test_panel_backgrounds.py 盯着这条）。
@@ -574,54 +862,194 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         header.styles.color = theme.header_fg
         self.query_one("#status", Static).styles.color = theme.status_fg
 
+    def _focused_pane_selector(self) -> str:
+        """当前 `/` 区域对应的面板；装饰帧与静态边框共用这一判据。
+
+        2026-10-24 定稿：方向键已恒归地图，区域只标记「WASD 现在控谁」——
+        panel/overlay 时高亮右栏/左浮层，map 时高亮地图。
+        """
+        zone = str(getattr(self, "cursor_zone", "map"))
+        return "#side-pane" if zone in ("panel", "overlay") else "#map-pane"
+
+    def _refresh_focus_style(self) -> None:
+        """用边框亮度持续标出键盘焦点在地图还是右栏（不靠一次性 toast）。
+
+        线型与色相仍归区域主题——焦点只决定是否压暗另一侧。不换线型
+        （round/double/heavy 是换层换肤的既有契约），也不改变边框占位。
+        可见边框由 OrnamentBorderMixin 覆盖绘制，所以除 styles.border 外
+        还必须把 focus_dim 交给装饰层（否则屏幕上完全看不出变化）。
+        """
+        theme = getattr(self, "_applied_theme", None)
+        if theme is None or self.home_mode:
+            return
+        zone = str(getattr(self, "cursor_zone", "map"))
+        key = (zone, bool(self.panel_locked), self.panel_mode, theme)
+        if key == getattr(self, "_focus_style_key", None):
+            return
+        self._focus_style_key = key
+        focused = self._focused_pane_selector()
+        for selector in ("#map-pane", "#side-pane"):
+            try:
+                pane = self.query_one(selector)
+            except Exception:  # pragma: no cover - 极早期挂载中
+                return
+            color = (theme.border_color if selector == focused
+                     else _fade_hex(theme.border_color, UNFOCUSED_BORDER_DIM))
+            pane.styles.border = (theme.border_style, color)
+        self._paint_panel_ornaments(str(self.config.get("fx_quality") or "off"), 0.0)
+
     def _refresh_world_view(self, state: GameState) -> None:
+        # 右侧固定（~ 锁定）：任何自动换页都必须在绘制前被拉回锁定页。
+        self._enforce_locked_panel_page()
         self._sync_home_scene()
         """游戏内界面：只更新可见的世界组件（状态栏/悬停/事件面板），跳过主页的图鉴与设置。"""
         self._apply_region_theme(state.depth, state.realm_id)
-        # 层型标签：修饰符在本层地形类型之前（如「潮湿·洞穴」；常规层只显示层型）。
-        if state.layer_modifier:
-            form_label = f"{tr(state.layer_modifier)}·{tr(state.map_form)}"
-        else:
-            form_label = tr(state.map_form)
+        self._refresh_focus_style()
+        # 层标签（2026-10-24 玩家优化 6）：顺序改为「层型 修饰符 层名」；
+        # 英文下层型/修饰符换成 Unicode 代号（词太长放不下），完整词与含义
+        # 在点击本行打开的左侧层详情面板里。本行同时是层信息的点击入口。
+        # 少字模式（terse_mode）：层名/区域隐藏，只留「层数 + 层型/修饰符符号」。
+        from ..terse import (enabled as _terse_enabled, layer_glyph as _layer_glyph,
+                             stat_glyph as _stat_glyph, tier_glyph as _tier_glyph)
+        terse_mode = _terse_enabled(self.config)
+        mode = self._symbol_mode()
+        form_label = status_layer_label(state)
         region = region_for_depth(state.depth)
-        label_width = max(6, *(glyphs.cell_len(tr(key)) for key in ("心智", "清醒度", "想象力")))
+        # 三条资源条要先按「最终显示出来的文字」算列宽再排版：英文普通模式
+        # 会把完整词压成缩写（Mind / LUC / IMA、Healthy→OK），若仍用中文标签
+        # 或压缩前的英文标签算 label_width，压缩只改字不改间距，三条就会错位
+        # （2026-10-28 玩家反馈「英文模式三个数值条对不齐」）。同理，档位词
+        # 也要先压缩再量宽，否则条长会按偏宽的 suffix 预留而被截断。
+        en_compact = get_language() == 'en' and not terse_mode
+        if terse_mode:
+            from ...mapgen.layout import normalize_map_form
+            from ..layer_info import _form_glyph, _modifier_glyph
+            form = normalize_map_form(state.map_form)
+            form_label = _form_glyph(form) + (_modifier_glyph(state.layer_modifier)
+                                              if state.layer_modifier else '')
+            label_width = 2
+            suffix_width = 2
+            bar_labels = (None, None, None)
+            tier_suffixes = ("", "")
+        else:
+            from ..terse import compact_english_string
+            bar_labels = [tr("心智"), tr("清醒度"), tr("想象力")]
+            tier_suffixes = [f"  {tr(STATUS_TIERS[tier])}"
+                             for tier in (state.mind_tier, state.lucidity_tier)]
+            if en_compact:
+                bar_labels = [compact_english_string(label) for label in bar_labels]
+                tier_suffixes = [compact_english_string(suffix)
+                                 for suffix in tier_suffixes]
+            label_width = max(6, *(glyphs.cell_len(label) for label in bar_labels))
+            suffix_width = max(glyphs.cell_len(suffix) for suffix in tier_suffixes)
         value_width = max(len(f"{maximum}/{maximum}") for maximum in
                           (state.max_mind, state.max_lucidity, state.max_imagination))
-        suffix_width = max(glyphs.cell_len("  " + tr(STATUS_TIERS[tier]))
-                           for tier in (state.mind_tier, state.lucidity_tier))
         available = self.query_one("#status", Static).content_size.width or 44
         bar_layout = dict(label_width=label_width, value_width=value_width,
                           width=max(3, min(20, available - label_width - value_width - suffix_width - 2)))
-        status = Text.assemble(
-            (("⚙ " + tr("测试模式") + "  ", "bold #3ddad0") if self.test_mode else ""),
-            (f"{tr(region)} {state.depth}  ", "bold white"),
-            # 层主题·层型。⚠️ 原来是 `italic bright_magenta`——命名色被 Textual 的
-            # 主题调色板解析成偏暗的值（bright_magenta → #f4005f），在浅层梦境那块
-            # 最亮的面板上只有 3.30，等于糊掉。改成显式 hex（6.51）。
-            (f"{tr(state.theme)}·{form_label}\n", LAYER_LABEL_STYLE),
-            self._bar(tr("心智"), state.mind, state.max_mind, BAR_MIND_STYLES, suffix=f"  {tr(STATUS_TIERS[state.mind_tier])}", **bar_layout),
-            "\n",
-            self._bar(tr("清醒度"), state.lucidity, state.max_lucidity, BAR_LUCIDITY_STYLES, suffix=f"  {tr(STATUS_TIERS[state.lucidity_tier])}", **bar_layout),
-            "\n",
-            self._bar(tr("想象力"), state.imagination, state.max_imagination, BAR_IMAGINATION_STYLES, **bar_layout),
-            "\n",
-            # 深层边界：崩解度隐藏（静默累计，仅作结局判定），只显示回合数。
-            # 梦的起始（0 层）：没有崩解度——开局即可下潜。
-            ((tr("深层边界") + f" ·  {tr('回合数')} {state.time}\n", "bold #3ddad0") if state.depth >= 28 else
-             ((tr("可下潜") + f" ✦  {tr('回合数')} {state.time}\n", "bold bright_green") if (state.dissolution >= 100 or state.depth <= 0) else
-              (f"{tr('崩解度')} {state.dissolution}/100  {tr('回合数')} {state.time}\n", "white"))),
-        )
+        # 深层边界：崩解度隐藏（静默累计，仅作结局判定），只显示回合数。
+        # 梦的起始（0 层）：没有崩解度——开局即可下潜。三种文案都是第 5 行，
+        # 语义在合并时原样保留。少字模式使用缩写，但仍显示崩解进度、
+        # 可下潜或深层边界，避免玩家丢失决定何时下潜的信息。
+        if terse_mode:
+            if state.depth >= 28:
+                compact_state, compact_style = "EDGE", "bold #3ddad0"
+            elif state.dissolution >= 100 or state.depth <= 0:
+                compact_state, compact_style = "DIVE", "bold bright_green"
+            else:
+                compact_state, compact_style = f"DIS {state.dissolution}/100", "white"
+            tail = Text.assemble((f"{compact_state}  T {state.time}", compact_style))
+        else:
+            tail = Text.assemble(
+                ((tr("深层边界") + f" ·  {tr('回合数')} {state.time}", "bold #3ddad0") if state.depth >= 28 else
+                 ((tr("可下潜") + f" ✦  {tr('回合数')} {state.time}", "bold bright_green") if (state.dissolution >= 100 or state.depth <= 0) else
+                  (f"{tr('崩解度')} {state.dissolution}/100  {tr('回合数')} {state.time}", "white"))),
+            )
+        # 纸感状态区（2026-10-24 E）：宽屏把第 5 行与信号行并成一行四项
+        # 「崩解 · 回合 · 噪音 · 混乱」，省下 #signal-status 整行；放不下
+        # （中窄档、或崩解/回合数值变宽后）保持两行并恢复显示。放不放得下
+        # 用 rich.cells.cell_len 对 #status 实测可用宽**逐次刷新**重算。
+        # 合并行上噪音/混乱各自的列区记进 _status_signal_hits（窄屏两行档
+        # 置 None），ClickableStatus 据此把命中平移到 #signal-status 的
+        # 现有链路（toggle_signal_detail）；点其余区域仍是开合自我察觉。
+        # 状态行噪音条显示「周围区域」的噪音；动作预计仍留给详情面板。
+        from ..signal_status import ambient_noise
+        preview = noise_preview(self)
+        self._status_noise_preview = preview
+        self._status_noise_preview_fresh = True
+        self._status_ambient_noise = ambient_noise(self)
+        signal_row = self.query_one('#signal-status')
+        merged_tail, self._status_signal_hits = merged_tail_text(
+            tail, state, self._status_ambient_noise['radius'], available,
+            terse=terse_mode)
+        if merged_tail is not None:
+            tail = merged_tail
+            if signal_row.display:
+                signal_row.display = False
+        else:
+            self._status_signal_hits = None
+            if not signal_row.display:
+                signal_row.display = True
+        if terse_mode:
+            status = Text.assemble(
+                (("⚙ " if self.test_mode else ""), "bold #3ddad0"),
+                (f"{state.depth}  ", "bold white"),
+                (f"{form_label}\n", LAYER_LABEL_STYLE),
+                self._bar(_stat_glyph("mind", mode), state.mind, state.max_mind,
+                          BAR_MIND_STYLES, suffix=f" {_tier_glyph(state.mind_tier)}", **bar_layout),
+                "\n",
+                self._bar(_stat_glyph("lucidity", mode), state.lucidity, state.max_lucidity,
+                          BAR_LUCIDITY_STYLES, suffix=f" {_tier_glyph(state.lucidity_tier)}", **bar_layout),
+                "\n",
+                self._bar(_stat_glyph("imagination", mode), state.imagination,
+                          state.max_imagination, BAR_IMAGINATION_STYLES, **bar_layout),
+                "\n",
+                tail,
+            )
+        else:
+            status = Text.assemble(
+                (("⚙ " + tr("测试模式") + "  ", "bold #3ddad0") if self.test_mode else ""),
+                (f"{tr(region)} {state.depth}  ", "bold white"),
+                # 层主题·层型。⚠️ 原来是 `italic bright_magenta`——命名色被 Textual 的
+                # 主题调色板解析成偏暗的值（bright_magenta → #f4005f），在浅层梦境那块
+                # 最亮的面板上只有 3.30，等于糊掉。改成显式 hex（6.51）。
+                (f"{form_label}\n", LAYER_LABEL_STYLE),
+                self._bar(bar_labels[0], state.mind, state.max_mind, BAR_MIND_STYLES,
+                          suffix=tier_suffixes[0], **bar_layout),
+                "\n",
+                self._bar(bar_labels[1], state.lucidity, state.max_lucidity,
+                          BAR_LUCIDITY_STYLES, suffix=tier_suffixes[1], **bar_layout),
+                "\n",
+                self._bar(bar_labels[2], state.imagination, state.max_imagination,
+                          BAR_IMAGINATION_STYLES, **bar_layout),
+                "\n",
+                tail,
+            )
+        # 英文普通模式：右栏长单词缩写（少字模式已走符号/缩写分支；左侧
+        # 悬浮详情与全屏窗口不经这里，打开详情时仍是完整英文）。
+        if get_language() == 'en' and not terse_mode:
+            from ..terse import compact_english
+            status = compact_english(status)
         status_lines = status.split('\n')
         # Core status is exactly five rows; nearby details belong to context.
         status_lines = status_lines[:5]
-        for line in status_lines:
-            line.truncate(available, overflow='ellipsis')
+        # 2026-10-27 玩家需求：第 1 行（层信息标题行）最右 2 列画可点击的
+        # 锁定图标（关闭锁/打开锁），点击列区记进 _status_lock_hits，交给
+        # ClickableStatus 路由到 toggle_cursor_lock()。每次刷新都按当前
+        # 可用宽与 panel_locked 重算——宽度和锁定状态都会变。
+        self._status_lock_hits = None
+        for index, line in enumerate(status_lines):
+            if index == 0:
+                self._status_lock_hits = stamp_title_lock(
+                    line, locked=bool(self.panel_locked), width=available)
+            else:
+                line.truncate(available, overflow='ellipsis')
         status = Text('\n').join(status_lines)
-        self.query_one("#status", Static).update(status)
+        update_static_if_changed(self.query_one("#status", Static), status)
         hover_widget = self.query_one("#hover-info", Static)
         # 按悬停区实际显示宽度折行；布局未就绪（宽度 0）时退回侧栏最小宽度
         hover_width = hover_widget.content_size.width or 44
-        hover_widget.update(self._sidebar_context_text(state, hover_width))
+        update_static_if_changed(hover_widget, self._sidebar_context_text(state, hover_width))
         self._refresh_sidebar_tools()
         # §15.6 操作预览必须排在悬浮读数之后：`_hover_text` 顺手写下
         # state.hover_target，而预览中心正是 `visible_target(state)`——早一步就
@@ -629,16 +1057,27 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         self._apply_terrain_preview(state, self.query_one("#map", MapView))
         # Inspectors refresh after all layout modes, including the board editor.
         self._refresh_map_hints()
-        self.query_one("#panel", Static).update(self._panel_text(state))
+        # 左侧透明事件记录：位置依赖玩家在当前地图显示框里的象限，必须在
+        # 地图/布局刷新之后算（与悬浮气泡同一拍）。
+        self._refresh_left_event_log(state)
+        update_static_if_changed(self.query_one("#panel", Static), self._panel_text(state))
 
     def action_focus_next(self) -> None:
-        """Tab 在 Textual 里是 Screen 绑定，进不了 on_key；补收临时气泡。"""
-        self._dismiss_transient()
-        self.screen.focus_next()
+        """Screen's priority Tab binding must use the same context routing."""
+        if self.home_mode and self.panel_mode in ('home', 'home_saves', 'home_history'):
+            self._dismiss_transient()
+            self.screen.focus_next()
+            return
+        from textual.events import Key
+        self.on_key(Key('tab', '\t'))
 
     def action_focus_previous(self) -> None:
-        self._dismiss_transient()
-        self.screen.focus_previous()
+        if self.home_mode and self.panel_mode in ('home', 'home_saves', 'home_history'):
+            self._dismiss_transient()
+            self.screen.focus_previous()
+            return
+        from textual.events import Key
+        self.on_key(Key('shift+tab', None))
 
     def show_toast(self, message: str, anchor_screen_y: int | None = None) -> None:
         """所有临时反馈进入地图右上角提示栈，3 秒后消失。
@@ -659,6 +1098,17 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             self._refresh_map_hints()
         except Exception:
             pass
+
+    def _panel_help_text(self) -> str:
+        """右栏底部固定行：本页键位提示优先，否则显示完整键位表入口。"""
+        return self._panel_context_hint() or tr('完整键位表 · 点击 / Alt+H')
+
+    def _refresh_panel_help(self) -> None:
+        """刷新右栏底部固定行；本页提示允许两行，其余仍是一行入口。"""
+        widget = self.query_one('#panel-help')
+        hint = self._panel_context_hint()
+        update_static_if_changed(widget, self._panel_help_text())
+        widget.set_class(bool(hint), 'panel-help-hint')
 
     def _selected_panel_row_screen_y(self) -> int | None:
         """右侧面板当前选中条目所在的屏幕行；取不到（滚动出视窗等）返回 None。
@@ -783,7 +1233,21 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             message = tr("寻路中：剩余 {count} 格（点击或按键可中断）").format(count=len(self.path))
         elif self.target_assist:
             message = tr("寻路辅助已开启（悬停地图显示路径）")
-        hint.update(message if isinstance(message,Text) else Text(message, style="bold bright_yellow"))
+        elif not self.home_mode and bool(getattr(self, "tutorial_session", False)):
+            # 2026-10-26 玩家定稿：取消地图上常驻的键位提示悬浮气泡——只在
+            # 新手教程里显示；其余时候不再占地图右上角。
+            # 2026-10-24 定稿：方向键/数字恒移动；区域只决定 WASD 去哪。
+            zone = str(getattr(self, "cursor_zone", "map"))
+            if zone == "overlay":
+                message = tr("左栏：WASD 在浮层内选择 · / 切区域")
+            elif zone == "panel":
+                enter = PANEL_ENTER_HINTS.get(self.panel_mode, "Enter 执行选中项")
+                message = (tr("右栏") + "：" + tr("WASD 选择 · ←→ 切页")
+                           + " · " + tr(enter) + " · " + tr("方向键/数字移动 · / 切区域"))
+            else:
+                message = tr("地图：方向键 / 数字 移动 · WASD 右栏 · / 切区域")
+        update_static_if_changed(
+            hint, message if isinstance(message, Text) else Text(message, style="bold bright_yellow"))
         hint.styles.display = "block" if message else "none"
         self.query_one("#map-hints", MapHints).place()
 
@@ -835,10 +1299,23 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
     def resolved_map_display(self):
         """当前设置 + 能力解析后的地图显示模式（docs §13.2）。"""
         from ..map_display import resolve_map_display
+        from ..map_image_transport import set_kitty_graphics
+        from ..map_presentation import set_character_fast as _set_scene_fast
+        from ..render import set_character_fast as _set_render_fast
+        # 实验开关在每次解析显示模式时同步（幂等）：设置页改完刷新即生效，
+        # 且必然发生在任何一次图像编码之前。终端不支持时传输层自行回退 OSC 1337。
+        set_kitty_graphics(bool(self.config.get("map_kitty_graphics")))
+        character_fast = bool(self.config.get("map_character_fast"))
+        _set_render_fast(character_fast)
+        _set_scene_fast(character_fast)
         if self._image_restore_fallback:
             return 'character', tr('图像恢复失败，暂用字符地图')
         if self.is_running and self.is_headless:
             return "character", tr("无原生终端输出")
+        if character_fast:
+            # 字符高刷：强制字符后端。字符地图没有子格采样可画，所以图像专用的
+            # P3 平滑定时器保持关闭；地图仍由 30Hz 帧回调驱动，只把每帧做得更便宜。
+            return "character", tr("字符高刷模式（实验）")
         return resolve_map_display(self.config)
 
     def action_cycle_map_observe(self) -> None:
@@ -957,6 +1434,14 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         self.push_screen(MapDisplayScreen(str(self.config.get('map_display') or 'auto'),
                                          tr('当前：')+actual_label+' · '+reason), selected)
 
+    def _sync_intent_badges(self, map_view, state):
+        from ..anomaly_intent_marks import intent_marks
+        enabled = (not self.home_mode and map_view.display_mode == 'image'
+                   and self.config.get('intent_hints') is not False)
+        map_view.set_intent_marks(intent_marks(
+            state, animated=self.config.get('fx_quality') != 'off', include_chase=False)
+            if enabled else {})
+
     def _fx_tick(self) -> None:
         """FX 特效帧（20fps；low 档 10fps 由跳帧实现）：基帧 + 叠加样式。
 
@@ -966,12 +1451,29 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         if self._floor_transition is not None:
             self._fx_last = None
             return  # 演出期间暂停 FX：光照覆盖不与演出帧叠加（含 off 档重绘分支）
+        try:
+            self._sync_intent_badges(self.query_one('#map', MapView), self.session.state)
+        except Exception:
+            pass
         quality = str(self.config.get("fx_quality") or "off")
         # 扫描线独立开关：每帧同步，设置页改动即时生效（一次布尔赋值，零开销）。
         self.fx_engine.scanlines_disabled = not bool(self.config.get("fx_scanlines"))
         if quality == "off" or self.home_mode or self.session.state.run_over:
             self._fx_last = None
+            if quality == "off":
+                # With animation disabled, deliver any cue whose visual timing
+                # no longer exists; leaving the run cancels its old audio.
+                self._flush_fx_audio(float("inf"), force=True)
+            else:
+                self._fx_audio_cues.clear()
+                self._fx_deferred_message_until.clear()
             self._clear_projectile()
+            # off/离场：多层字符实例一起清空（开回特效不补播旧事件）。
+            self._visual_player.clear()
+            self._visual_frame_key = 0
+            # off/离场：清零偏移并推进命中序号（开回特效时不补播旧命中）。
+            self._clear_hit_visuals()
+            self._fx_hit_seq = int(getattr(self.session.state, "hit_event_seq", 0) or 0)
             # 关闭/离场：若上一帧是特效帧，立即重绘一帧纯净基准帧。
             if getattr(self, "_fx_active", False):
                 self._fx_active = False
@@ -992,9 +1494,19 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                 except Exception:
                     pass
             return
-        if self.panel_mode != "world" or self.observe_mode:
+        if not self._world_view_live():
+            # 只有全屏模态（pause/pause_settings/pause_codex/board_editor/
+            # home 等）与观察/层观测冻结；右栏工作区（RIGHT_PANEL_MODES）下
+            # 世界仍可行动，冻结时钟会让命中跳字/涟漪/施法波停在屏幕上
+            # 永不消散（2026-10-28 修复「锁定界面打击动画卡住」）。
+            # 冻结画面时不能让抖动偏移留在屏幕上（模态结束后地图会错位）。
+            self._reset_hit_shake()
+            # F1′：进入冻结的第一拍补一帧擦除帧（清瞬态、不推进时钟），
+            # 否则命中数字/涟漪会作为最后一帧停在屏上（分层观察地图仍可见）。
+            self._fx_freeze_clear_once(self.session.state)
             self._fx_last = None
-            return  # 冻结：不推进时钟，保留上一帧
+            return  # 冻结：不推进时钟，保留擦除后的那一帧
+        self._fx_freeze_clear_marker = None
         state = self.session.state
         now = time.monotonic()
         if self._fx_last is None:
@@ -1006,8 +1518,10 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         except Exception:
             return
         self._fx_note_events(state, self._fx_clock)
+        self._update_hit_shake(self._fx_clock)
         if self._fx_paint(map_view, state, self._fx_clock):
             self._fx_active = True
+        self._flush_fx_audio_after_refresh(self._fx_clock)
 
     def _clear_projectile(self) -> None:
         self._fx_projectile = None
@@ -1025,6 +1539,11 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             return
         if raw is not None and visual is not None:
             raw = dict(raw,visual=visual)
+        had_transient_overlay = bool(
+            self._fx_projectile or self._map_particles.pending
+            or self._fx_combat_pulses or self._fx_hits
+            or self._fx_waves or self._fx_flashes
+        )
         self._fx_projectile = None
         if changed:
             self._map_particles.clear()
@@ -1034,6 +1553,36 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             return
         state = self.session.state
         layer = (state.depth, state.realm_id, state.realm_depth)
+
+        def _state_fx_changed() -> bool:
+            """这次动作有没有真的改变 FX 叠加层内容。
+
+            旧实现只要 _fx_active 为真就在动作里强制合成一整帧；普通移动/等待
+            的叠加层其实没变，随后 refresh_view 的 _fx_repaint 还会再补一次，
+            等于同一帧白算两遍。非平滑模式每步因此多付 20–40ms（按动作步径
+            实测）。这里只在不涉及弹道/粒子/脉冲/波纹/闪光、且记忆/爆炸/战斗
+            序号没变时跳过动作内强制合成；下一次 refresh 或 20Hz FX tick 会照常
+            补画，画面语义不变。
+            """
+            if (self._fx_projectile or self._map_particles.pending
+                    or self._fx_combat_pulses or self._fx_hits
+                    or self._fx_waves or self._fx_flashes):
+                return True
+            if memory_before is not None:
+                if isinstance(memory_before, int):
+                    if int(memory_before) != len(state.memory_fragments):
+                        return True
+                elif set(memory_before) != set(state.memory_fragments):
+                    return True
+            if blasts_before is not None and int(blasts_before) != len(
+                    getattr(state, "explosion_blasts", ()) or ()):
+                return True
+            if combat_before is not None and int(combat_before) != int(
+                    getattr(state, "_combat_fx_seq", 0) or 0):
+                return True
+            return False
+
+        fx_changed = _state_fx_changed()
         if layer == self._particle_layer:
             if memory_before is not None:
                 if isinstance(memory_before, int):
@@ -1046,6 +1595,7 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             if combat_before is not None:
                 self._fx_combat_seq = combat_before
         self._fx_note_events(state, self._fx_clock)
+        self._update_hit_shake(self._fx_clock)
         if (raw is not None and not self.home_mode and not self.session.state.run_over
                 and self._floor_transition is None and self.config.get("fx_quality") != "off"):
             self._fx_projectile = (raw, self._fx_clock)
@@ -1056,6 +1606,14 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         elif (self._fx_active or self._map_particles.pending or self._fx_combat_pulses) and not self.home_mode and not self.session.state.run_over:
             if self.config.get("fx_quality") == "off":
                 self._fx_tick()
+            elif (_FX_ACTION_SKIP_ENABLED and not had_transient_overlay
+                  and not fx_changed and not (
+                    self._fx_projectile or self._map_particles.pending
+                    or self._fx_combat_pulses or self._fx_hits
+                    or self._fx_waves or self._fx_flashes)):
+                # 没有新的 FX 内容：动作内不再合成；refresh_view 的 _fx_repaint
+                # 会按最新基帧补画，定时器也保留兜底。
+                self._fx_last = time.monotonic()
             else:
                 self._fx_last = time.monotonic()
                 self._fx_active = self._fx_paint(self.query_one("#map", MapView), self.session.state, self._fx_clock, force=True)
@@ -1075,6 +1633,311 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                     and self.session.state.is_visible(*end)):
                 self._map_particles.emit('impact',tuple(end),born+offset+flight,
                     palette=(visual.highlight,visual.shade),chars=visual.impact,count=4)
+
+    def _play_sfx_after(self, delay: float, event: str, volume: float) -> None:
+        """Queue projectile audio against the same clock that draws its flight."""
+        state = getattr(getattr(self, "session", None), "state", None)
+        timeline_active = bool(
+            self.is_running
+            and state is not None
+            and not self.home_mode
+            and not state.run_over
+            and self._floor_transition is None
+            and self.config.get("fx_quality") != "off"
+        )
+        if not timeline_active:
+            sfx.play(event, volume=volume)
+            return
+        cues = getattr(self, "_fx_audio_cues", None)
+        if cues is None:
+            cues = self._fx_audio_cues = []
+        cues.append((self._fx_clock + max(0.0, float(delay)), event, volume))
+        cues.sort(key=lambda cue: cue[0])
+
+    def _flush_fx_audio(self, t: float, *, force: bool = False) -> None:
+        """Play due cues only after the matching FX frame has been painted."""
+        cues = getattr(self, "_fx_audio_cues", None)
+        if not cues:
+            return
+        due = [cue for cue in cues if force or cue[0] <= t]
+        self._fx_audio_cues = [cue for cue in cues if not (force or cue[0] <= t)]
+        if not self.is_running:
+            return
+        for _at, event, volume in due:
+            sfx.play(event, volume=volume)
+
+    def _flush_fx_audio_after_refresh(self, t: float) -> None:
+        """Wait for Textual to send the frame before releasing its sound cue."""
+        cues = getattr(self, "_fx_audio_cues", None)
+        if not cues or not any(cue[0] <= t for cue in cues):
+            return
+        if not self.is_running:
+            self._flush_fx_audio(t)
+            return
+        if self._fx_audio_flush_pending:
+            return
+        self._fx_audio_flush_pending = True
+
+        def flush_after_paint() -> None:
+            self._fx_audio_flush_pending = False
+            self._flush_fx_audio(max(float(t), self._fx_clock))
+
+        self.call_after_refresh(flush_after_paint)
+
+    def _defer_projectile_messages(self, first_message: int, raw) -> None:
+        """Keep shot outcome prose hidden until its flight and impact frame finish."""
+        active = getattr(self, "_fx_projectile", None)
+        if (not active or raw is None or active[0].get("seq") != raw.get("seq")
+                or self.config.get("fx_quality") == "off"):
+            return
+        state = self.session.state
+        owner = id(state)
+        if self._fx_deferred_message_owner != owner:
+            self._fx_deferred_message_until.clear()
+            self._fx_deferred_message_owner = owner
+        from ..effects import projectile_replay_time
+        deadline = active[1] + projectile_replay_time(raw)
+        for index in range(max(0, first_message), len(state.messages)):
+            self._fx_deferred_message_until[index] = max(
+                deadline, self._fx_deferred_message_until.get(index, 0.0))
+
+    def _visible_game_messages(self, state):
+        """Messages whose matching projectile playback has reached its end."""
+        if self._fx_deferred_message_owner != id(state):
+            self._fx_deferred_message_until.clear()
+            self._fx_deferred_message_owner = id(state)
+        if (self.config.get("fx_quality") == "off" or self.home_mode
+                or state.run_over):
+            self._fx_deferred_message_until.clear()
+            return state.messages
+        pending = self._fx_deferred_message_until
+        for index in tuple(pending):
+            if index >= len(state.messages) or pending[index] <= self._fx_clock:
+                pending.pop(index, None)
+        if not pending:
+            return state.messages
+        # Preserve log order when another action happens before the previous shot
+        # finishes: later prose cannot leap ahead of the pending shot result.
+        return state.messages[:min(pending)]
+
+    def _reset_hit_shake(self) -> None:
+        """强制把地图偏移归零：关闭特效/回主页/换层/读档/终局都必须走到。"""
+        if self._fx_shake_offset == (0, 0):
+            return
+        try:
+            self.query_one("#map", MapView).styles.offset = (0, 0)
+        except Exception:  # pragma: no cover - 极早期挂载中
+            return
+        self._fx_shake_offset = (0, 0)
+
+    def _clear_hit_visuals(self) -> None:
+        self._reset_hit_shake()
+        self._fx_impact_cues.clear()
+
+    def _reduce_motion(self) -> bool:
+        try:
+            return bool(self.config.get("fx_reduce_motion"))
+        except KeyError:  # pragma: no cover - 外部构造的最小配置
+            return False
+
+    def _impact_hold(self, cue) -> float:
+        """这条 cue 的定格秒数；挡下与「减少动态效果」不定格。"""
+        if cue.get("kind") == "damage" or cue.get("blocked") or self._reduce_motion():
+            return 0.0
+        try:
+            milliseconds = int(self.config.get("fx_hitstop_ms") or 0)
+        except (KeyError, TypeError, ValueError):  # pragma: no cover - 最小配置
+            milliseconds = IMPACT_HITSTOP_MS
+        milliseconds = max(0, min(IMPACT_HITSTOP_MAX_MS, milliseconds))
+        return milliseconds / 1000.0
+
+    def _consume_hit_events(self, state, t: float) -> None:
+        """把 state.presentation_hits 差分转成表现 cue。
+
+        born = 当前 FX 时钟 + 弹道飞行时间：命中音、抖动、跳字和强调都消费
+        同一个 born。质量档 off 时只推进序号，不产生任何表现。
+        """
+        raw = getattr(state, "last_projectile", None) or {}
+        quality = str(self.config.get("fx_quality") or "off")
+        for event in getattr(state, "presentation_hits", ()) or ():
+            seq = int(event.get("seq", 0) or 0)
+            if seq <= self._fx_hit_seq:
+                continue
+            self._fx_hit_seq = seq
+            if quality == "off":
+                continue
+            delay = 0.0
+            if event.get("projectile_seq") and raw.get("seq") == event.get("projectile_seq"):
+                delay = projectile_flight_time(str(raw.get("kind") or "shot"),
+                                               len(raw.get("cells", ())))
+                delay += projectile_repeat_delay(raw)
+            cue = dict(event)
+            cue["born"] = t + delay
+            if (cue.get("kind") in ("ranged", "throw") and raw
+                    and raw.get("seq") == cue.get("projectile_seq") and raw.get("color")):
+                cue["origin"] = raw["color"]
+            quiet = cue.get("kind") == "damage"
+            display_amount = cue.get("amount", 0)
+            combined_resources = {str(cue.get("resource") or "")}
+            kept_motion = set()
+            merged_cues = set()
+            for old in self._fx_impact_cues:
+                if old.get("impact") != cue.get("impact"):
+                    continue
+                if ((quiet or old.get("kind") == "damage") and not old.get("number_hidden")
+                        and not old.get("blocked") and not cue.get("blocked")
+                        and old.get("born") == cue["born"]
+                        and old.get("target_id") == cue.get("target_id")
+                        and old.get("action_seq") == cue.get("action_seq")
+                        and old.get("origin") == cue.get("origin")):
+                    display_amount += old.get("display_amount", old.get("amount", 0))
+                    combined_resources.update(old.get("combined_resources", (
+                        str(old.get("resource") or ""),)))
+                    merged_cues.add(id(old))
+                if (quiet and old.get("kind") != "damage" and not old.get("blocked")
+                        and old.get("origin") == cue.get("origin")):
+                    # Keep the real strike's original motion intensity, while
+                    # one number displays combined simultaneous actual losses.
+                    old["number_hidden"] = True
+                    kept_motion.add(id(old))
+            cue["display_amount"] = display_amount
+            cue["combined_resources"] = tuple(sorted(combined_resources))
+            cue["tier"] = impact_tier(cue)
+            cue["hold"] = self._impact_hold(cue)
+            if cue.get("blocked"):
+                cue["text"] = tr("挡")
+                cue["color"] = IMPACT_BLOCK_COLOR
+            else:
+                cue["text"] = str(int(display_amount or 0))
+                cue["color"] = impact_origin_color(
+                    cue.get("kind"), origin=cue.get("origin"),
+                    resource=cue.get("resource"), damage_type=cue.get("damage_type"))
+                cue["number_style"] = (impact_number_style(cue.get("resource"))
+                                        if len(combined_resources) == 1 else "")
+            if cue.get("impact"):
+                # 同源同格连击由上面的合并逻辑汇成一个数。不同来源同帧命中
+                # 保留最新两条，稍后分行显示，以便来源色仍然可辨。
+                matching = [old for old in self._fx_impact_cues
+                            if old.get("impact") == cue["impact"]
+                            and old.get("born") == cue.get("born")
+                            and old.get("action_seq") == cue.get("action_seq")
+                            and old.get("target_id") == cue.get("target_id")]
+                keep_ids = {id(old) for old in matching[-1:]
+                            if id(old) not in merged_cues}
+                keep_ids.update(kept_motion)
+                self._fx_impact_cues = [old for old in self._fx_impact_cues
+                                        if old.get("impact") != cue["impact"]
+                                        or id(old) in keep_ids]
+            self._fx_impact_cues.append(cue)
+        if len(self._fx_impact_cues) > IMPACT_CUE_MAX:
+            self._fx_impact_cues = self._fx_impact_cues[-IMPACT_CUE_MAX:]
+
+    def _active_shake_cue(self, t: float):
+        """当前仍在抖动窗口内的最新一条 cue；被挡下的不参与。
+
+        定格窗口算在抖动之内：命中帧要先停住，镜头回弹推迟到定格结束。
+        """
+        if self._reduce_motion():
+            return None
+        cue = None
+        for entry in self._fx_impact_cues:
+            if entry.get("kind") == "damage" or entry.get("blocked"):
+                continue
+            spec = impact_tier_spec(entry)
+            age = t - float(entry.get("born", 0))
+            if 0 <= age <= float(entry.get("hold") or 0.0) + spec["shake_life"]:
+                cue = entry
+        return cue
+
+    def _update_hit_shake(self, t: float) -> None:
+        """定向整数格抖动：先沿攻击方向冲出，再反向快速回正。
+
+        同时命中只取最新一条、强度封顶，不做线性叠加；被挡下时不抖。
+        定格期间相位停在 0，也就是冲出后的那一帧。
+        """
+        cue = self._active_shake_cue(t)
+        offset = (0, 0)
+        if cue is not None:
+            spec = impact_tier_spec(cue)
+            motion = t - float(cue["born"]) - float(cue.get("hold") or 0.0)
+            phase = max(0.0, motion) / max(1e-6, spec["shake_life"])
+            envelope = 1.0 if phase < 0.35 else -0.55 * (1.0 - (phase - 0.35) / 0.65)
+            dx, dy = cue.get("direction") or (0, 0)
+            gain = spec["gain"]
+            cap_x, cap_y = spec["shake"]
+            offset = (max(-cap_x, min(cap_x, int(round(dx * envelope * gain)))),
+                      max(-cap_y, min(cap_y, int(round(dy * envelope * gain * 0.6)))))
+        if offset == self._fx_shake_offset:
+            return
+        try:
+            self.query_one("#map", MapView).styles.offset = offset
+        except Exception:  # pragma: no cover - 极早期挂载中
+            return
+        self._fx_shake_offset = offset
+
+    def _impact_layer(self, map_view, t: float):
+        """返回命中强调与伤害跳字的叠加层（样式 + 逐格字形）。
+
+        多位数逐格排布并按视口边缘整体钳制；顶部命中改为向下跳，避免
+        只露出末位。跳字优先级高于弹道/装饰粒子（见调用处的合并顺序）。
+        定格（C1）把起飞与淡出整体后移；减少动态（C4）去掉位移但保留数字。
+        """
+        if str(self.config.get("fx_quality") or "off") == "off":
+            return {}, {}
+        reduce_motion = self._reduce_motion()
+        left, top, width, height = map_view.viewport
+        styles: dict[tuple[int, int], str] = {}
+        glyphs: dict[tuple[int, int], tuple[str, str]] = {}
+        impact_slots: dict[tuple[int, int], int] = {}
+        for cue in self._fx_impact_cues:
+            spec = impact_tier_spec(cue)
+            hold = float(cue.get("hold") or 0.0)
+            number_life = hold + spec["number_life"]
+            age = t - float(cue.get("born", t))
+            if age < 0 or age > number_life:
+                continue
+            impact = cue.get("impact")
+            if not impact:
+                continue
+            vx, vy = impact[0] - left, impact[1] - top
+            if not (0 <= vx < width and 0 <= vy < height):
+                continue
+            color = str(cue.get("color") or IMPACT_ENEMY_COLOR)
+            if (age <= hold + spec["emphasis"] and not cue.get("blocked")
+                    and cue.get("kind") != "damage"):
+                styles[(vx, vy)] = "bold #0b0b12 on " + color
+            text = "" if cue.get("number_hidden") else str(cue.get("text") or "")
+            if not text:
+                continue
+            # 定格只冻结位移与起飞，数字本身在停住的这一帧就已经画出来。
+            motion = max(0.0, age - hold)
+            rise = (0 if reduce_motion
+                    else 1 if motion < spec["number_life"] * 0.35 and vy > 0 else 0)
+            slot = impact_slots.get(tuple(impact), 0)
+            impact_slots[tuple(impact)] = slot + 1
+            if slot:
+                row = vy + 1 if vy + 1 < height else vy - 1 if vy > 0 else vy
+            else:
+                row = vy - 1 - rise if vy > 0 else vy + 1
+            row = max(0, min(height - 1, row))
+            start = vx - (len(text) - 1) // 2
+            start = max(0, min(max(0, width - len(text)), start))
+            readable = hold + spec["readable"]
+            if age > readable:
+                fade = ((age - readable)
+                        / max(1e-6, number_life - readable))
+                color = _fade_hex(color, 1.0 - min(1.0, fade))
+            number_styles = []
+            if spec["bold"] or cue.get("killed"):
+                number_styles.append("bold")
+            if cue.get("number_style"):
+                number_styles.append(str(cue["number_style"]))
+            style = " ".join(number_styles + [color])
+            for index, char in enumerate(text):
+                gx = start + index
+                if 0 <= gx < width and 0 <= row < height:
+                    glyphs[(gx, row)] = (char, style)
+        return styles, glyphs
 
     def _fx_note_events(self, state, t: float) -> None:
         """每帧一次：把「本帧新发生的受创/爆炸」记成涟漪（世界坐标）。
@@ -1097,6 +1960,9 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                 self._fx_combat_seq = getattr(state, '_combat_fx_seq', 0)
                 self._fx_projectile = None
                 self._fx_projectile_seq = getattr(state, 'projectile_seq', 0)
+                self._fx_audio_cues.clear()
+                self._fx_deferred_message_until.clear()
+                self._fx_deferred_message_owner = id(state)
                 # §12 B2：换了 GameState（读档/新局）就必须作废环境来源缓存——
                 # 键里已经不含回合数，只靠签名与层隔离；两张地图恰好同形同灯时
                 # 命中旧条目虽然画面一致，但缓存归新状态所有才是明确的所有权。
@@ -1107,12 +1973,28 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             self._fx_hits.clear()
             self._fx_waves.clear()
             self._fx_flashes.clear()
+            # 读档/新局/换层：旧命中表现不跟过去，也不补播。
+            self._clear_hit_visuals()
+            self._fx_hit_seq = int(getattr(state, "hit_event_seq", 0) or 0)
             self._fx_sound_seq = None
             self._fx_flash_seq = 0
             self._fx_hit_layer = hit_layer
+            # 读档/新局/换层：旧场景的多层字符实例不跟过去。
+            self._visual_player.clear()
+            self._visual_frame_key = 0
             # 读档/新局：旧场景的意图角标不能跟到新地图上。
             from ...core.anomaly_intents import clear as clear_intents
             clear_intents(state)
+        # 统一视觉事件：真实结算处登记的新多层字符事件在这里入播放器。
+        # 只入旁路队列；面板冻结时不 drain，避免补播过期演出。
+        world_visible = (not self.home_mode and getattr(self, 'panel_mode', 'world') == 'world'
+                         and not getattr(state, 'run_over', False))
+        visual_events = drain_visual_events(state) if world_visible else ()
+        if visual_events:
+            self._visual_player.accept(visual_events, VisualClock(
+                float(getattr(state, "time", 0.0) or 0.0),
+                int(getattr(state, "action_seq", 0) or 0),
+                float(t)))
         # 声波环差分（docs §16.3）：core 侧 _sound_pulse 每次登记 seq，UI 只在
         # seq 前进时记一次出生时刻（每帧重复看到同一条不能重播）。radius=0
         # （静默协议/铁幕）core 侧本就不登记，这里再防一手。声音即时扩散，
@@ -1123,14 +2005,17 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         if (pulse and pulse.get("seq") != self._fx_sound_seq
                 and self.config.get("fx_quality") != "off"):
             self._fx_sound_seq = pulse.get("seq")
-            # 2026-10-22 玩家要求：不再画扩散环；只把「声场实际到达的标准听阈
-            # 格子」交给 FX 层做视野外蓝色静态标记。玩家自身动作完全不画，
-            # 避免连续脚步每步生成整屏动画。
+            # The core supplies only the compact audible patch and an allowed
+            # center. Player-made sounds never register a visual event.
             cells = _sound_visual_world_cells(pulse)
             if cells:
+                center = pulse.get('visual_center') or (sum(x for x, _ in cells)/len(cells),
+                                                       sum(y for _, y in cells)/len(cells))
+                self._fx_waves = [w for w in self._fx_waves
+                                  if len(w) < 3 or (w[2][0]-center[0])**2+(w[2][1]-center[1])**2 > 1]
                 if len(self._fx_waves) >= SOUND_WAVE_MAX:
                     self._fx_waves.pop(0)
-                self._fx_waves.append((t, cells))
+                self._fx_waves.append((t, cells, center, bool(pulse.get('tail_only'))))
         # 激活短光差分（§12 D 残余）：显影方尖点亮、感应符文墙感知各压一条。
         # 只按 seq 前进拾取一次——同一条记录每帧都读得到，不能每帧重新点燃。
         # off 档同样推进 seq（关掉特效期间发生的激活，开回来不该重播）。
@@ -1146,6 +2031,13 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             self._fx_flashes.append(item)
             if len(self._fx_flashes) > 8:
                 self._fx_flashes.pop(0)
+        # 命中表现（§3.2）：每帧按 seq 拾取，born 对齐弹道落点；未来 cue
+        # 保留到 born 到点，过期 cue 丢弃（只丢表现，不回滚世界状态）。
+        self._consume_hit_events(state, t)
+        self._fx_impact_cues = [cue for cue in self._fx_impact_cues
+                                if t - float(cue.get("born", t))
+                                <= float(cue.get("hold") or 0.0)
+                                + impact_tier_spec(cue)["number_life"]]
         if layer != self._particle_layer:
             self._map_particles.clear()
             self._fx_combat_pulses.clear()
@@ -1264,6 +2156,9 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
 
     @staticmethod
     def _cast_event_life(event):
+        if event.get('profile'):
+            from ..cast_visuals import cast_recipe
+            return cast_recipe(event).duration
         preset = FX_PROFILES.get(event.get('profile'))
         return preset.entry_seconds + preset.cast_seconds + preset.tail_seconds if preset else .70
 
@@ -1271,6 +2166,55 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         if len(self._fx_hits) >= 16:  # 上限：连锁爆炸不至于堆出上百个波
             self._fx_hits.pop(0)
         self._fx_hits.append((x, y, t, radius))
+
+    def _fx_freeze_clear_once(self, state) -> None:
+        """进入冻结画面（全屏模态/观察/层观测）时清掉瞬态表现并补画一帧。
+
+        F1′（2026-10-28）：老实现冻结时钟后，上一拍还在寿命内的命中跳字、
+        受创涟漪、施法波、短光会停在屏幕上（分层观察的地图仍可见，最明显）。
+        这里把「允许画的帧」从世界帧扩到冻结进入的那一帧：只清表现队列、
+        用同一个 _fx_clock force 重算一次叠加层，不推进时间、不改规则状态。
+        每次进入冻结只做一次（marker 在回到世界画面时复位），房间里的模态
+        反复刷新不会每拍重画。ONEIRSCRIPT_FX_MODAL_CLEAR=0 回退。
+        """
+        if not _fx_freeze_clear_enabled():
+            return
+        marker = (id(state), str(getattr(self, "panel_mode", "")),
+                  int(getattr(state, "depth", 0) or 0),
+                  str(getattr(state, "realm_id", "") or ""),
+                  bool(getattr(self, "observe_mode", False)),
+                  id(getattr(self, "layer_observation", None)))
+        if marker == getattr(self, "_fx_freeze_clear_marker", None):
+            return
+        self._fx_freeze_clear_marker = marker
+        transient = bool(self._fx_hits or self._fx_waves or self._fx_flashes
+                         or self._fx_impact_cues or self._fx_combat_pulses
+                         or self._map_particles.pending or self._fx_projectile
+                         or self._visual_player.pending)
+        if not transient:
+            return
+        self._fx_hits.clear()
+        self._fx_waves.clear()
+        self._fx_flashes.clear()
+        self._fx_impact_cues.clear()
+        self._fx_combat_pulses.clear()
+        self._map_particles.clear()
+        self._fx_projectile = None
+        self._visual_player.clear()
+        self._visual_frame_key = 0
+        # 去重/节流作废：这次擦除帧必须真的写出去，不能被上一帧摘要吞掉。
+        self._fx_frame_digest = None
+        self._fx_quick_key = None
+        self._fx_ambient_key = None
+        self._fx_last_write = None
+        try:
+            map_view = self.query_one("#map", MapView)
+        except Exception:
+            return
+        try:
+            self._fx_paint(map_view, state, self._fx_clock, force=True)
+        except Exception:
+            pass
 
     def _fx_repaint(self, map_view, state) -> None:
         """基帧刚被重画时补回叠加层——**不推进时钟、不跳帧**。
@@ -1287,16 +2231,17 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             return
         # ⚠️ 这里**不能**再按 panel_mode/observe_mode 提前返回（2026-09-21 修
         # 「主角周围光源渲染消失」）：面板打开时 refresh_view 照样会把基帧重画成
-        # **没有光照**的纯帧，而 _fx_tick 在非 world 模式同样冻结、不会补画——
-        # 于是「开面板 → 地图上的火把光整片消失」，关面板才回来。
+        # **没有光照**的纯帧，而 _fx_tick 在真正的全屏模态/观察/层观测下仍然
+        # 冻结、不会补画——于是「开面板 → 地图上的火把光整片消失」，关面板才回来。
         # _fx_repaint 用的是上一帧的**同一个时钟**（不推进时间），补上的就是冻结点
         # 那一刻的画面，所以「面板模式画面静止」的语义完全不受影响。
         # ⚠️ force=True 必写：这是回合驱动的一次性补画，走写回节流就会被
         # 吞掉，画面上那一帧没有光照的纯基帧就成了「光消失」。（去重仍然
         # 生效：基帧真变了摘要必不同，重复画面跳过无害——性能 P1，2026-10-10。）
-        self._fx_paint(map_view, state, self._fx_clock, force=True)
+        self._fx_paint(map_view, state, self._fx_clock, force=True, base_fresh=True)
 
-    def _fx_paint(self, map_view, state, t: float, force: bool = False) -> bool:
+    def _fx_paint(self, map_view, state, t: float, force: bool = False,
+                  base_fresh: bool = False) -> bool:
         """把「基帧 + 叠加样式」写进 MapView，成功返回 True。
 
         🔴 返回值说的是「这一帧 FX 是开着的」，**不代表真的写了 widget**
@@ -1314,12 +2259,81 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         （tests/test_fx.py 有这条）。
         """
         map_view.animated_combat = self.config.get("fx_quality") != "off"
-        map_view.update_state(state)  # 保证基帧签名新鲜（无变化时零成本复用）
+        # 基帧新鲜度：refresh_view 刚 update_state 过的调用方直接标记 base_fresh，
+        # 不再重复跑 update_state 的签名/悬停/声音标记预计算。其余路径用世界/视口
+        # 快照做一次廉价判重，未变化时也跳过；任何外部置空 _frame_key（缩放/尺寸/
+        # 符号模式）都会让身份比较失败，自动回退完整 update_state。
+        if base_fresh:
+            self._fx_base_stamp = None
+        elif (map_view.last_base_text is not None
+              and not map_view.fx_base_overwritten
+              and map_view._frame_key is getattr(self, "_fx_base_frame_key", None)
+              and getattr(self, "_fx_base_stamp", None) == (
+                  id(state), state.time, state.action_seq, state.depth,
+                  state.realm_id, state.player.x, state.player.y,
+                  len(state.enemies), len(state.world_items), len(state.events),
+                  state.developed_total, bool(state.reveals_anomalies),
+                  map_view.symbol_mode, map_view.zoom, tuple(map_view.viewport))):
+            pass
+        else:
+            map_view.update_state(state)  # 保证基帧签名新鲜（无变化时零成本复用）
+            self._fx_base_frame_key = map_view._frame_key
+            self._fx_base_stamp = (
+                id(state), state.time, state.action_seq, state.depth,
+                state.realm_id, state.player.x, state.player.y,
+                len(state.enemies), len(state.world_items), len(state.events),
+                state.developed_total, bool(state.reveals_anomalies),
+                map_view.symbol_mode, map_view.zoom, tuple(map_view.viewport))
         base = map_view.last_base_text
         if base is None:
             return False
         left, top, vw, vh = map_view.viewport
         quality = str(self.config.get("fx_quality") or "off")
+        # Ambient FX are intentionally presented at 4Hz (ambient_key below).
+        # The 20Hz timer still wakes for transient combat, but avoid sampling
+        # visual players, facilities, and casts on the four ticks that cannot
+        # produce a different ambient frame. Keep force/base replacement and all
+        # transient cues on the original full-rate path.
+        transient = bool(self._fx_projectile or self._fx_combat_pulses
+                         or self._map_particles.pending or self._fx_flashes
+                         or self._fx_hits or self._fx_waves or self._fx_impact_cues
+                         or self._visual_player.pending
+                         or charging_casts(state))
+        ambient_key = (map_view._frame_key, quality, int(t * 4))
+        if (not force and not transient and not map_view.fx_base_overwritten
+                and ambient_key == getattr(self, "_fx_ambient_key", None)):
+            return True
+        self._fx_ambient_key = ambient_key
+        visual_clock = VisualClock(
+            float(getattr(state, "time", 0.0) or 0.0),
+            int(getattr(state, "action_seq", 0) or 0), t)
+        visual_frame = (self._visual_player.sample(visual_clock, quality)
+                        if quality != "off" else None)
+        facility_frame = None
+        if quality != "off":
+            try:
+                from ..facility_visuals import facility_visual_frame, facility_visual_states
+                facility_frame = facility_visual_frame(facility_visual_states(state))
+            except Exception:
+                facility_frame = None
+        if facility_frame is not None and not facility_frame.is_empty:
+            visual_frame = (visual_frame.merge(facility_frame)
+                            if visual_frame is not None else facility_frame)
+        # 施法主效果改由新多层管线承担，旧 paint_casts 不再重复绘制。
+        if quality != "off":
+            try:
+                from ..cast_visuals import charging_cast_frame, release_cast_frame
+                cast_frame = release_cast_frame(self._fx_combat_pulses, t=t, quality=quality)
+                cast_frame = cast_frame.merge(charging_cast_frame(state, quality=quality))
+                if not cast_frame.is_empty:
+                    visual_frame = (visual_frame.merge(cast_frame)
+                                    if visual_frame is not None else cast_frame)
+            except Exception:
+                pass
+        if visual_frame is not None:
+            from ..visual_policy import budget_frame
+            visual_frame = budget_frame(visual_frame, quality, visible=state.visible_cells())
+        self._visual_frame_key = _visual_signature(visual_frame)
         # 同一动作内「回放登记」和后续 refresh 补画常以同一时钟/基帧各 force
         # 一次；第二次直接复用第一次已画出的画面，跳过 snapshot/compose。
         quick_key = (
@@ -1331,23 +2345,18 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             len(self._fx_combat_pulses), self._fx_combat_seq,
             (self._fx_projectile[0].get('seq') if self._fx_projectile else None),
             bool(self._map_particles.pending),
+            len(self._fx_impact_cues), self._fx_shake_offset,
+            self._visual_frame_key,
         )
         if (quick_key == self._fx_quick_key
                 and not map_view.fx_base_overwritten):
             return True
-        # Gate idle ambience before building snapshots. World actions and
-        # transient combat always bypass this; neither simulation nor input waits.
-        transient = bool(self._fx_projectile or self._fx_combat_pulses
-                         or self._map_particles.pending or self._fx_flashes
-                         or self._fx_hits or self._fx_waves or charging_casts(state))
-        ambient_key = (map_view._frame_key,quality,int(t*4))
-        if (not force and not transient and not map_view.fx_base_overwritten
-                and ambient_key == getattr(self,'_fx_ambient_key',None)):
-            return True
-        self._fx_ambient_key = ambient_key
         snap = self._fx_snapshot(map_view, state, t)
-        frame = self.fx_engine.frame(snap, t, 2 if quality == "high" else 1)
-        overlay = frame.styles
+        frame = self.fx_engine.frame(snap, t, 2 if quality == "high" else 1,
+                                     skip_casts=True)
+        # 命中强调（目标格短促反相）与伤害跳字（逐格字形）走同一份 cue。
+        impact_styles, impact_glyphs = self._impact_layer(map_view, t)
+        overlay = {**frame.styles, **impact_styles}
         particles = {}
         breath_sites = tuple(
             (entry.x, entry.y) for entry in state.events
@@ -1369,23 +2378,29 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             )
             particles = self._map_particles.frame(
                 map_view.viewport, visible, protected, t, quality, sites=breath_sites)
-        # Projectile heads and trails have priority over decorative particles.
-        glyphs_frame = {**particles, **frame.glyphs}
+        # 命中跳字 > 弹道/装饰粒子 > 环境字形（手感方案 §4.2 的优先级）。
+        glyphs_frame = {**particles, **frame.glyphs, **impact_glyphs}
+        # 多层 ASCII 动画层：图像后端各自独立合成；字符后端取主层降级。
+        visual_layers = (visual_frame.glyph_layers
+                         if visual_frame is not None and not visual_frame.is_empty else None)
+        visual_protected = _subject_cells(state) if visual_layers else frozenset()
+        if visual_layers and map_view.display_mode != 'image':
+            from ..glyphs import _unicode_mode
+            _, visual_text = flatten_visual_text(
+                visual_frame, viewport=map_view.viewport,
+                cell_columns=max(1, map_view.cell_w), cell_rows=max(1, map_view.cell_h),
+                protected=visual_protected,
+                unicode_supported=_unicode_mode(None))
+            for cell, glyph_layers in visual_text.items():
+                if glyph_layers and cell not in visual_protected:
+                    primary = glyph_layers[-1]
+                    # compose_fx 的键是视口相对格；VisualFrame/text 都是世界坐标。
+                    relative = (cell[0] - left, cell[1] - top)
+                    if relative not in impact_glyphs:
+                        glyphs_frame[relative] = (primary.glyph, primary.style or "#ffffff")
         # 异象意图（2026-10-21）：字图模式只改异象自身字形的颜色，图像模式在
         # 同格右上角另画角标；两种后端共用同一份 core.anomaly_intents 事实。
-        from ..anomaly_intent_marks import foreground_styles, intent_marks
-        hints_on = self.config.get('intent_hints') is not False
-        if map_view.display_mode == 'image':
-            # 关闭画面特效时角标退化为相同时长的静态标记，仍然自动消失（§6.1）。
-            map_view.set_intent_marks(
-                intent_marks(state, animated=quality != "off", include_chase=False)
-                if hints_on else {})
-        elif hints_on and self.config.get('intent_large_marks') is True:
-            # 整格大意图高亮默认关闭（2026-10-22 玩家要求）；开启时才走这条
-            # 路径。角色地图 overlay/ranges 用视口坐标，意图事实是世界坐标，
-            # 必须先换算，否则相机平移后会落到相邻格（甚至玩家身上）。
-            overlay = {**overlay, **_to_viewport_styles(
-                foreground_styles(state, include_chase=False), map_view.viewport)}
+        self._sync_intent_badges(map_view, state)
         # ---- 写回去重 / 节流（两道闸门，force 只豁免节流）----
         # 摘要里必须带基帧签名：玩家走一步后基帧变了，即使叠加层一字不差也要重画。
         # 🔴 去重对 force 同样生效（2026-10-10 性能 P1）：force 的语义收窄为
@@ -1393,7 +2408,8 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         # 该写的一次不少；而同一步里 _capture_projectile_action 与
         # _fx_repaint 相继 force 时画面一致，重复的 compose_fx + update_scene
         # 标脏直接跳过（见 docs/perf-move-diagnosis-and-board-ux-plan.md §1.4）。
-        digest = (map_view._frame_key, hash(frozenset(overlay.items())), hash(frozenset(glyphs_frame.items())))
+        digest = (map_view._frame_key, hash(frozenset(overlay.items())),
+                  hash(frozenset(glyphs_frame.items())), self._visual_frame_key)
         if digest == self._fx_frame_digest and not map_view.fx_base_overwritten:
             self._fx_quick_key = quick_key
             return True
@@ -1403,7 +2419,8 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             # additional 50 ms wall-clock gate drops alternate ticks when the
             # timer jitters or composition consumes part of that interval.
             transient = bool(snap.projectiles or snap.casts or self._fx_combat_pulses
-                             or self._map_particles.pending) and quality == 'high'
+                             or self._map_particles.pending
+                             or self._fx_impact_cues) and quality == 'high'
             if (self._fx_last_write is not None
                     and not transient and now - self._fx_last_write < FX_WRITEBACK_INTERVAL):
                 return True
@@ -1412,9 +2429,11 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             # 声波按规则只落在视野外，图像后端必须单独收一份「可压过迷雾」的
             # 底色；混进常规 backgrounds 会被可见性门槛整片丢掉（WezTerm
             # 看不到声音动画，字符终端却能看到），所以这里按波次格显式拆分。
-            fog_styles = _sound_visual_fog_styles(snap.waves, overlay)
+            fog_styles = _sound_visual_fog_styles(snap.waves, overlay, t)
             map_view.update_image_effects(overlay,glyphs_frame,force=force,
-                                          fog_styles=fog_styles)
+                                          fog_styles=fog_styles,
+                                          glyph_layers=visual_layers,
+                                          protected_cells=visual_protected)
         elif self.layer_observation is None:
             styled = compose_fx(base, map_view.cell_ranges, overlay, glyphs_frame,
                                 map_view.cell_w, map_view.cell_h)
@@ -1464,94 +2483,113 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                 if enemy.integrity > 0
             }
         liquid_gas: list[tuple[int, int, str]] = []
-        from ...core.realm_surface import (cached_surface_color, display_zones,
-                                           normalize_bg_zones, protects_floor, surface_color)
-        from ..render import _realm_zone_color
-        surface_zones = display_zones(state)
-        surface_cache: dict[tuple[int, int], str | None] = {}
-        surface_bgs = []
-        fixed_ground = set()
-        shown: set[tuple[int, int]] = set()
-        opaque: set[tuple[int, int]] = set()
-        # §12 B2：挡视线的类墙体气体（黑烟/灰尘）—世界坐标，进遮挡签名，
-        # 否则烟浓度跨过遮蔽阈值后仍会沿用旧掩码（光穿烟）。
-        sight_smoke: list[tuple[int, int]] = []
-        # §12 B2 第二层：真正挡视线的实心墙与高植物（世界坐标）。剔除
-        # 透明墙——`_has_line_of_sight` 把 `TRANSPARENT_WALLS` 当空气，它们进
-        # 遮挡签名只会制造「没挡光却作废掩码」的误重建（视口里玻璃幕墙一多，
-        # 玩家每走一格都会整层重算）。`opaque` 仍保留全量墙格给光池（渲染口径）。
-        sight_walls: list[tuple[int, int]] = []
-        flames: list[tuple[int, int]] = []
-        env_light_candidates: list = []
-        for vy in range(vh):
-            for vx in range(vw):
-                x, y = left + vx, top + vy
-                try:
-                    cell = state.cell(x, y)
-                except Exception:
-                    continue
-                if (x, y) in visible or (x, y) in developed:
-                    ground = cached_surface_color(state,x,y,surface_zones,surface_cache)
-                    if ground:
-                        surface_bgs.append((vx, vy, ground))
-                        # §12 C：只保护承担识别职责的材质（纸页/釉板），
-                        # 普通聚合物走廊照常受光；不再整层锁死。
-                        if (protects_floor(state, x, y) and not cell.flame):
-                            fixed_ground.add((vx, vy))
-                    elif cell.solid and cell.wall_kind:
-                        # §12 C：普通墙面也接收光池——识别纹理（墙体字形、机关、
-                        # 任务纹样）仍在受光底色之上单独绘制，不被整格光色盖掉。
-                        wall_color = wall_def(cell.wall_kind).color
-                        if wall_color:
-                            surface_bgs.append((vx, vy, wall_color))
-                    # §12 环境光源候选：植物 / 液体 / 气体 / 墙体都进登记表查询，
-                    # 是否真的发光由 data/light_sources.py 决定。只收录玩家确实
-                    # 看得见（或已显影）的格子，不泄露墙后灯种。
-                    if (cell.plant or (cell.liquid_kind and cell.liquid > 0)
-                            or (cell.gas_kind and cell.gas > 0)
-                            or (cell.solid and cell.wall_kind)):
-                        env_light_candidates.append((vx, vy, cell))
-                # 火焰格（可见/已显影才上色，与液/气同一口径）。
-                if cell.flame > 0 and ((x, y) in visible or (x, y) in phantom_echo
-                                       or (x, y) in developed or (x, y) in cursed_seen):
-                    flames.append((vx, vy))
-                kind_color = None
-                if cell.solid:
-                    opaque.add((vx, vy))
-                    if cell.wall_kind not in TRANSPARENT_WALLS:
+        if _kernel_enabled("fx"):
+            # CY-2：视口逐格收集交给编译内核；返回顺序与原实现一致。
+            (surface_bgs, fixed_ground, env_light_candidates, flames, opaque,
+             sight_walls, sight_smoke, liquid_gas, shown) = _kernel_scan_viewport(
+                state, left, top, vw, vh, visible, developed, phantom_echo, cursed_seen)
+        else:
+            from ...core.realm_surface import (cached_surface_color, display_zones,
+                                               normalize_bg_zones, protects_floor, surface_color)
+            from ..render import _realm_zone_color
+            surface_zones = display_zones(state)
+            surface_cache: dict[tuple[int, int], str | None] = {}
+            surface_bgs = []
+            fixed_ground = set()
+            shown: set[tuple[int, int]] = set()
+            opaque: set[tuple[int, int]] = set()
+            # §12 B2：挡视线的类墙体气体（黑烟/灰尘）—世界坐标，进遮挡签名，
+            # 否则烟浓度跨过遮蔽阈值后仍会沿用旧掩码（光穿烟）。
+            sight_smoke: list[tuple[int, int]] = []
+            # §12 B2 第二层：真正挡视线的实心墙与高植物（世界坐标）。剔除
+            # 透明墙——`_has_line_of_sight` 把 `TRANSPARENT_WALLS` 当空气，它们进
+            # 遮挡签名只会制造「没挡光却作废掩码」的误重建（视口里玻璃幕墙一多，
+            # 玩家每走一格都会整层重算）。`opaque` 仍保留全量墙格给光池（渲染口径）。
+            sight_walls: list[tuple[int, int]] = []
+            flames: list[tuple[int, int]] = []
+            env_light_candidates: list = []
+            for vy in range(vh):
+                for vx in range(vw):
+                    x, y = left + vx, top + vy
+                    try:
+                        cell = state.cell(x, y)
+                    except Exception:
+                        continue
+                    if (x, y) in visible or (x, y) in developed:
+                        ground = cached_surface_color(state,x,y,surface_zones,surface_cache)
+                        if ground:
+                            surface_bgs.append((vx, vy, ground))
+                            # §12 C：只保护承担识别职责的材质（纸页/釉板），
+                            # 普通聚合物走廊照常受光；不再整层锁死。
+                            if (protects_floor(state, x, y) and not cell.flame):
+                                fixed_ground.add((vx, vy))
+                        elif cell.solid and cell.wall_kind:
+                            # §12 C：普通墙面也接收光池——识别纹理（墙体字形、机关、
+                            # 任务纹样）仍在受光底色之上单独绘制，不被整格光色盖掉。
+                            wall_color = wall_def(cell.wall_kind).color
+                            if wall_color:
+                                surface_bgs.append((vx, vy, wall_color))
+                        # §12 环境光源候选：植物 / 液体 / 气体 / 墙体都进登记表查询，
+                        # 是否真的发光由 data/light_sources.py 决定。只收录玩家确实
+                        # 看得见（或已显影）的格子，不泄露墙后灯种。
+                        if (cell.plant or (cell.liquid_kind and cell.liquid > 0)
+                                or (cell.gas_kind and cell.gas > 0)
+                                or (cell.solid and cell.wall_kind)):
+                            env_light_candidates.append((vx, vy, cell))
+                    # 火焰格（可见/已显影才上色，与液/气同一口径）。
+                    if cell.flame > 0 and ((x, y) in visible or (x, y) in phantom_echo
+                                           or (x, y) in developed or (x, y) in cursed_seen):
+                        flames.append((vx, vy))
+                    kind_color = None
+                    if cell.solid:
+                        opaque.add((vx, vy))
+                        if cell.wall_kind not in TRANSPARENT_WALLS:
+                            sight_walls.append((x, y))
+                    if cell.plant and plant_height(cell.plant) >= 2:
                         sight_walls.append((x, y))
-                if cell.plant and plant_height(cell.plant) >= 2:
-                    sight_walls.append((x, y))
-                if cell.gas > 0 and state._gas_sight_effect(cell)[0]:
-                    # 只对气体格做这条判定（视口里绝大多数格直接跳过），
-                    # 结果进遮挡签名，浓度掉下去就会让掩码重算。
-                    # 世界坐标：同一个列表也用来累积 8×8 区块签名（B2 第二层）。
-                    sight_smoke.append((x, y))
-                if cell.liquid > 0 or cell.floor is Material.LIQUID_MEMORY:
-                    kind_color = liquid_def(cell.liquid_kind).color
-                elif cell.gas > 0 or cell.floor is Material.DIFFUSE_IMPRESSION:
-                    kind_color = gas_def(cell.gas_kind).color
-                if kind_color is None:
-                    continue
-                # 液/气格一律挡光（防混色，硬约束）；但只有「基帧确实画出了
-                # 这一格」的才允许上叠加底色——视野外的格子基帧是记忆/未探索
-                # 的暗色，照真实物质色上底色会让整张地图的液体气体亮起来。
-                liquid_gas.append((vx, vy, kind_color))
-                if ((x, y) in visible or (x, y) in phantom_echo
-                        or (x, y) in developed or (x, y) in cursed_seen):
-                    shown.add((vx, vy))
-        # 呼吸光环源（2026-09-20 调整）：只保留 NPC（稳定意识）单波光环——
-        # 事件点周围格子的动态发光按用户要求整个去除，视野里不再有别的动源。
+                    if cell.gas > 0 and state._gas_sight_effect(cell)[0]:
+                        # 只对气体格做这条判定（视口里绝大多数格直接跳过），
+                        # 结果进遮挡签名，浓度掉下去就会让掩码重算。
+                        # 世界坐标：同一个列表也用来累积 8×8 区块签名（B2 第二层）。
+                        sight_smoke.append((x, y))
+                    if cell.liquid > 0 or cell.floor is Material.LIQUID_MEMORY:
+                        kind_color = liquid_def(cell.liquid_kind).color
+                    elif cell.gas > 0 or cell.floor is Material.DIFFUSE_IMPRESSION:
+                        kind_color = gas_def(cell.gas_kind).color
+                    if kind_color is None:
+                        continue
+                    # 液/气格一律挡光（防混色，硬约束）；但只有「基帧确实画出了
+                    # 这一格」的才允许上叠加底色——视野外的格子基帧是记忆/未探索
+                    # 的暗色，照真实物质色上底色会让整张地图的液体气体亮起来。
+                    liquid_gas.append((vx, vy, kind_color))
+                    if ((x, y) in visible or (x, y) in phantom_echo
+                            or (x, y) in developed or (x, y) in cursed_seen):
+                        shown.add((vx, vy))
+        # 呼吸光环源（2026-10-24 恢复双源，取代 2026-09-20「事件光环去除」的决定）：
+        # NPC（稳定意识）= 十字正交单波、事件 = × 形对角小光环——形状即身份。
+        # 两者都是 12s 周期里呼吸 3s、每次只亮一对格、峰值约源色四成的低频动效，
+        # 由 FX 层的墙钟 t 驱动（不占回合结算；fx_quality=off 时整层不跑）。
         sources: list[FxSource] = []
         source_masks: list = []
         for npc in state.enemies:
-            if npc.relation == "稳定意识" and npc.integrity > 0 and npc.vision >= 0                     and state.is_visible(npc.x, npc.y):
+            if (npc.relation == "稳定意识" and npc.integrity > 0 and npc.vision >= 0
+                    and state.is_visible(npc.x, npc.y)):
                 vx, vy = npc.x - left, npc.y - top
                 if 0 <= vx < vw and 0 <= vy < vh:
                     sources.append(FxSource(vx, vy, "#9ab8ff",
                                             phase=(vx * 11 + vy * 5) * 0.35,
                                             source_id=f"npc.{npc.x},{npc.y}",
                                             kind="npc"))
+        for event in state.events:
+            if event.resolved or not state.is_visible(event.x, event.y):
+                continue
+            vx, vy = event.x - left, event.y - top
+            if 0 <= vx < vw and 0 <= vy < vh:
+                sources.append(FxSource(vx, vy, AURA_COLOR,
+                                        phase=(vx * 11 + vy * 5) * 0.35,
+                                        source_id=f"event.{event.event_id},{event.x},{event.y}",
+                                        kind="event",
+                                        compound=event.kind == "compound"))
         if env_light_candidates:
             from ...core.vision.light_cache import (
                 LOW_REGION_SAMPLES, REGION_SAMPLES, block_signatures,
@@ -1654,15 +2692,24 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             vx, vy = wx - left, wy - top
             if 0 <= vx < vw and 0 <= vy < vh:
                 hits.append(FxHit(vx, vy, born, radius))
-        # 声波（2026-10-22）：只保留「当前视野外」的已听见格；视野内与玩家
-        # 自身动作不产生任何声音特效。这里做世界坐标→视口坐标换算与过滤。
+        # Apply current vision/hearing boundaries before viewport conversion.
         waves: list[FxWave] = []
-        for born, cells in self._fx_waves:
+        for entry in self._fx_waves:
+            born, cells = entry[:2]
             if t - born > SOUND_WAVE_LIFE:
                 continue
+            # Movement or a changed hearing bonus cannot leave effects outside
+            # the current hearing boundary, even for older queued events.
+            px, py = state.player.x, state.player.y
+            cap = state._listen_cap()
+            cells = tuple((x, y) for x, y in cells if abs(x-px)+abs(y-py) <= cap)
             view_cells = _sound_visual_view_cells(cells, visible, left, top, vw, vh)
             if view_cells:
-                waves.append(FxWave(view_cells, born))
+                center = entry[2] if len(entry) > 2 else None
+                if center and abs(center[0]-px)+abs(center[1]-py) > cap:
+                    continue
+                local_center = (center[0]-left, center[1]-top) if center else None
+                waves.append(FxWave(view_cells, born, local_center, entry[3] if len(entry) > 3 else False))
         # 弹道回放（2026-09-23）：世界坐标 → 视口坐标（过期条目丢弃）。
         projectiles: list[FxProjectile] = []
         if self._fx_projectile is not None:
@@ -1782,7 +2829,7 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                 self.query_one("#home-title", Static).update(dream_title_text(tr("梦 层")))
 
     def _home_tick(self) -> None:
-        if not self.is_running or not self.query(HomeScene):
+        if not self.is_running or not self.is_mounted:
             return  # 子控件卸载后，已排队的定时回调不能再查询标题。
         if not self.home_mode or self.panel_mode not in {"home", "home_saves"}:
             if self._home_timer is not None:
@@ -1793,7 +2840,10 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             self._home_started = now
         elapsed = now - self._home_started
         quality = str(self.config.get("fx_quality") or "off")
-        self.query_one("#home-scene", HomeScene).paint(elapsed, quality)
+        scene = self._frame_widget('_frame_home_scene', HomeScene)
+        if scene is None or not scene.is_mounted:
+            return
+        scene.paint(elapsed, quality)
         rate = 10 if quality == "low" else 20
         phase = 1.0 if quality == "off" else min(0.9, int(elapsed * rate) / rate)
         animation_time = None if quality == "off" else int(elapsed * rate) / rate
@@ -1805,9 +2855,74 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             title.styles.width = title_width
             title.update(dream_title_text(key[0], phase, animation_time, width=title_width))
 
+    def _note_activity(self) -> None:
+        """真实键鼠输入：记录活动时刻，装饰帧立即恢复 5Hz。"""
+        self._last_activity = time.monotonic()
+
+    def _deco_painter_throttle_applies(self) -> bool:
+        """当前是否由 painter 接管世界视图——决定装饰帧要不要降频。
+
+        注意：不能拿 painter.active 当门。painter 每次回退（**包括装饰帧自己
+        逼出的整屏合成**）都会 suspend() 把它清成 False，于是「降频 -> 一次
+        回退 -> 又回 5Hz」，节流根本站不住。稳定条件是：painter 已装载且未失败、
+        模式仍是 painter、当前是世界视图。首页/暂停页的牌匾流光不归 painter，
+        保持原 5Hz 观感；面板打开时 painter 本来就不接管，也不在这里降。
+        """
+        if not _DECO_PAINTER_THROTTLE:
+            return False
+        if world_render_mode() != "painter":
+            return False
+        if self.home_mode or self.panel_mode != "world":
+            return False
+        painter = getattr(self, "_world_painter", None)
+        return painter is not None and not getattr(painter, "failed", False)
+
+    def _deco_image_throttle_applies(self) -> bool:
+        """图像后端世界视图下是否把装饰帧压到 DECO_IMAGE_HZ（2026-10-28）。
+
+        图像+原生层下地图由独立窗口画，装饰边框仍走 Textual：每 tick 把
+        OrnamentPane 四条边标脏，真机口径一次约 11–19ms 的合成，5Hz 约
+        5–9% 空闲 CPU。这里只在「世界视图可见、地图确实是图像后端、非全屏
+        模态/观察/层观测」时降频；首页/暂停页的牌匾流光保持原 5Hz 观感。
+        """
+        if not _DECO_IMAGE_THROTTLE:
+            return False
+        if self.home_mode or self.observe_mode:
+            return False
+        if getattr(self, "layer_observation", None) is not None:
+            return False
+        mode = getattr(self, "panel_mode", "world")
+        if mode != "world" and mode not in RIGHT_PANEL_MODES:
+            return False
+        view = getattr(self, "_frame_map", None)
+        if view is None:
+            try:
+                view = self.query_one("#map", MapView)
+            except Exception:
+                return False
+        return getattr(view, "display_mode", "character") == "image"
+
+    def _deco_runtime_hz(self) -> float:
+        """当前装饰帧的名义频率（真实时间路径；注入 t 的测试仍用 5Hz）。
+
+        基础 5Hz/空闲 2Hz；painter 或图像后端世界视图再压到各自更低值，
+        取最小者——每少一次装饰 tick 就少一次终端整屏合成。
+        """
+        now = time.monotonic()
+        idle_for = now - getattr(self, "_last_activity", now)
+        hz = (DECO_FRAME_HZ
+              if not _DECO_IDLE_THROTTLE or idle_for < DECO_IDLE_AFTER
+              else DECO_IDLE_HZ)
+        if self._deco_painter_throttle_applies() and hz > DECO_PAINTER_HZ:
+            hz = DECO_PAINTER_HZ
+        if self._deco_image_throttle_applies() and hz > DECO_IMAGE_HZ:
+            hz = DECO_IMAGE_HZ
+        return hz
+
     def _paint_panel_ornaments(self, quality, t):
         state = self.session.state
         feedback = self._border_feedback.sample(t) if quality != 'off' else None
+        focused = None if self.home_mode else self._focused_pane_selector()
         for widget in self.query('.ornament-frame'):
             if not widget.is_on_screen or not all(w.display and w.visible for w in widget.ancestors_with_self):
                 continue
@@ -1815,9 +2930,12 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             widget_feedback = feedback
             if feedback is not None and feedback[0] == 'danger' and widget.id != 'map-pane':
                 widget_feedback = None
+            focus_dim = 1.0
+            if focused is not None and widget.id in ("map-pane", "side-pane"):
+                focus_dim = 1.0 if f"#{widget.id}" == focused else UNFOCUSED_BORDER_DIM
             widget.paint_ornament(state.depth, quality, t, self._symbol_mode() != 'ascii',
                                   realm_id=state.realm_id if not self.home_mode else '',
-                                  feedback=widget_feedback)
+                                  feedback=widget_feedback, focus_dim=focus_dim)
 
     def _deco_tick(self, t: float | None = None) -> None:
         """装饰帧（10fps，ui/deco.py）：界面镶边动效——与地图 FX 分工。
@@ -1837,6 +2955,11 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         见模块顶部 DECO_FRAME_HZ 的说明）。
         ⚠️ 键里必须带界面分支：只比 t，从主页切进世界的那一帧会因为恰好落在
         同一个台阶上而被跳过，边框会停在主题的静态色上。
+
+        性能（2026-10-27 A2）：painter 接管世界帧时（见
+        _deco_painter_throttle_applies），运行时的名义频率压到 DECO_PAINTER_HZ
+        （默认 1Hz；空闲降频取更小值），把每秒多次整屏合成降到约 1 次。
+        注入 t 的测试/探针路径不受影响，仍是 DECO_FRAME_HZ。
         """
         quality = str(self.config.get("fx_quality") or "off")
         if quality == "off":
@@ -1844,16 +2967,29 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             # the timer leaves its last chase color frozen on the native border.
             if self._deco_frame_key is not None and self._deco_frame_key[4] != 'off':
                 theme = theme_for_realm(self.session.state.realm_id, self.session.state.depth)
-                for pane in self.query(OrnamentPane):
-                    pane.styles.border = (theme.border_style, theme.border_color)
+                if self.home_mode:
+                    for pane in self.query(OrnamentPane):
+                        pane.styles.border = (theme.border_style, theme.border_color)
+                else:
+                    # 世界视图的静态色由焦点决定（焦点侧原色、另一侧压暗）；
+                    # 缓存键没变会跳过，先作废再重算。
+                    self._focus_style_key = None
+                    self._refresh_focus_style()
                 self._deco_frame_key = None
             self._paint_panel_ornaments(quality, 0.0)
             return
         if t is None:
-            t = time.monotonic()
-        t = int(t * DECO_FRAME_HZ) / DECO_FRAME_HZ
+            now = time.monotonic()
+            # A2 / 图像装饰节流（2026-10-28）：painter 或图像后端世界视图时压到
+            # 各自更低的名义频率（见 _deco_runtime_hz）；空闲取更小值。
+            hz = self._deco_runtime_hz()
+            t = now
+        else:
+            # 测试注入的时钟保持原有 5Hz 口径，不受空闲降频影响。
+            hz = DECO_FRAME_HZ
+        t = int(t * hz) / hz
         state = getattr(self.session, "state", None)
-        key = (t, self.home_mode, self.panel_mode, getattr(state, "run_over", False),
+        key = (t, hz, self.home_mode, self.panel_mode, getattr(state, "run_over", False),
                quality, self._symbol_mode(), getattr(state, 'depth', 0),
                getattr(state, 'realm_id', ''))
         if key == self._deco_frame_key:
@@ -1872,24 +3008,6 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
                 return
             elif self.panel_mode == "pause":
                 self.query_one("#pause-title", Static).update(home_title_text(tr("暂 停"), t=t))
-            elif not self.session.state.run_over:
-                # Textual 真边框的动态渐变（2026-09-20 修复「实际没有动态渐变」）：
-                # 旧版是主题色↔亮色两色呼吸，幅度 35%、周期 4s，肉眼不可辨。
-                # 改为四边相位差 1/4 圈的追逐流光（deco.border_flow_colors），
-                # 与区域主题色对半混合——区域配色保留，光带绕框 chase 可见。
-                theme = theme_for_realm(self.session.state.realm_id, self.session.state.depth)
-                for pane in self.query(OrnamentPane):
-                    pane.paint_ornament(state.depth, quality, t, self._symbol_mode() != 'ascii',
-                                        realm_id=state.realm_id)
-                top, right, bottom, left = border_flow_colors(theme.border_color, t)
-                self.query_one("#map-pane").styles.border_top = (theme.border_style, top)
-                self.query_one("#map-pane").styles.border_right = (theme.border_style, right)
-                self.query_one("#map-pane").styles.border_bottom = (theme.border_style, bottom)
-                self.query_one("#map-pane").styles.border_left = (theme.border_style, left)
-                self.query_one("#side-pane").styles.border_top = (theme.border_style, left)
-                self.query_one("#side-pane").styles.border_right = (theme.border_style, bottom)
-                self.query_one("#side-pane").styles.border_bottom = (theme.border_style, right)
-                self.query_one("#side-pane").styles.border_left = (theme.border_style, top)
         except Exception:
             pass
 
@@ -1899,6 +3017,7 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         放在帧循环里（而非各 action 分支）保证非回合路径（观察移动/面板
         切换/瞄准）同样被评估；pump 只做字典读取与坐标比较，成本可忽略。
         """
+        self._coach_before_frame()
         state = self.session.state
         # 教程埋点（每帧统一写入）：观察步的判定就是 ? 此刻停在哪格。
         # 键盘挪 ? 与鼠标点击寻路 ?（_follow_observe_path）两条路径都在这里
@@ -1909,8 +3028,16 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             from ...core.origin_course import observe_ui
             observe_ui(self)
         message = tutorial_pump(state)
+        if self.tutorial_session and (state.run_over or not state.tutorial.get('active')):
+            self._finish_tutorial_session()
+            return
         if message:
             self.show_toast(message, self._player_row_screen_y())
+        if self._coach_enabled():
+            self._refresh_tutorial_coach()
+            self._coach_sync_map(self.query_one('#map'), state)
+            return
+        self._refresh_tutorial_coach()
         try:
             card = self.query_one("#tutorial-card", TutorialCard)
         except Exception:
@@ -1928,6 +3055,9 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             map_view.tutorial_cells = None
 
     def _sync_tutorial_highlight(self, map_view: MapView, state: GameState) -> None:
+        if self._coach_enabled():
+            self._coach_sync_map(map_view, state)
+            return
         """refresh_view 路径的高亮同步（与帧循环同一份数据）。"""
         targets = tutorial_target_cells(state) if not self.home_mode else {}
         if targets:
@@ -1966,7 +3096,7 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             if len(lines) > 6:
                 text.append(tr("完整工具与冷却记录见主页的旧梦回忆。") + "\n", style="grey70")
         if state.run_start_choices and not self.test_mode and not self.save_disabled:
-            text.append(tr("R 沿用开局快速再开（跳过教学） · T 沿用开局重做教学 · 其他键返回主页"), style="bold bright_cyan")
+            text.append(tr("R 沿用开局快速再开 · T 独立新手教程 · 其他键返回主页"), style="bold bright_cyan")
         else:
             text.append(tr("按任意键返回主页"), style="bold bright_cyan")
         return text
@@ -1989,8 +3119,10 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         self.query_one("#panel", Static).update(self._panel_text(state))
         self.query_one("#home-content", Static).update(self._panel_text(state))
         self.query_one("#home-content").display = self.panel_mode != "home"
-        self._refresh_codex_components(mode)
-        self._refresh_settings_rows(mode)
+        if self.panel_mode == "home_catalog":
+            self._refresh_codex_components(mode)
+        elif self.panel_mode == "home_settings":
+            self._refresh_settings_rows(mode)
         self.query_one("#home-menu").styles.display = "block" if self.panel_mode in {"home", "home_saves"} else "none"
         self.query_one("#home-main").styles.display = "block" if self.home_view == "menu" else "none"
         self.query_one("#home-saves").styles.display = "block" if self.home_view == "saves" else "none"
@@ -2031,6 +3163,10 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             seed_row.styles.display = "block" if fragment_phase else "none"
             if fragment_phase:
                 seed_input = self.query_one("#newgame-seed", Input)
+                # 标签是 compose 时取词固化的 Static，切语言时不会自己重取
+                # （2026-10-25 玩家反馈「记忆编号未翻译」）。这里和 placeholder
+                # 一起刷新，保证就地切语言也整行跟着变。
+                self.query_one("#newgame-seed-label", Static).update(tr("记忆编号（选填）"))
                 if seed_input.value != self.newgame_seed_text:
                     seed_input.value = self.newgame_seed_text
                 seed_input.placeholder = tr("T/点击输入；留空随机，填整数作为本局种子")
@@ -2042,21 +3178,64 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             else:
                 self.query_one("#newgame-help", Static).update(Text(tr('↑↓ 选择 · ←→ 调整 · Enter/空格选中 · 鼠标点击\nR 默认 · G 随机 · C 继续/入梦 · Esc 返回；灰项不可用')))
             self.call_after_refresh(self._scroll_newgame_cursor)
-        # 2026-10-23：测试模式也走同一套槽位页，只是目录换成 save-test/。
-        home_manager = self._saves_manager()
-        for slot in range(1, home_manager.SLOT_COUNT + 1):
-            exists = home_manager.for_slot(slot).slot_exists()
-            # ▶ 与亮边都跟着键盘光标走（不再恒定挂在 selected_slot 上）：
-            # 光标移到导航行时存档槽行不再抢视线，Enter 的落点与高亮始终一致。
-            row_focused = self.home_view == "saves" and self.home_row == slot - 1
-            marker = "▶" if row_focused else " "
-            label = f"{marker} {tr('存档槽')} {slot} · {tr('继续') if exists else tr('新游戏')}"
-            slot_button = self.query_one(f"#slot-{slot}", Button)
-            slot_button.label = label
-            slot_button.set_class(row_focused, "selected")
-            delete_button = self.query_one(f"#delete-{slot}", Button)
-            delete_button.label = tr("删除")
-            delete_button.set_class(row_focused and self.home_column == 1, "selected")
+        if self.home_view == "saves" and self.panel_mode in {"home", "home_saves"}:
+            # 2026-10-23：测试模式也走同一套槽位页，只是目录换成 save-test/。
+            home_manager = self._saves_manager()
+            tutorial_button = self.query_one('#home-tutorial', Button)
+            self.query_one('#tutorial-slot-row').styles.display = 'none' if self.saves_test else 'block'
+            tutorial_button.styles.display = 'none' if self.saves_test else 'block'
+            tutorial_button.label = tr('新手教程')
+            tutorial_button.set_class(self.home_view == 'saves' and self.home_row == home_manager.SLOT_COUNT,
+                                      'selected')
+            for slot in range(1, home_manager.SLOT_COUNT + 1):
+                exists = home_manager.for_slot(slot).slot_exists()
+                # ▶ 与亮边都跟着键盘光标走（不再恒定挂在 selected_slot 上）：
+                # 光标移到导航行时存档槽行不再抢视线，Enter 的落点与高亮始终一致。
+                row_focused = self.home_view == "saves" and self.home_row == slot - 1
+                marker = "▶" if row_focused else " "
+                label = f"{marker} {tr('存档槽')} {slot} · {tr('继续') if exists else tr('新游戏')}"
+                slot_button = self.query_one(f"#slot-{slot}", Button)
+                slot_button.label = label
+                slot_button.set_class(row_focused, "selected")
+                delete_button = self.query_one(f"#delete-{slot}", Button)
+                delete_button.label = tr("删除")
+                delete_button.set_class(row_focused and self.home_column == 1, "selected")
+        self._refresh_home_menu_selection()
+        if self.panel_mode == "home_history":
+            self._refresh_history_view()
+        if self.panel_mode == "home_catalog":
+            for category in CatalogCategory:
+                selected = category is self.codex_page.category_candidate
+                active = category is self.codex_page.active_category
+                prefix = symbol("cursor", mode) if selected else ""
+                icon = symbol(category.symbol_key, mode)
+                suffix = tr(" · 当前") if active else ""
+                # 分类图标按类别着色（条目列表里的图标也用各自条目的专属色）。
+                # 页签固定两行（2026-10-24 玩家反馈「窄栏里图标没有了」）：第一行只放
+                # 键盘光标 + 分类图标，第二行整行让给分类名。单行时代 97 列只剩 6 格
+                # 可用宽，「图标+名称」放不下就把图标整块丢掉；分两行后名称不必再给
+                # 装饰让位，窄栏也照样带图标。「· 当前」仍按宽度取舍，选中态另有亮
+                # 边框 + 粗体承担（识别不只靠这一支字）。
+                head = Text()
+                if prefix:
+                    head.append(prefix)
+                head.append(icon, style=category.icon_color)
+                button = self.query_one(f"#catalog-category-{category.value}", Button)
+                category_width = button.content_size.width or max(
+                    1, (self.size.width - 4) // len(CatalogCategory) - 2)
+                name = Text(category.label)
+                if suffix:
+                    with_suffix = Text(f"{category.label}{suffix}")
+                    if with_suffix.cell_len <= category_width:
+                        name = with_suffix
+                # 宽度不足时允许省略部分字（页签名同样用省略号，不硬裁半个字）。
+                name.truncate(max(1, category_width), overflow="ellipsis")
+                button.label = Text.assemble(head, "\n", name)
+                button.set_class(active, 'selected')
+                button.set_class(selected, 'category-candidate')
+
+    def _refresh_home_menu_selection(self) -> None:
+        """Update menu selection without building hidden pages or probing saves."""
         # 主菜单（2026-09-23 竖排改版）：▶ 与亮边跟上光标；存档槽页整组无高亮。
         menu_active = self.home_view == "menu"
         menu_labels = {
@@ -2072,19 +3251,6 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
             menu_button = self.query_one(f"#{item_id}", Button)
             menu_button.set_class(selected, "selected")
             menu_button.label = Text(("▶ " if selected else "") + menu_labels[item_id])
-        if self.panel_mode == "home_history":
-            self._refresh_history_view()
-        for category in CatalogCategory:
-            selected = category is self.codex_page.category_candidate
-            active = category is self.codex_page.active_category
-            prefix = symbol("cursor", mode) if selected else "  "
-            icon = symbol(category.symbol_key, mode)
-            suffix = tr(" · 当前") if active else ""
-            # 分类图标按类别着色（条目列表里的图标也用各自条目的专属色）。
-            button_label = Text(prefix)
-            button_label.append(icon, style=category.icon_color)
-            button_label.append(f"{category.label}{suffix}")
-            self.query_one(f"#catalog-category-{category.value}", Button).label = button_label
 
     def _refresh_history_view(self) -> None:
         """旧梦回忆页：列表/详情 + 底部常驻总计数（不受 100 条上限影响）。"""
@@ -2122,27 +3288,43 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         )
 
     def _refresh_nav_buttons(self, mode: str) -> None:
-        """Update the five text tabs and their explicit section destinations."""
-        tabs_width = self.query_one('#panel-tabs').content_size.width
-        cache_key = (mode, get_language(), tabs_width, self.panel_mode, self._panel_subpage_id(), self.layer_observation is not None)
+        """Update the six workspace tabs (the trailing board tab is gone)."""
+        # ⚠️ 用 content_region（布局盒宽）而不是 content_size：后者是**内容
+        # 延伸宽**，一旦某次按钮排布溢出一列，它就被自己的溢出撑大，下一次
+        # 按它布局又溢出——行宽永远收不回来。
+        tabs_width = self.query_one('#panel-tabs').content_region.width or self.query_one('#panel-tabs').content_size.width
+        from ..terse import enabled as terse_enabled, route_symbol
+        terse_mode = terse_enabled(self.config)
+        cache_key = (mode, get_language(), tabs_width, self.panel_mode, self.sidebar_workspace,
+                     self._panel_subpage_id(), self.layer_observation is not None,
+                     terse_mode)
         if getattr(self, "_nav_cache_key", None) == cache_key:
             return
         self._nav_cache_key = cache_key
         from ..navigation_labels import navigation_labels, navigation_widths
-        labels = list(navigation_labels(tabs_width, mode))
-        for (selector, label), width in zip(labels, navigation_widths(tabs_width, labels)):
+        nav_width = max(8, tabs_width)
+        labels = list(navigation_labels(nav_width, mode, terse=terse_mode))
+        widths = navigation_widths(nav_width, labels)
+        # 尾差修平：页签宽度之和必须恰好等于整行宽，否则溢出的那一列会把
+        # Horizontal 的 content_size 撑大，下一次刷新又按被撑大的宽布局。
+        drift = sum(widths) - nav_width
+        if drift > 0:
+            widths[-1] = max(1, widths[-1] - drift)
+        for (selector, label), width in zip(labels, widths):
             button = self.query_one(selector, Button)
             button.label = label
             button.styles.width = width
             button.set_class(selector == '#nav-' + self.sidebar_workspace, 'sidebar-active')
-        from ..sidebar_workspaces import ROUTES
+        from ..sidebar_workspaces import ROUTES, SUBTAB_COLORS
         group = self.sidebar_workspace
-        self.query_one('#panel-sections').display = bool(ROUTES.get(group)) and self.layer_observation is None
+        self.query_one('#panel-sections').display = len(ROUTES.get(group, ())) > 1 and self.layer_observation is None
         for workspace, routes in ROUTES.items():
-            for route in routes:
+            for index, route in enumerate(routes):
                 button = self.query_one('#section-' + route.key, Button)
                 button.display = workspace == group
-                button.label = route.english if get_language() == 'en' else tr(route.label)
+                button.label = (route_symbol(route.key, mode) if terse_mode
+                                else route.english if get_language() == 'en' else tr(route.label))
+                button.styles.color = SUBTAB_COLORS[index % len(SUBTAB_COLORS)]
                 button.set_class(route.mode == self.panel_mode and (not route.subpage or route.subpage == self._panel_subpage_id()), 'sidebar-active')
         for selector, label in (
             ("#home-catalog", tr("图鉴")),
@@ -2151,7 +3333,7 @@ class DreamApp(SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMix
         ):
             self.query_one(selector, Button).label = label
 
-def create_session(save_dir: str | Path = "save", tutorial: bool = True) -> GameSession:
+def create_session(save_dir: str | Path = "save", tutorial: bool = False) -> GameSession:
     manager = SaveManager(save_dir)
     existing = True
     outdated = ""
@@ -2168,16 +3350,26 @@ def create_session(save_dir: str | Path = "save", tutorial: bool = True) -> Game
         # 新开局（默认）走 0 层「梦的起始」；读档与显式关闭教程的调用方不受影响。
         # 无 UI 的入口（启动器/测试）用默认中性选项直开；交互入口走选项页。
         user_config = load_user_config()
-        settings = ConfigManager(Path(save_dir) / 'config.json', file_defaults=user_config.values,
+        file_defaults = dict(user_config.values)
+        if 'language' not in file_defaults:
+            from ...system_locale import system_language
+            detected = system_language()
+            file_defaults['language'] = detected
+            file_defaults.setdefault('equipment_syntax', detected)
+        settings = ConfigManager(Path(save_dir) / 'config.json', file_defaults=file_defaults,
                                  file_overrides_saved=user_config.override_saved)
         # 2026-10-22：无 UI 入口也走默认开局选项，否则会绕开默认黑暗探索。
         from ...core.run_options import default_selection
         state = GameState.new(
             seed=new_run_seed(),
-            tutorial=tutorial and not bool(settings.get('skip_tutorial')),
+            tutorial=tutorial,
             run_options=default_selection(),
         )
         state.catalog = manager.merge_catalogs(state.catalog, manager.load_catalog())
         if outdated:
             state.messages.append(outdated)
-    return GameSession(state, manager, persist_initial=existing)
+    # 2026-10-26 启动性能：既有存档刚 load 出来，磁盘上已是同一份状态，
+    # 普通启动不再立刻整局重写（原先约 150ms）；仅当本次 load 真做了旧档迁移
+    # 才写回。新开局本来就 persist_initial=False，保持不变。
+    return GameSession(state, manager,
+                       persist_initial=existing and getattr(manager, "load_migrated", False))

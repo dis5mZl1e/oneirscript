@@ -112,8 +112,9 @@ def options_text(app, width):
     for index, (kind, key) in enumerate(rows):
         group = kind if kind != 'toggle' else TOGGLE_DEFS[key]['kind']
         if group != previous_kind:
+            # 2026-10-25：只剩「强化 / 挑战」两段（原「增强」段已撤销）。
             title = {'slider': tr('梦境指标'), 'boon': tr('强化'),
-                     'challenge': tr('挑战'), 'enhance': tr('增强'),
+                     'challenge': tr('挑战'),
                      'confirm': ''}[group]
             append(Text('── ' + title + ' ──' if title else '', style='#798aa6'))
             previous_kind = group
@@ -138,9 +139,8 @@ def options_text(app, width):
             line.append('] ' + tr(tier) + f' ({weight:+d})', style=style)
         elif kind == 'toggle':
             spec = TOGGLE_DEFS[key]
-            weight = spec.get('weight', 0)
-            # 增强项不参与难度：不显示 ±0，改标「不改变难度」。
-            suffix = f" ({weight:+d})" if weight else ' ' + tr('（不改变难度）')
+            # 所有开关都带 ±权重（全图地形 2026-10-25 起并入强化，按 −3 计难度）。
+            suffix = f" ({spec.get('weight', 0):+d})"
             line = Text(prefix + ('[x] ' if key in app.newgame_toggles else '[ ] ')
                         + tr(spec['name']) + suffix, style=style)
         else:

@@ -30,21 +30,44 @@ ITEM_AIM_SPECS: dict[str, ItemAimSpec] = {
 
 
 def spec_for(item_id: str) -> ItemAimSpec | None:
-    return ITEM_AIM_SPECS.get(item_id)
+    spec = ITEM_AIM_SPECS.get(item_id)
+    if spec is not None:
+        return spec
+    spec = _gear_spec(item_id)
+    if spec is not None:
+        ITEM_AIM_SPECS[item_id] = spec
+    return spec
+
+
+def _gear_spec(item_id: str) -> ItemAimSpec | None:
+    """扩展包装备的落点规格只从物品定义的 ``active_use`` 读，不手抄一张表。"""
+    try:
+        from ..data.items import ITEM_DEFINITIONS
+    except Exception:
+        return None
+    definition = ITEM_DEFINITIONS.get(item_id) or {}
+    active = definition.get("consumable_use") or definition.get("active_use")
+    if not isinstance(active, dict):
+        return None
+    form = str(active.get("form") or "")
+    if form not in ("point", "pair", "direction", "self"):
+        return None
+    return ItemAimSpec(form, int(active.get("range", 6) or 6),
+                       str(active.get("kind", "open") or "open"))
 
 
 def is_aimed(item_id: str) -> bool:
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     return spec is not None and spec.form in ("point", "pair", "direction")
 
 
 def aim_form(item_id: str) -> str | None:
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     return spec.form if spec is not None else None
 
 
 def aim_range(item_id: str) -> int:
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     return spec.range if spec is not None else 0
 
 
@@ -63,7 +86,7 @@ def protected_cell(state, x: int, y: int) -> bool:
 
 def valid_target(state, item_id: str, point) -> bool:
     """单点落点是否成立。"""
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     if spec is None or spec.form != "point" or point is None:
         return False
     try:
@@ -84,7 +107,7 @@ def valid_target(state, item_id: str, point) -> bool:
 
 def valid_pair(state, item_id: str, first, second) -> bool:
     """成对落点（源／出口）是否成立。"""
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     if spec is None or spec.form != "pair" or first is None or second is None:
         return False
     try:
@@ -121,7 +144,7 @@ def valid_pair_anchor(state, item_id: str, point) -> bool:
     ``fluid`` 的首点是材料源（源／出口里的源），``open`` 的首点是与第二点
     同等条件的空位。距离与可见性都按玩家的选取范围算，不做最近回退。
     """
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     if spec is None or spec.form != "pair" or point is None:
         return False
     try:
@@ -145,7 +168,7 @@ def valid_pair_anchor(state, item_id: str, point) -> bool:
 
 def default_target(state, item_id: str):
     """默认落点：悬停格 → 面朝格；都不合法就拒绝，绝不改投最近目标。"""
-    spec = ITEM_AIM_SPECS.get(item_id)
+    spec = spec_for(item_id)
     if spec is None or spec.form != "point":
         return None
     hover = getattr(state, "hover_target", None)

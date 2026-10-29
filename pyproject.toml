@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oneirscript"
-version = "0.9.0"
+version = "0.1.0"
 description = "梦层（Oneirscript）—— 一款以潜意识为舞台的传统 roguelike：回合制、ASCII 平面、环境化学与可篡改的现实。"
 readme = "README.md"
 license = { file = "LICENSE" }

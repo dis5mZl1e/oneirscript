@@ -307,7 +307,28 @@ def translate_composed(text):
             pattern,separator,description=rest.partition(' ')
             if description in EN_REALMS:
                 return EN_REALMS[name]+' '+pattern+' '+EN_REALMS[description]
-    return None
+    return _translate_recipe_name(text)
+
+
+def _translate_recipe_name(text):
+    """图鉴「环境反应」条目的标题：``材料甲 + 材料乙 → 产物``。
+
+    这条标题是 catalog_registry 用三段材料名拼出来的，整句不在任何语言包里，
+    所以只能按部件取词后重拼（中英两侧的箭头都保留，不参与翻译）。任一部件
+    缺译就整句放弃、退回中文原样，避免出现半中半英的行。
+    """
+    head,arrow,product=text.partition(' → ')
+    if not arrow:
+        return None
+    parts=[part.strip() for part in head.split(' + ')]
+    if len(parts)!=2 or not all(parts) or not product.strip():
+        return None
+    from .i18n import LANGUAGE_PACKS
+    pack=LANGUAGE_PACKS.get('en') or {}
+    translated=[pack.get(part) for part in parts]+[pack.get(product.strip())]
+    if any(value is None for value in translated):
+        return None
+    return f'{translated[0]} + {translated[1]} → {translated[2]}'
 
 EN_REALMS.update({
 '未尽目录翻到删改页；旧的索引预告被收回。':'The Unfinished Catalogue turns to its revision page; previous index warnings are withdrawn.',
@@ -633,7 +654,7 @@ EN_REALMS.update({
  'On a hit it remembers the target: your next shot at it first reports how far it will be pushed and what it will strike. It changes nothing by itself.',
 # 主梦物品（宣传词清理）
 '崩解度获取 +4，越攒越厚。': 'Dissolution gain +4; it piles up as you go.',
-'戴着它，攻击耗时 −0.1。': 'Worn, your attacks take 0.1 less time.',
+'戴着它，攻击耗时 −0.2。': 'Worn, your attacks take 0.2 less time.',
 '徒手操作机关与电线不再触发反噬。': 'Working mechanisms and wires barehanded no longer bites back.',
 '把一句未说完的话压成直线弹体射出去。': 'Compresses an unfinished sentence into a straight shot and fires it.',
 '机箱前面板上的亚克力小水晶。晃一晃，静电都绕着走（心智与清醒的伤口都浅一点）。': 'An acrylic trinket from a case front. Give it a shake and static walks around you (Mind and Lucidity wounds run a little shallower).',
@@ -761,4 +782,110 @@ EN_REALMS.update({
     '撞上{thing}': 'strikes {thing}',
     '撞上另一个意识': 'strikes another mind',
     '推出边缘': 'is pushed off the edge',
+})
+
+# ---- 位面入口/返程/收刮/医院设施事件（2026-10-24 玩家可见英文补漏）----
+EN_REALMS.update({
+    # 千禧园：关机之门（1–4 层出口）
+    '关机之门': 'Shutdown Gate',
+    '一台老显示器立在草地上，屏幕中央是一个闪烁的关机图标。':
+        'An old monitor stands in the grass, a blinking shutdown icon at the centre of its screen.',
+    '显示器嗡嗡作响。屏幕上写着：现在可以安全地关闭计算机了。':
+        'The monitor hums. The screen reads: it is now safe to turn off your computer.',
+    '关掉它，就能往梦的更深处走。': 'Switch it off and you can go deeper into the dream.',
+    '关掉它（下潜）': 'Switch it off (descend)',
+    '再逛逛': 'Look around a little longer',
+    '屏幕上的字一闪一闪：你的电脑遇到问题，需要重新启动。':
+        'The words on the screen blink: your computer has run into a problem and needs to restart.',
+    '光标在闪。光标后面有一行小字：按任意键接入……':
+        'A cursor blinks. Behind it a small line reads: press any key to connect...',
+    '接入': 'Connect',
+    # 位面入口（无名藏书门厅 / 未填写的入院单）
+    '无名藏书门厅': 'Nameless Library Hall',
+    '未填写的入院单': 'Unfilled Admission Form',
+    '淡黄地板与整齐书架间，一张空白目录台等待着借阅者。':
+        'Between pale yellow floors and orderly shelves, a blank catalogue desk waits for a borrower.',
+    '借阅尚未发生的书': 'Borrow a book that has not happened yet',
+    '一张空白入院单放在洁白而明亮的台面上。':
+        'A blank admission form lies on a white, bright counter.',
+    '填写一个尚未存在的名字': 'Fill in a name that does not exist yet',
+    '暂不进入': 'Do not enter for now',
+    '灯亮起来时，白瓷上的影子都无处藏身。':
+        'When the lights come on, no shadow can hide on the white porcelain.',
+    '入院单还在等一个名字。': 'The admission form is still waiting for a name.',
+    # 位面收刮柜
+    '旧书柜': 'Old Bookcase',
+    '封存药柜': 'Sealed Medicine Cabinet',
+    '柜门松了一线，里面还有几样没有带走的东西。':
+        'The cabinet door hangs ajar; a few things were left inside.',
+    '搜刮柜内物品': 'Search the cabinet',
+    '留在这里': 'Stay here',
+    # 藏书宫：返程目录台 / 抄写佣金台 / 未尽目录结局
+    '返程目录台': 'Return Catalogue Desk',
+    '继续探索': 'Keep exploring',
+    '抄写佣金台': 'Scribing Commission Desk',
+    '台角码着一叠待抄的公函，旁边压着佣金单：抄一页，付一点心神。':
+        'A stack of letters waiting to be copied sits on the corner, pinned under a commission slip: one page for a little mind.',
+    '抄写讲究手稳；佣金按页现结，从不拖欠。':
+        'Scribing takes a steady hand; the commission is paid page by page, never in arrears.',
+    '付 1 点心智，抄一页（清醒+2）': 'Pay 1 Mind to copy a page (Lucidity +2)',
+    '只翻翻样张': 'Just skim the samples',
+    '图书馆手续': 'Library paperwork',
+    '离开佣金台': 'Leave the commission desk',
+    '返回主梦': 'Return to the main dream',
+    '一页抄完，笔画整齐；清醒补回两点。':
+        'One page copied in tidy strokes; Lucidity restored by two.',
+    '今天的佣金份额已经结清；台面收拾干净了。':
+        "Today's commission share is settled; the desk has been cleared.",
+    '心智不够撑过一页抄写；歇会再来。':
+        'Not enough Mind to last through a page; come back after a rest.',
+    '未尽目录散成散页。你可以保存秩序，承认未定，或带走不完整版本。':
+        'The Unfinished Catalogue scatters into loose pages. You may preserve order, admit the undefined, or take an incomplete version with you.',
+    '你读过 {n} 份彼此矛盾的记录。三个选择都能返回主梦。':
+        'You have read {n} contradictory records. All three choices return you to the main dream.',
+    '已被收录，但目录仍允许变化。': 'Already catalogued, but the catalogue may still change.',
+    '借阅': 'Borrow',
+    '保留目录': 'Keep the catalogue',
+    '留下空页': 'Leave a blank page',
+    '把书借走': 'Take the book away',
+    '稍后再决定': 'Decide later',
+    # 至白疗所：登记台 / 气罐端口 / 灯段 / 回流配液阀 / 散落与配液操作
+    '撤离登记台': 'Evacuation Registry Desk',
+    '入院记录上始终保留着离开的许可。':
+        'The admission record always keeps a leave permit on file.',
+    '可以撤离至主梦；设备、储罐和已领取的物品会保留。':
+        'You can evacuate to the main dream; devices, tanks and claimed items are kept.',
+    '办理撤离，返回主梦': 'Process the evacuation and return to the main dream',
+    '封闭气罐端口': 'Sealed Gas Tank Port',
+    '封闭气室的外接端口；气体有限，可抽取或定量排放。':
+        'External port of a sealed gas chamber; the gas is finite and can be drawn or released in set amounts.',
+    '抽取至首个兼容气体容器': 'Draw into the first compatible gas container',
+    '向端口排放至多 6 单位': 'Release up to 6 units into the port',
+    '保留储气，离开': 'Keep the gas and leave',
+    '灯段控制台': 'Light Section Console',
+    '控制前厅附近四盏灯；开关同时影响双方视野。':
+        'Controls four lamps near the front hall; toggling affects sight for both sides.',
+    '灯光同样照见你。开关消耗一回合，取消不耗时。':
+        'The light falls on you too. Toggling costs a turn; cancelling costs nothing.',
+    '关闭灯段': 'Turn the light section off',
+    '开启灯段': 'Turn the light section on',
+    '保持灯光，离开': 'Leave the lights as they are',
+    '回流配液阀': 'Return Mixing Valve',
+    '控制核心的有限储液配给；关闭后停止回流配液，不回充储量。':
+        "Controls the core's limited liquid ration; closing stops return mixing and does not refill the reserve.",
+    '阀门控制供液，不改变地上已有的液体。开关消耗一回合。':
+        'The valve controls supply; it does not alter liquid already on the floor. Toggling costs a turn.',
+    '关闭配液阀': 'Close the mixing valve',
+    '开启配液阀': 'Open the mixing valve',
+    '分诊借用盒': 'Triage Loan Box',
+    '准备盒': 'Prep Box',
+    '服务完成。': 'Service complete.',
+    '配液操作': 'Mixing operation',
+    '操作完成。': 'Operation complete.',
+    '领取': 'Claim',
+    '容许差异': 'Allow deviation',
+    '带走未完成的配液': 'Take the unfinished mix',
+    '保持纯净': 'Keep it pure',
+    '位面之门': 'Realm Gate',
+    '退潮厅失败': 'Ebbing Hall failed',
 })

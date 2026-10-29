@@ -41,6 +41,11 @@ class Cell:
     light_on: bool = True
     doorway: bool = False
     phase_stock: dict = field(default_factory=dict)
+    # 植物的一次性／有限状态（2026-10-26 植物地形扩展）：
+    # released=1（释出型已经用过那一次）、budget:<code>（剩余预算）、
+    # direction（朝向）。跟着格子走，所以读档、上下层、催生/枯萎之后
+    # 预算都不会凭空回满。
+    plant_state: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -184,6 +189,11 @@ class Entity:
     thorns_per_segment: bool = False  # 每命中一段反伤一次
     thorns_scope: str = "any"
     thorns_effect: str = ""
+    # 本层异象补刷序号（2026-10-27）：0 = 随地图生成的首波/非补刷；n≥1 = 本层
+    # 第 n 只自然补刷的异象。掉落率从第 ANOMALY_REFRESH_FREE_DROP_WAVES + 1 只起
+    # 按指数衰减（见 core.enemies._late_spawn_drop_multiplier）。旧存档缺这个键
+    # 走默认值 0（persistence 用 Entity(**data)，天然兼容）。
+    spawn_wave: int = 0
 
 
 @dataclass

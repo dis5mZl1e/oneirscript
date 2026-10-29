@@ -127,6 +127,54 @@ def _radius_at(state, x: int, y: int) -> int:
     return radius
 
 
+def plant_sight_delta(state, x: int, y: int) -> int:
+    """光阑褶（H03）对这一格机械照明加值的修正（-1 / 0）。
+
+    只改「光把视距延长多少」，不改 ``lit`` 布尔、不关灯、不改地板颜色；
+    同格叠多株也只减一次（取最强，不相加）。
+    """
+    best = 0
+    for ny in range(max(0, y - 1), min(state.height, y + 2)):
+        for nx in range(max(0, x - 1), min(state.width, x + 2)):
+            delta = plant_sight_delta_for(state.cells[ny][nx].plant)
+            if delta:
+                best = min(best, delta) if best else delta
+    return best
+
+
+def plant_sight_delta_for(code: int) -> int:
+    from ...materials import plant_sight_delta as _delta
+    return _delta(code) if code else 0
+
+
+def frame_key(state) -> tuple:
+    """本帧机械光延长表的依赖签名（与可见集同一套，见 :mod:`.cache`）。"""
+    from .cache import signature
+    return signature(state)
+
+
+def publish_frame(state, key: tuple, reach: int, bonus_by_cell: dict) -> None:
+    """把一次视野解析算好的「照亮格 → 视距延长」表挂到 state 上。
+
+    ``visible_cells()`` 每步都要重算这张表（玩家位置本身就在签名里），而表外那些
+    逐格问句（``can_see``／``live_sight``→``reveals``）过去每问一格就重扫一次 49 格
+    光源窗口：实测每步 ≈53 问 ≈6.5ms（2026-10-27 build/step_cost_probe_261027.py）。
+    签名一致＝依赖一致，所以同一次解析的表可以直接复用；越出候选窗口的问句先查
+    本帧的补问表（``memo``），没答过的仍走原扫描并把结果记进去——口径不变。
+    表随 :func:`cache.invalidate` 一起作废，且不进存档（persistence 的
+    ``runtime_caches``）。
+    """
+    state._glow_frame = (key, reach, bonus_by_cell, {})
+
+
+def _live_frame(state):
+    """签名相符的本帧表；过期或没有时返回 None。"""
+    frame = getattr(state, "_glow_frame", None)
+    if frame is None or frame[0] != frame_key(state):
+        return None
+    return frame
+
+
 def sight_bonus(state, x: int, y: int) -> int:
     """照亮 ``(x, y)`` 的机械光源给出的视距延长（0 / +3 / +4）。
 
@@ -135,6 +183,15 @@ def sight_bonus(state, x: int, y: int) -> int:
     照同一格时取最高，不求和（docs 261022 §4.1）。视线遮挡由光源到目标格
     的同一套射线判定，墙后灯光不透墙揭示目标。
     """
+    frame = _live_frame(state)
+    if frame is not None:
+        _, reach, table, memo = frame
+        if max(abs(state.player.x - x), abs(state.player.y - y)) <= reach:
+            # 候选窗口内：解析时已按全部光源铺过一遍，缺席就是 0。
+            return table.get((x, y), 0)
+        hit = memo.get((x, y))
+        if hit is not None:
+            return hit
     best = 0
     # 一次视野解析内复用本帧光源列表，避免每个被挡格再扫 49 格窗口。
     sources = getattr(state, "_glow_sources_cache", None)
@@ -146,7 +203,12 @@ def sight_bonus(state, x: int, y: int) -> int:
             best = max(best, MECHANICAL_SIGHT_BONUS)
         elif spec.mechanical:
             best = max(best, STRONG_SIGHT_BONUS if spec.strong else MECHANICAL_SIGHT_BONUS)
-    return best
+    bonus = max(0, best + plant_sight_delta(state, x, y))
+    if frame is not None:
+        # 窗口外的问题记进补问表：一步里面板／异象 AI 会把同一格问好几遍
+        # （帧路径每步刷三次），第二次起就只查表。
+        frame[3][(x, y)] = bonus
+    return bonus
 
 
 def _lit_cells(state, x: int, y: int, sources=None):
@@ -164,6 +226,9 @@ def _lit_cells(state, x: int, y: int, sources=None):
                     sources.append((nx, ny, radius))
     for sx, sy, radius in sources:
         if max(abs(sx - x), abs(sy - y)) > radius:
+            continue
+        from ..expansion_consumables import light_allows
+        if not light_allows(state, sx, sy, x, y):
             continue
         if state._has_line_of_sight(sx, sy, x, y):
             yield state.cell(sx, sy)
@@ -199,11 +264,21 @@ def sight_bonus_map(state, sources) -> dict[tuple[int, int], int]:
             for nx in range(max(0, sx - radius), min(width, sx + radius + 1)):
                 if max(abs(sx - nx), abs(sy - ny)) > radius:
                     continue
+                from ..expansion_consumables import light_allows
+                if not light_allows(state, sx, sy, nx, ny):
+                    continue
                 # 光源格自身总是被自己照亮（_has_line_of_sight 原地亦为 True）。
                 if (nx, ny) != (sx, sy) and not state._has_line_of_sight(sx, sy, nx, ny):
                     continue
                 if bonus > bonus_by_cell.get((nx, ny), 0):
                     bonus_by_cell[(nx, ny)] = bonus
+    if bonus_by_cell:
+        # 光阑褶：对**每个目标格**先合并原光源加值，再减 1（不是对每个光源
+        # 分别乘衰减）；没有加值的格保持 0。
+        for (nx, ny) in list(bonus_by_cell):
+            delta = plant_sight_delta(state, nx, ny)
+            if delta:
+                bonus_by_cell[(nx, ny)] = max(0, bonus_by_cell[(nx, ny)] + delta)
     return bonus_by_cell
 
 
@@ -212,19 +287,49 @@ def lit(state, x: int, y: int) -> bool:
 
     只看周围 (2R+1)² 个格子（半径 2 时 25 格），因此可以直接在
     :meth:`SightMixin.is_visible` 的热路径上逐格调用。
+
+    「裁光」场（``expansion.narrow_light``）在这里生效：被裁的灯只照扇区内的
+    格，扇区判定与 ``light_allows`` 同一套点积，灯的半径照旧。
     """
+    narrow = _narrow_sectors(state)
     sources = getattr(state, "_glow_sources_cache", None)
     if sources is not None:
         for sx, sy, radius in sources:
-            if max(abs(sx - x), abs(sy - y)) <= radius and state._has_line_of_sight(sx, sy, x, y):
-                return True
+            if not (max(abs(sx - x), abs(sy - y)) <= radius
+                    and state._has_line_of_sight(sx, sy, x, y)):
+                continue
+            if _in_narrow_sector(narrow, sx, sy, x, y):
+                continue
+            return True
         return False
     for ny in range(max(0, y - MAX_SOURCE_RADIUS), min(state.height, y + MAX_SOURCE_RADIUS + 1)):
         for nx in range(max(0, x - MAX_SOURCE_RADIUS), min(state.width, x + MAX_SOURCE_RADIUS + 1)):
             radius = _radius_at(state, nx, ny)
-            if radius and max(abs(nx-x), abs(ny-y)) <= radius and state._has_line_of_sight(nx, ny, x, y):
-                return True
+            if not (radius and max(abs(nx-x), abs(ny-y)) <= radius
+                    and state._has_line_of_sight(nx, ny, x, y)):
+                continue
+            if _in_narrow_sector(narrow, nx, ny, x, y):
+                continue
+            return True
     return False
+
+
+def _narrow_sectors(state) -> dict:
+    """本回合的「裁光」扇区表；没有场时返回空 dict（零成本短路）。"""
+    from ..construct_environments import narrow_light_map
+    return narrow_light_map(state)
+
+
+def _in_narrow_sector(narrow: dict, sx: int, sy: int, x: int, y: int) -> bool:
+    """这一格是否被该光源的裁光扇区挡在外面（与 ``light_allows`` 同一公式）。"""
+    if not narrow:
+        return False
+    direction = narrow.get((int(sx), int(sy)))
+    if direction is None:
+        return False
+    dx, dy = direction
+    vx, vy = x - sx, y - sy
+    return vx * dx + vy * dy < abs(vx * dy - vy * dx)
 
 
 def reveals(state, x: int, y: int) -> bool:

@@ -38,9 +38,11 @@ class TamperCost:
 
     imagination: int = 0
     chaos_delta: int = 0
+    feedback_sources: tuple[str, ...] = ()
 
     def clamped(self) -> "TamperCost":
-        return TamperCost(max(0, int(self.imagination)), int(self.chaos_delta))
+        return TamperCost(max(0, int(self.imagination)), int(self.chaos_delta),
+                          tuple(self.feedback_sources))
 
 
 def next_pressure(state: Any) -> int:
@@ -50,8 +52,11 @@ def next_pressure(state: Any) -> int:
 
 def quote_cost(state: Any, cost: TamperCost) -> TamperCost:
     """Raw base cost -> final visible cost, exactly once before settlement."""
-    return TamperCost(max(0, cost.imagination),
-                      ceil(cost.chaos_delta * 1.3) + 2 * next_pressure(state))
+    from ..equipment.expansion_runtime import imagination_cost, tamper_chaos_quote
+    imagination = imagination_cost(state, cost.imagination, ("tamper_cost",))
+    chaos = ceil(cost.chaos_delta * 1.3) + 2 * next_pressure(state)
+    chaos, feedback_sources = tamper_chaos_quote(state, chaos)
+    return TamperCost(imagination, chaos, feedback_sources)
 
 
 def note_tamper(state: Any) -> None:
@@ -97,6 +102,9 @@ def charge(state: Any, cost: TamperCost, *, reason: str, source_uid: str) -> int
         settle_delta(state, 'imagination', -cost.imagination,
                      reason=REASON_TAMPER_COST, source='篡改提交')
     change_chaos(state, cost.chaos_delta, reason=reason, source_uid=source_uid)
+    if cost.feedback_sources:
+        from ..equipment.expansion_runtime import claim_tamper_feedback
+        claim_tamper_feedback(state, cost.feedback_sources)
     return int(state.chaos)
 
 
@@ -113,11 +121,80 @@ def roll_risk(state: Any, request: TamperRequest, *, sequence: int,
     return roll_tamper_risk(state, request, sequence=sequence, chaos_after=risk_chaos(state, chaos_after))
 
 
-def apply_risk(state: Any, outcome: RiskOutcome | None, *, source_uid: str) -> str:
-    """执行已确定的风险；死亡时不执行（提交本身已推进世界，不退还成本）。"""
-    if outcome is None or getattr(state, "run_over", False):
+_RISK_PAPER_EVENTS = frozenset({"ink_blur", "glyph_scar"})
+
+
+def _risk_facts(outcome: RiskOutcome) -> tuple:
+    """风险子事件的可序列化事实：只放标量，不放世界对象/未过滤快照。"""
+    payload = dict(outcome.payload or {})
+    facts: list[tuple[str, Any]] = [("risk_state", str(outcome.event_id))]
+    for key in ("tier", "label", "substituted"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            facts.append((f"risk_{key}", value))
+    for key in ("lucidity", "mind", "imagination", "count"):
+        value = payload.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            facts.append((key, int(value)))
+    cells = payload.get("cells")
+    if isinstance(cells, (list, tuple)) and cells:
+        facts.append(("risk_cells", len(cells)))
+    return tuple(facts)
+
+
+def _emit_risk_visual(state: Any, outcome: RiskOutcome, parent_event: Any) -> None:
+    """风险作为成功提交的子事件登记；只在真实执行后调用。"""
+    from .visual_events import emit_visual
+
+    payload = dict(outcome.payload or {})
+    targets: list[tuple[int, int]] = []
+    for cell in payload.get("cells") or ():
+        try:
+            targets.append((int(cell[0]), int(cell[1])))
+        except (TypeError, ValueError, IndexError):
+            continue
+    # 墨晕/字痕是纸面文字的后果，用改写配方；其余风险（余火、回响、漏字来客）
+    # 用瞬时冲击配方。outcome=risk 不在 STAGE_BY_OUTCOME 中，按默认 release 起播。
+    paper = outcome.event_id in _RISK_PAPER_EVENTS
+    emit_visual(
+        state,
+        kind="tamper.risk",
+        outcome="risk",
+        source=getattr(parent_event, "source", None),
+        targets=tuple(targets),
+        affected_cells=(),
+        visual_key="tamper.rewrite" if paper else "fx.impact",
+        tier=1 if paper else 0,
+        theme="paper",
+        root_id=getattr(parent_event, "root_id", None),
+        parent_id=getattr(parent_event, "event_id", None),
+        source_id=getattr(parent_event, "source_id", None),
+        layer_key="tamper.risk",
+        facts=_risk_facts(outcome),
+    )
+
+
+def apply_risk(state: Any, outcome: RiskOutcome | None, *, source_uid: str,
+               parent_event: Any = None) -> str:
+    """执行已确定的风险；死亡时不执行（提交本身已推进世界，不退还成本）。
+
+    ``parent_event`` 是本次真实成功提交的视觉事件：风险真实执行后作为其子事件
+    登记（root_id 相同、parent_id 指向成功事件）；skipped（run_over）不登记。
+    """
+    if getattr(state, "run_over", False):
         return ""
-    return execute_tamper_risk(state, outcome, source_uid=source_uid)
+    feedback = ""
+    if outcome is not None:
+        feedback = execute_tamper_risk(state, outcome, source_uid=source_uid)
+        if parent_event is not None:
+            _emit_risk_visual(state, outcome, parent_event)
+    # 混乱极高（> 失序下界）时，每一次**成功提交**都可能召来专属乱象：
+    # 无论这次是否抽中负面事件（outcome 为 None 也照常判定），召唤提示由
+    # core/chaos_anomalies 自己 append 进消息流，不改变本函数的返回值语义。
+    from .chaos_anomalies import maybe_tamper_chaos
+
+    maybe_tamper_chaos(state)
+    return feedback
 
 
 def settle(state: Any, request: TamperRequest, cost: TamperCost, *,

@@ -58,6 +58,10 @@ class WorldTamperEditor(presentation.TamperViewState):
     gather_destination: tuple[int, int] | None = None
     # §15：当前预览的共用事实/输出契约；只读派生，不入存档。
     preview_contract: Any = field(default=None, repr=False, compare=False)
+    # 同一次编辑可住在地图浮层（'map'）或右栏篡改页（'side'）；右栏只承载常用项，
+    # 范围/落点/详情仍在地图侧，靠 host 决定哪一侧显示这一个 editor 对象。
+    host: str = 'map'
+    side_available: bool = False
 
     @property
     def word_id(self) -> str:
@@ -85,14 +89,28 @@ class WorldTamperEditor(presentation.TamperViewState):
 class TamperWorldUIMixin:
     """地图篡改面板的 UI 行为（挂在 DreamApp 上）。"""
 
-    def open_world_tamper_editor(self) -> bool:
-        """C 键入口：收集目标并生成句子；眼前全空时退到视野内最近目标。"""
+    def open_world_tamper_editor(self, host: str | None = None) -> bool:
+        """C 键入口：收集目标并生成句子；眼前全空时退到视野内最近目标。
+
+        host 未指定时按当前页判断：右栏正停在「操作界面·篡改」页就地编辑（2026-10-24
+        用户定稿：这一页不再强行转入左侧），C 键与 Alt 快捷键仍是地图浮层。
+        """
         from ..core.tamper_world import collect_sentence, nearest_sentence, sentence_word_ids
 
         if getattr(self,'tamper_editor',None) is not None:
             return False
         if self.world_tamper_editor is not None:
+            if host is not None:
+                self._world_tamper_set_host(host)
             return True
+        if host is None:
+            host = ('side' if (self.panel_mode == 'actions'
+                               and self._panel_subpage_id() == 'tamper') else 'map')
+        if host == 'side' and not (self.panel_mode == 'actions'
+                                   and self._panel_subpage_id() == 'tamper'):
+            # 右栏这一页不在眼前时不能把编辑器放在右栏：那会留下一只看不见、
+            # 却把所有按键都吃进状态机的编辑器。退到地图浮层。
+            host = 'map'
         if hasattr(self, '_prepare_tamper_entry') and not self._prepare_tamper_entry():
             return False
         pinned = getattr(self, "pinned_target", None)
@@ -114,22 +132,126 @@ class TamperWorldUIMixin:
             return False
         self.world_tamper_editor = WorldTamperEditor(
             sentence=sentence,
-            word_ids=word_ids)
+            word_ids=word_ids,
+            host=host,
+            side_available=host == 'side')
+        self._course_tamper_started_at = (self.session.state.action_seq, self.session.state.time)
         self._capture_tamper_view(self.world_tamper_editor)
         self._world_tamper_select_slot(self.world_tamper_editor,0)
         # 2026-10-23 用户定稿：C 键只开左侧篡改浮层，不切换右侧面板。
-        self.panel_selection = 0
-        self.panel_scroll = 0
+        if host == 'side':
+            self.panel_selection = 0
+            self.panel_scroll = 0
+        self.cursor_zone = 'panel' if host == 'side' else 'overlay'
         self.refresh_view()
         return True
 
-    def close_world_tamper_editor(self, *, refresh: bool = True) -> None:
+    def _world_tamper_set_host(self, host: str) -> None:
+        """把同一次篡改在右栏篡改页与地图浮层之间搬；句子、字词、条件都跟着走。"""
+        editor = self.world_tamper_editor
+        if editor is None or editor.host == host:
+            return
+        if host == 'side' and not (self.panel_mode == 'actions'
+                                   and self._panel_subpage_id() == 'tamper'):
+            return  # 右栏那一页不在眼前：留在地图浮层，别造出看不见却吞键的编辑器。
+        editor.host = host
+        # 焦点区域跟着宿主走：地图浮层是 overlay，右栏编辑是 panel。否则从右栏
+        # 搬到地图后 WASD/Enter 仍会先被右栏导航吃掉，浮层看起来开了却不响应。
+        self.cursor_zone = 'overlay' if host == 'map' else 'panel'
+        # 钉底入口随正文一起重画：先清掉，免得搬走宿主后右栏还留着上一条入口。
+        # `_panel_footer_entry` 必须一起清：右栏渲染分支用同一个变量给钉底行做键，
+        # 留着 903 会让别的页（构想页的键位行）钉底时被认成「转到地图侧」。
+        self._tamper_side_footer = None
+        self._panel_footer_entry = -1
+        if host == 'map':
+            editor.side_available = True
+            self.refresh_view()
+            return
+        # 右栏不显示范围、详情与落点选择：回到右栏时把范围与详情复位，
+        # 让玩家看到的就是这次提交实际生效的条件。
+        editor.range_mode = 'single'
+        editor.range_plan = None
+        editor.details_expanded = False
+        if editor.map_preview:
+            editor.map_preview = False
+            self.hover_cell = editor.return_context.get('hover_cell')
+        self.panel_scroll = 0
+        self.refresh_view()
+
+    def _world_tamper_side_active(self) -> bool:
+        editor = self.world_tamper_editor
+        return (editor is not None and getattr(editor, 'host', 'map') == 'side'
+                and self.panel_mode == 'actions' and self._panel_subpage_id() == 'tamper')
+
+    def _world_tamper_side_footer_line(self) -> Text | None:
+        """右栏篡改页钉底的「转到地图侧」入口；不在这一页编辑时一律没有。
+
+        正文渲染（ui/panels.py 的 actions 分支）与滚动量上限都读这一处，
+        两边扣的行数必须相同，否则滚到底时最后一条正文会被固定行顶出视野。
+        """
+        if not self._world_tamper_side_active():
+            return None
+        return getattr(self, '_tamper_side_footer', None)
+
+    def close_world_tamper_editor(self, *, refresh: bool = True, committed: bool = False) -> None:
         editor = self.world_tamper_editor
         if editor is not None:
+            state = self.session.state
+            if not committed and getattr(self, '_course_tamper_started_at', None) == (state.action_seq, state.time):
+                from ..core.origin_course import note
+                note(state, 'tamper_cancelled')
             self._restore_tamper_view(editor)
         self.world_tamper_editor = None
+        self._tamper_side_footer = None
+        self._panel_footer_entry = -1
         if refresh:
             self.refresh_view()
+
+    def _world_tamper_rebuild_side_after_commit(self) -> None:
+        """右栏提交成功后就地按**提交后的世界**重建同一个右栏编辑器。
+
+        2026-10-28 玩家定稿：右栏成功执行一次篡改后，界面必须留在完整编辑器里
+        继续改下一处，而不是关掉后退回旧简版摘要页。提交会推进时间/改写环境，
+        旧句子的 context 与签名已失效，所以这里用与 open_world_tamper_editor
+        完全相同的收集口径（锁定/悬停/朝向 → 最近目标兜底）重建句子与字词；
+        仍住右栏（host='side'）、回到字词段、重新定位滚动。
+        眼前已经没有可改写目标时关闭编辑器并给可读提示（空状态页会给出重试入口）。
+        """
+        from ..core.tamper_world import collect_sentence, nearest_sentence, sentence_word_ids
+
+        if self.world_tamper_editor is None:
+            return
+        pinned = getattr(self, "pinned_target", None)
+        hover = getattr(self, "hover_cell", None)
+        sentence = collect_sentence(self.session.state, pinned=pinned, hover=hover,
+                                    facing=self.facing)
+        if sentence is None:
+            sentence = nearest_sentence(self.session.state)
+        words = sentence_word_ids(sentence, self.session.state) if sentence is not None else ()
+        if sentence is None or not words:
+            # 与 C 键入口同一层兜底：悬停/锁定在纯地板上时句子没有可用字词。
+            fallback = nearest_sentence(self.session.state)
+            if fallback is not None:
+                sentence = fallback
+                words = sentence_word_ids(sentence, self.session.state)
+        if sentence is None or not words:
+            self.close_world_tamper_editor(committed=True)
+            self.show_toast(tr("这次改写之后，眼前没有可以继续改写的名字了。"), 3)
+            return
+        editor = WorldTamperEditor(
+            sentence=sentence,
+            word_ids=words,
+            host='side',
+            side_available=True)
+        self.world_tamper_editor = editor
+        self._capture_tamper_view(editor)
+        self._world_tamper_select_slot(editor, 0)
+        self._world_tamper_focus_kind = 'word'
+        self._world_tamper_follow_selection = True
+        self.panel_scroll = 0
+        self.panel_selection = 0
+        self.cursor_zone = 'panel'
+        self.refresh_view()
 
     def action_world_tamper(self) -> None:
         """底栏「篡改」格的动作；键盘 C 仍由 on_key 处理，避免重复入口。"""
@@ -232,6 +354,19 @@ class TamperWorldUIMixin:
         editor = self.world_tamper_editor
         if editor is None:
             return False
+        side = getattr(editor, 'host', 'map') == 'side'
+        if side and key in ('v', 'r', 'R', 'backslash', '\\'):
+            # 范围（R）、聚流落点（V）与插入点/效果详情（\）没有移植到右栏：
+            # 按到这些键就把这次编辑搬到地图侧，而不是静默无反应。
+            self._world_tamper_set_host('map')
+            self.show_toast(tr('范围、聚流落点与效果详情在地图侧篡改面板。'), 3)
+            return True
+        if side and key == self._tamper_key_label().lower():
+            # 2026-10-28：右栏编辑器开着时 C 键不再被状态机静默吞掉。把同一个
+            # 编辑器搬到地图浮层，左侧完整面板立刻显示（句子/字词/条件都跟着走）。
+            self._world_tamper_set_host('map')
+            self.show_toast(tr('已切到地图侧篡改面板。'), 3)
+            return True
         if hasattr(self, '_tamper_preview_key') and self._tamper_preview_key(key):
             return True
         if key in ('backslash', '\\'):
@@ -244,7 +379,12 @@ class TamperWorldUIMixin:
             self.refresh_view()
             return True
         if key in ('pageup','pagedown'):
-            editor.scroll = max(0,editor.scroll + (5 if key=='pagedown' else -5))
+            step = 5 if key == 'pagedown' else -5
+            if side:
+                # 右栏按 panel_scroll 切片渲染，editor.scroll 只对地图浮层有意义。
+                self.panel_scroll = max(0, self.panel_scroll + step)
+            else:
+                editor.scroll = max(0, editor.scroll + step)
             self._world_tamper_follow_selection = False
             self.refresh_view()
             return True
@@ -282,6 +422,9 @@ class TamperWorldUIMixin:
             if editor.phase == "confirm":
                 editor.phase = "word"  # 逐级退出：先回字词段
                 self.refresh_view()
+            elif editor.host == 'map' and editor.side_available:
+                # 从右栏进来的：Esc 先把编辑送回右栏，再按一次才取消整次篡改。
+                self._world_tamper_set_host('side')
             else:
                 self.close_world_tamper_editor()
             return True
@@ -357,9 +500,14 @@ class TamperWorldUIMixin:
             if result.changed:
                 from ..core.origin_course import note
                 note(self.session.state,'tamper_committed')
-            self.close_world_tamper_editor()
-            if not result.changed:
-                self.show_toast(result.message, 4)
+            if side and result.changed:
+                # 右栏这一页成功后保持完整编辑器：按提交后的世界重建句子/字词，
+                # 不关闭、更不回退到旧简版摘要页。
+                self._world_tamper_rebuild_side_after_commit()
+            else:
+                self.close_world_tamper_editor(committed=result.changed)
+                if not result.changed:
+                    self.show_toast(result.message, 4)
             return True
         self._world_tamper_reconcile_condition(editor)
         self.refresh_view()
@@ -369,6 +517,9 @@ class TamperWorldUIMixin:
         from ..core.tamper_world import sentence_word_ids
         previous=editor.word_id
         editor.slot_index=index
+        # 换目标槽就清掉手动落点：落点是跟「这一片区域」走的，旧槽选的落点
+        # 对新槽多半不相邻，留着只会让提交报「落点没有与来源相邻」。
+        editor.gather_destination = None
         candidates=tuple(word for word in sentence_word_ids(editor.sentence, self.session.state)
                          if word_allowed(word,editor.slot,editor.sentence))
         editor.word_ids=candidates
@@ -399,6 +550,9 @@ class TamperWorldUIMixin:
             return
         if key == 'editor:confirm':
             self.handle_world_tamper_key('enter')
+            return
+        if key == 'tamper:map':
+            self._world_tamper_set_host('map')
             return
         if key == 'range:toggle':
             self._world_tamper_toggle_range(editor)
@@ -586,15 +740,22 @@ class TamperWorldUIMixin:
             # 只有这几处（§15 第三批：四槽截断不再静默丢弃）。
             emit(tr('另有 {n} 处同类在视野里没被点名（走近或悬停可换目标）', n=overflow),
                  presentation.CONDITION, -7)
-        # 区域聚流需要明确落点：V 查看地图时移动观察光标即选定落点。
+        # 区域聚流需要明确落点：默认取距玩家最近的合法相邻格（与提交执行同一
+        # 入口），V 查看地图移动观察光标即可改成别的落点。
         if (getattr(editor.slot, 'region_members', ())
                 and editor.word_id in ('gather_liquid', 'gather_gas')):
+            from ..core.tamper_fluid import default_gather_destination
             destination = editor.gather_destination
-            if destination is None:
-                emit(tr('落点：未选（V 查看地图后移动光标选择）'), presentation.RISK, -6)
-            else:
+            if destination is not None:
                 emit(tr('落点：观察格 ({x},{y})（V 查看地图可改）',
                         x=destination[0], y=destination[1]), presentation.CONDITION, -6)
+            else:
+                default = default_gather_destination(state, editor.slot, editor.word_id)
+                if default is not None:
+                    emit(tr('落点：({x},{y})（自动·V 查看地图可改）',
+                            x=default[0], y=default[1]), presentation.CONDITION, -6)
+                else:
+                    emit(tr('落点：周围没有可用的落点'), presentation.RISK, -6)
         # 目标槽列表（点击切槽；confirm 段当前槽高亮）。
         emit(tr("── 目标 ──"), 'bold #9ab8d9', -1)
         for index, slot in enumerate(editor.sentence.slots):
@@ -685,6 +846,8 @@ class TamperWorldUIMixin:
             emit(tr('Tab 切条件 · Space 勾选 · [ ] 换组合 · Enter 执行 · Esc 返回'), "#aab0c2", -1)
         else:
             emit(tr('↑↓ 选词 · Tab 切条件 · Space 勾选 · Enter 进确认 · Esc 退出'), "#aab0c2", -1)
+        if editor.side_available:
+            emit(tr('这一句也能在右栏改：Esc 先回右栏。'), "#aab0c2", -1)
         if editor.details_expanded and 'lure_to' in editor.word_ids:
             emit(tr('固定异象后悬停环境，可改写两者的关系。'),PANEL_MUTED,-1)
         from rich.cells import cell_len
@@ -757,7 +920,206 @@ class TamperWorldUIMixin:
         self._world_tamper_total_lines=total; self._world_tamper_body_height=body_height
         return Text('\n').join(lines[i] if i is not None else Text() for i in visible)
 
-    def _world_tamper_condition_section(self, state, editor: WorldTamperEditor, emit) -> None:
+    def _world_tamper_side_lines(self, state) -> tuple[list[Text], list[int]]:
+        """右栏篡改页（完整编辑器，不是旧简版摘要）：把地图浮层的常用项搬来就地编辑。
+
+        移植的是改后句、目标、字词、条件、程度、代价与确认入口；范围（R）、
+        聚流落点（V）与插入点/效果详情（\\）仍只在地图侧浮层，底部那一行是把这次
+        编辑搬过去的入口（钉底显示，正文再长也看得见）。原句不再单列：改后句
+        就是「原句 + 变更子句」。行序号沿用浮层同一套约定（字词 0..、目标 100+、
+        条件 1000+、程度 900、地图侧入口 903），点击与键盘因此共用一个状态机。
+        """
+        from .panels import _WRAP_CONSOLE
+        editor = self.world_tamper_editor
+        lines: list[Text] = []
+        rows: list[int] = []
+        width = max(12, self.query_one('#panel').content_size.width - 4)
+        compact = self._terse_active()
+
+        def add(content, row_index: int = -1, style: str = '') -> None:
+            line = content if isinstance(content, Text) else Text(content, style=style)
+            for wrapped in line.wrap(_WRAP_CONSOLE, width + 4, overflow='fold', no_wrap=False):
+                lines.append(wrapped)
+                rows.append(row_index)
+
+        allowed = word_allowed(editor.word_id, editor.slot, editor.sentence)
+        point, after_clause, effect_note = (
+            insertion_preview(editor.sentence, editor.word_id, editor.slot_index,
+                              condition_ids=editor.condition_ids, state=state)
+            if allowed else ('', '', ''))
+        after_sentence = editor.sentence.text
+        if allowed and after_clause:
+            from ..core.tamper_prose import compose_after
+            from ..core.tamper_views import language_of
+            after_sentence = compose_after(editor.sentence.text, after_clause,
+                                           language=language_of())
+        result_line = Text('AFT:' if compact else tr('改后：'), style='bold ' + presentation.EFFECT)
+        result_line.append(after_sentence, style=presentation.EFFECT)
+        for slot in editor.sentence.slots:
+            result_line.highlight_words([slot.display_name()], _world_slot_color(slot.category))
+        # 右栏不放原句行：改后句本来就是「原句 + 变更子句」的拼接（compose_after
+        # 保留原句语篇），在 40 格宽的右栏里两句话要吃掉 5 行，把代价与入口顶到视野外。
+        add(result_line)
+
+        add(Text('── TGT ──' if compact else tr('── 目标 ──'), style='bold #9ab8d9'))
+        for index, slot in enumerate(editor.sentence.slots):
+            current = index == editor.slot_index
+            label = tr('〔{category}〕{label}',
+                       category=_category_label(slot.category), label=slot.display_name())
+            if getattr(slot, 'region_members', ()):
+                from ..core.tamper_regions import slot_range_text
+                label += '  ' + slot_range_text(slot)
+            add(Text(('▸ ' if current else '  ') + label,
+                     style=('bold underline ' if current else '') + slot.color), 100 + index)
+
+        left = [(Text('── WORD ──' if compact else tr('── 字词 ──'), style='bold ' + presentation.WORD), -1, None)]
+        right = []
+        from ..data.semantic_icons import semantic_icon, icon_label
+        word_icons = {'negate': 'tamper.negate', 'again': 'tamper.again',
+                      'delete': 'tamper.erase'}
+        for index, word_id in enumerate(editor.word_ids):
+            current = index == editor.word_index % len(editor.word_ids)
+            reason = word_blocked_reason(state, word_id, editor.slot, editor.sentence)
+            usable = word_allowed(word_id, editor.slot, editor.sentence) and not reason
+            style = ('bold underline ' if current else '') + (presentation.WORD if usable else PANEL_MUTED)
+            name = tr(_word_def(word_id)['name'])
+            if word_id in word_icons:
+                label = Text(('▸ ' if current else '  ') + semantic_icon(word_icons[word_id]) + name,
+                             style=style)
+            else:
+                label = Text('▸ ' if current else '  ', style=style)
+                label.append_text(icon_label('tamper.word.' + word_id, name, style))
+            left.append((label, index, 'word:' + word_id))
+            if current and not usable:
+                left.append((Text(reason or tr('这个字词用不到这个名字上。'), style=presentation.RISK), -1, None))
+
+        singles = tuple(cid for cid in condition_ids_for(editor.sentence, editor.word_id, editor.slot)
+                        if cid not in ('gently', 'forcefully'))
+        def emit(content, style, entry):
+            key = 'ctoggle:' + singles[entry-1000] if 1000 <= entry < 1000+len(singles) else None
+            if compact and entry == -1 and '条件' in getattr(content, 'plain', str(content)):
+                content = Text('── COND ──', style=style)
+            right.append((content if isinstance(content, Text) else Text(content, style=style), entry, key))
+        self._world_tamper_condition_section(state, editor, emit, compact=True)
+
+        blocks, entries, hits = presentation.adjacent_choices(left, right, width+4, split_from=24)
+        base = len(lines)
+        self._tamper_side_choice_range = (base, base+len(blocks))
+        self._tamper_side_choice_hits = tuple(presentation.ChoiceHit(
+            base+h.row, h.start_col, h.end_col, h.key) for h in hits)
+        lines.extend(blocks)
+        rows.extend(entries)
+
+        choices = degree_options(editor.word_id)
+        if len(choices) > 1:
+            names = {None: tr('通常'), 'gently': tr('轻轻'), 'forcefully': tr('用力')}
+            label = ' / '.join(f'[{names[value]}]' if value == editor.degree_id else names[value]
+                               for value in choices)
+            degree_label = f'DEG: {label} (-)' if compact else tr('程度：{value}（- = 切换）', value=label)
+            add(icon_label('ui.degree', degree_label,
+                           presentation.DEGREE), 900)
+
+        blocked = word_blocked_reason(state, editor.word_id, editor.slot, editor.sentence)
+        if not blocked:
+            blocked = condition_combo_blocked_reason(state, editor.condition_ids, editor.slot,
+                                                     editor.sentence, word_id=editor.word_id)
+        if blocked:
+            add(Text(blocked, style=presentation.RISK))
+        if (getattr(editor.slot, 'region_members', ())
+                and editor.word_id in ('gather_liquid', 'gather_gas')):
+            from ..core.tamper_fluid import default_gather_destination
+            destination = editor.gather_destination
+            fallback = (default_gather_destination(state, editor.slot, editor.word_id)
+                        if destination is None else None)
+            if destination is not None:
+                where = tr('观察格 ({x},{y})', x=destination[0], y=destination[1])
+            elif fallback is not None:
+                where = tr('({x},{y})（自动）', x=fallback[0], y=fallback[1])
+            else:
+                where = tr('周围没有可用的落点')
+            add(Text(tr('落点：{where}（V 查看地图可改）', where=where),
+                     style=presentation.CONDITION
+                     if destination is not None or fallback is not None
+                     else presentation.RISK))
+        if allowed:
+            cost_imagination, cost_delta = word_cost_with_conditions(
+                state, editor.word_id, editor.slot, editor.condition_ids)
+            cost_text = (f'COST: IMA {cost_imagination} · CHA +{cost_delta}' if compact else
+                         tr('代价：想象力 {a} · 混乱 +{b}', a=cost_imagination, b=cost_delta))
+            add(Text(cost_text,
+                     style=presentation.COST))
+        add(Text(tr('↑↓ 选词 · Enter 进确认 · Esc 退出') if editor.phase != 'confirm' else
+                 tr('↑↓ 选词 · ←→ 换目标 · Tab 切条件 · Space 勾选 · Enter 执行 · Esc 退出'),
+                 style=PANEL_MUTED))
+        # 「转到地图侧」的入口不进正文：正文超过一屏时它会掉到折线以下，而这一行
+        # 是两侧互转的唯一按钮。右栏渲染时把它钉在最后一行（ui/panels.py actions 分支）。
+        self._panel_footer_entry = 903
+        self._tamper_side_footer = Text(('[MAP: R / V / \\]' if compact else
+                                        '[' + tr('在地图里改：范围 / 落点 / 详情') + ']'),
+                                        style='bold ' + presentation.CONDITION)
+        self._world_tamper_side_follow(rows)
+        return lines, rows
+
+    def _tamper_side_choice_key(self, source_row, column):
+        return next((hit.key for hit in getattr(self, '_tamper_side_choice_hits', ())
+                     if hit.contains(source_row, column)), None)
+
+    def _tamper_side_pointer_key(self, visual_row, column):
+        source = visual_row - len(self._panel_subtabs_lines()) - 1 + self.panel_scroll
+        lo, hi = getattr(self, '_tamper_side_choice_range', (-1, -1))
+        if lo <= source < hi:
+            return self._tamper_side_choice_key(source, column)
+        keys = getattr(self, '_panel_row_keys', ())
+        return keys[visual_row] if 0 <= visual_row < len(keys) else None
+
+    def _world_tamper_side_follow(self, rows: list[int]) -> None:
+        """把选中项滚进右栏视口；跟随标记只消费一次，重复排版不会来回挪。"""
+        if not getattr(self, '_world_tamper_follow_selection', False):
+            return
+        self._world_tamper_follow_selection = False
+        editor = self.world_tamper_editor
+        if editor is None:
+            return
+        focus = getattr(self, '_world_tamper_focus_kind', 'word')
+        if focus == 'slot':
+            target = 100 + editor.slot_index % max(1, len(editor.sentence.slots))
+        elif focus == 'cond':
+            singles = tuple(cid for cid in condition_ids_for(editor.sentence, editor.word_id, editor.slot)
+                            if cid not in ('gently', 'forcefully'))
+            if not singles:
+                return
+            target = 1000 + editor.condition_cursor % len(singles)
+        else:
+            target = editor.word_index % max(1, len(editor.word_ids))
+        key = ('ctoggle:' + singles[editor.condition_cursor % len(singles)] if focus == 'cond'
+               else 'word:' + editor.word_id if focus == 'word' else f'wslot:{editor.slot_index}')
+        hit = next((h for h in getattr(self, '_tamper_side_choice_hits', ()) if h.key == key), None)
+        if hit is None and target not in rows:
+            return
+        viewport = self._world_tamper_side_viewport()
+        index = hit.row if hit is not None else rows.index(target)
+        scroll = self.panel_scroll
+        if index < scroll:
+            self.panel_scroll = index
+        elif index >= scroll + viewport:
+            self.panel_scroll = max(0, index - viewport + 1)
+
+    def _world_tamper_side_viewport(self) -> int:
+        """右栏这一页正文实际能显示几行：页签条与钉底入口都要扣掉。
+
+        与 ui/panels.py 的 actions 分支同一口径，否则「跟随选中项」会把目标
+        刚好留在折线外一行。
+        """
+        viewport = max(1, self._portent_viewport_rows())
+        strip_lines = self._panel_subtabs_lines()
+        if strip_lines:
+            viewport = max(1, viewport - len(strip_lines))
+        if self._world_tamper_side_footer_line() is not None:
+            viewport = max(1, viewport - 1)
+        return viewport
+
+    def _world_tamper_condition_section(self, state, editor: WorldTamperEditor, emit,
+                                        compact: bool = False) -> None:
         """单条件勾选列表；实际选中组合仍由共用条件组合规则验证。"""
         from ..core.tamper_world import condition_blocked_reason
         from ..data.semantic_icons import icon_label
@@ -765,7 +1127,9 @@ class TamperWorldUIMixin:
         singles = tuple(cid for cid in condition_ids_for(editor.sentence, editor.word_id, editor.slot)
                         if cid not in ('gently', 'forcefully'))
         count = sum(cid in singles for cid in editor.condition_ids)
-        emit(tr('已选 {n}/3',n=count) + (' · ' + tr('无') if not count else ''), presentation.CONDITION,-1)
+        # 右栏一行都不浪费：没勾选时不必单独说「已选 0/3」，方框本身就是未选。
+        if count or not compact:
+            emit(tr('已选 {n}/3',n=count) + (' · ' + tr('无') if not count else ''), presentation.CONDITION,-1)
         for index, cid in enumerate(singles):
             selected = cid in editor.condition_ids
             reason = condition_blocked_reason(state, cid, editor.slot, editor.sentence, word_id=editor.word_id)
@@ -815,4 +1179,4 @@ def _condition_def(condition_id: str) -> dict:
 
 def _category_label(category: str) -> str:
     from ..data.tamper_world import CATEGORY_LABELS
-    return CATEGORY_LABELS.get(category, category)
+    return tr(CATEGORY_LABELS.get(category, category))

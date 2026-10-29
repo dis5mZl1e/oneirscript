@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 try:  # numpy 光照池（设计文档 §1）：缺失时整条光照路径自动降级关闭。
     import numpy as _np
@@ -211,14 +212,12 @@ class FxHit:
 
 @dataclass(frozen=True)
 class FxWave:
-    """声波静态标记（2026-10-22）：视口格坐标集合 + 触发时刻（秒）。
-
-    玩家要求去掉声波涟漪，只在视野外听到声波的格子叠一层当前蓝色静态
-    底色；扩散半径与逐环计算已删除。
-    """
+    """Audible, out-of-sight cells and a permitted local ripple center."""
 
     cells: tuple[tuple[int, int], ...]
     born: float
+    center: tuple[float, float] | None = None
+    tail_only: bool = False
 
 @dataclass(frozen=True)
 class FxProjectile:
@@ -318,7 +317,7 @@ class FxSnapshot:
     base_bg: str = "#101018"
     surface_bgs: tuple[tuple[int, int, str], ...] = ()
     fixed_ground: frozenset[tuple[int, int]] = frozenset()
-    waves: tuple[FxWave, ...] = ()  # 声波静态蓝色标记；空 = 无标记（旧调用方兼容）
+    waves: tuple[FxWave, ...] = ()  # Compact authorized square-cell sound ripples.
     light_walls: bool = True             # False = 光照只落非墙体格（设置 fx_light_walls）
     liquid_gas: tuple[tuple[int, int, str], ...] = ()  # (vx, vy, 基色)：微抖动作用域
     # 允许做微抖动的液/气格（视野内或已显影）。
@@ -353,13 +352,13 @@ class FxSnapshot:
 
 
 # 辉光/暗角颜色（全区域通用；主题差异由基准帧自身呈现）。
-AURA_COLOR = "#ffd166"  # 事件点：暖黄
-NPC_GLOW_ALPHA = 0.55  # NPC 光环相对事件点更收敛
+AURA_COLOR = "#ffd166"  # 事件点：暖黄（事件呼吸光环的身份色，2026-10-24 恢复双源）
 VIGNETTE_COLOR = "#0a0a18"  # 低清醒暗角：深靛
 RIPPLE_COLOR = "#f05c62"  # 意识体受创：红色
 WIPE_COLOR = "#06060c"  # 换层溶解：近黑
 AURA_RADIUS = 3  # 曼哈顿距离
 AURA_CELL_BUDGET = 8
+AURA_MAX_CHANNEL = 62
 LIGHT_MAX_CHANNEL = 64  # Ambient light never stacks into an opaque white wash.
 # 光环环带偏移（dx, dy, 曼哈顿距离）预计算：每帧 16 光源 × 49 格不再重算 abs。
 _AURA_RING = tuple(
@@ -368,20 +367,39 @@ _AURA_RING = tuple(
     for dx in range(-AURA_RADIUS, AURA_RADIUS + 1)
     if 0 < abs(dx) + abs(dy) <= AURA_RADIUS
 )
+
+
+@lru_cache(maxsize=128)
+def _aura_glow_lut(color: str) -> tuple[str, ...]:
+    """Hue-preserving aura ramp with a hard per-channel brightness ceiling."""
+    result = []
+    for entry in glow_lut(color):
+        rgb = _parse_hex(entry)
+        peak = max(rgb)
+        if peak > AURA_MAX_CHANNEL:
+            factor = AURA_MAX_CHANNEL / peak
+            entry = _to_hex(tuple(round(channel * factor) for channel in rgb))
+        result.append(entry)
+    return tuple(result)
 # 涟漪（2026-09-20 收敛）：原来 9 格/秒 × 0.8s = 半径 7.2 的一圈大波，配上
-# 满档橙色几乎等于半屏闪一下——既不是「少量」，也踩到光敏约束。改成 5 格/秒
-# × 0.55s ≈ 半径 2.7 的一圈收敛脉冲，看得见、不晃眼。
-RIPPLE_SPEED = 5.0  # 格/秒
-RIPPLE_WIDTH = 1.2
-RIPPLE_LIFE = 0.55
-RIPPLE_MAX_RADIUS = RIPPLE_SPEED * RIPPLE_LIFE
+# 满档红色几乎等于半屏闪一下——既不是「少量」，也踩到光敏约束。
+# 2026-10-24 按玩家反馈重定标：**单次受创 1 格小脉冲，连击逐次扩到 ≈3 格**
+# （计数与半径仍由 `_fx_enemy_hit_chain` 的 `RIPPLE_MIN_RADIUS + count - 1`
+# 给出，第 4 次起封顶）。半径直接给目标值，不再由速度×寿命反推，避免改
+# 寿命时把连击刻度一起带偏。
+RIPPLE_WIDTH = 0.95
+RIPPLE_LIFE = 0.45
+RIPPLE_MAX_RADIUS = 3.0
 RIPPLE_MIN_RADIUS = 1.0
+# 硬上限（欧氏格）：高斯软边会越过波前约 1.5 格，只裁掉最外一圈淡色，
+# 保证任何一帧都不会盖到 3 格以外（玩家反馈的重点）。
+RIPPLE_MAX_REACH = 3.0
 RIPPLE_RESET_TURNS = 3.0
 # 声波（2026-10-22）：不再扩散成环；只在视野外听到声波的格子叠当前青灰静态底色。
 # off 档由调用方不登记 waves 实现降级（动画缺席时日志仍是完整信息源）。
 SOUND_WAVE_COLOR = "#8fd8d8"  # 声波：青灰
-SOUND_WAVE_LIFE = 1.6  # 标记保留时长（秒），不再用于扩散速度
-SOUND_WAVE_MAX = 8  # 同屏声波标记上限（连发不堆屏）
+SOUND_WAVE_LIFE = 1.6
+SOUND_WAVE_MAX = 3  # Limit simultaneous local ripples instead of filling the map.
 # 弹道回放（2026-09-23）：飞行 0.3s + 收尾 ≤0.2s，总时长 ≤0.32s 是
 # 「不跨回合」的第一道保险（第二道：下一次已确认动作清空缓存）。
 PROJECTILE_LIFE = 0.3
@@ -568,8 +586,13 @@ class FXEngine:
         self.last_lucidity = None
         self.border_flashes.clear()
 
-    def frame(self, snap: FxSnapshot, t: float, quality: int) -> FxFrame:
-        """兼容旧样式接口；字符层最后绘制，不受环境扫描线压暗。"""
+    def frame(self, snap: FxSnapshot, t: float, quality: int, *,
+              skip_casts: bool = False) -> FxFrame:
+        """兼容旧样式接口；字符层最后绘制，不受环境扫描线压暗。
+
+        skip_casts=True 时不再调用旧 paint_casts：调用方已用
+        ui/cast_visuals.py 的多层字符管线承担施法主效果（Task 4 去重）。
+        """
         styles = self.feed(snap, t, quality)
         hit_styles = {cell: styles[cell] for cell in getattr(self, "_last_hit_styles", {})}
         glyphs: dict[tuple[int, int], tuple[str, str]] = {}
@@ -658,10 +681,11 @@ class FXEngine:
                 put(proj.end_cell, "+" if proj.end in ("wall", "gap", "entity") else "o",
                     _darken(PROJECTILE_END_COLORS.get(proj.end, proj.color),
                             max(0.2, 1 - (age - flight) / PROJECTILE_END_LIFE)))
-        from .cast_fx import paint_casts
-        cast_styles, cast_glyphs = paint_casts(snap, t, quality)
-        styles.update(cast_styles)
-        glyphs.update(cast_glyphs)
+        if not skip_casts:
+            from .cast_fx import paint_casts
+            cast_styles, cast_glyphs = paint_casts(snap, t, quality)
+            styles.update(cast_styles)
+            glyphs.update(cast_glyphs)
         # Character particles can carry their own background. Preserve their
         # foreground glyphs while keeping the hurt ring above that background.
         from rich.style import Style
@@ -710,22 +734,35 @@ class FXEngine:
                 continue
             # Keep a faint first frame: the breathing envelope must not vanish
             # exactly at phase 0 (tests and the first rendered frame rely on it).
-            intensity_top = .45 * (0.2 + 0.8 * math.sin(math.pi * pulse / 3.0))
+            # 强度（2026-10-24 玩家反馈「旧光环看不见」）：旧链路 _darken(.24) 叠上
+            # glow_lut 内部的 _darken(.45)，峰值底色只剩源色 ~15%，在 #101018 地图上
+            # 不可辨。改为单次 _darken(.6)，峰值 ≈ 源色四成——低于火焰（约五成）
+            # 与灯池，呼吸可辨但不耀眼。
+            # Keep identity color visible without allowing stacked sources to
+            # cross the aura layer's <=62 channel ceiling.
+            top = .40 if source.kind == 'event' else .36
+            intensity_top = top * (0.2 + 0.8 * math.sin(math.pi * pulse / 3.0))
             if source.compound:
                 intensity_top *= .8 + .2 * math.sin(pulse * math.pi)
-            falloff = _darken(source.color, .24)
-            lut = glow_lut(falloff)
+            falloff = _darken(source.color, .6)
+            lut = _aura_glow_lut(falloff)
+            # 两种形状（2026-10-24 玩家定稿）：NPC/缺省 = 十字正交双点，事件 =
+            # × 形对角双点——同用 12s 周期（呼吸 3s + 长静默）、每次只亮一对格，
+            # 形状即身份，不需要颜色之外的记忆负担。
+            axis = int(source.phase + aura_t // 12) % 2
             for dx, dy, dist in _AURA_RING:
-                # Two slow glints, separated by a long quiet interval.
-                axis = int(source.phase + aura_t//12) % 2
-                if dist != 1 or (dx != 0 if axis else dy != 0):
+                if abs(dx) > 1 or abs(dy) > 1:
+                    continue  # 光环永远局限在 3×3（玩家口径），更远的环带不再参与。
+                if source.kind == 'event':
+                    if dx == 0 or dy == 0:
+                        continue
+                    same_sign = (dx < 0) == (dy < 0)
+                    if same_sign if axis == 0 else not same_sign:
+                        continue
+                elif dist != 1 or (dx != 0 if axis else dy != 0):
                     continue
                 x, y = source.x + dx, source.y + dy
                 if not (0 <= x < width and 0 <= y < height):
-                    continue
-                # Sparse outer rays, reduced low-quality reach, and a hard total
-                # budget bound glow coverage even in rooms with many events.
-                if dist == AURA_RADIUS and (quality < 2 or dx and dy):
                     continue
                 if ((x, y) in snap.aura_protected or (x, y) in snap.fixed_ground or
                         snap.ambient_visible is not None and (x, y) not in snap.ambient_visible or
@@ -733,15 +770,12 @@ class FXEngine:
                     continue
                 if (x, y) not in aura_cells and len(aura_cells) >= aura_budget:
                     continue
-                fall = 1.0 - dist / (AURA_RADIUS + 1)
-                level = int(fall * intensity_top * (_LUT_STEPS - 1))
+                # 3×3 内只有一格纵深，按距离衰减没有意义：两种形状统一取旧
+                # dist=1 的 fall=0.75，身份标记的亮度不随形状漂移。
+                level = int(.75 * intensity_top * (_LUT_STEPS - 1))
                 if level <= 1:
                     continue
-                style = lut[level]
-                # NPC 光环收敛一档，避免盖过事件点。
-                if not source.compound and source.color != AURA_COLOR:
-                    pass
-                overlay[(x, y)] = style
+                overlay[(x, y)] = lut[level]
                 aura_cells.add((x, y))
 
         # ---- 火焰格：暖橙底 + 有界的明暗呼吸（设计文档 §1.5）----
@@ -865,7 +899,7 @@ class FXEngine:
         # obstruct propagation; liquid, gas, plants and fixed floors do not.
         self._last_hit_styles = self._hit_ripples(snap, t, width, height)
         overlay.update(self._last_hit_styles)
-        # 声波（2026-10-22）：不再扩散成环，只在视野外听到声波的格子叠静态蓝色。
+        # Compact audible ripples remain outside current vision.
         if snap.waves:
             overlay.update(self._sound_waves(snap, t, width, height))
 
@@ -905,24 +939,9 @@ class FXEngine:
 
     @staticmethod
     def _sound_waves(snap: FxSnapshot, t: float, width: int, height: int) -> dict:
-        """声波静态蓝色标记（2026-10-22）。
-
-        输入快照里的 ``waves`` 已经由调用方过滤成「当前视野之外、声场标准
-        听阈能听到」的视口格；这里**不再**按半径扫描、不再做逐环衰减，
-        只给这些格叠当前声波蓝色，避免连续移动时每步生成整屏涟漪。
-
-        视野内过滤、玩家自身动作抑制在 App._fx_snapshot / _fx_note_events
-        完成——FX 层只负责画点，不自行推断可见性。
-        """
-        styles: dict[tuple[int, int], str] = {}
-        for wave in snap.waves:
-            age = t - wave.born
-            if not 0 <= age <= SOUND_WAVE_LIFE:
-                continue
-            for x, y in wave.cells:
-                if 0 <= x < width and 0 <= y < height:
-                    styles[(x, y)] = SOUND_WAVE_COLOR
-        return styles
+        """Small, fading square-cell rings on already-authorized audible cells."""
+        from .sound_ripple import wave_colors
+        return wave_colors(snap.waves, t, SOUND_WAVE_LIFE, width, height)
 
     @staticmethod
     def _hit_ripples(snap: FxSnapshot, t: float, width: int, height: int) -> dict:
@@ -939,15 +958,19 @@ class FXEngine:
             scale = maximum / RIPPLE_MAX_RADIUS
             radius = age / RIPPLE_LIFE * maximum
             band_width = RIPPLE_WIDTH * scale
-            # Scale the soft edge with the wave, so even its faint outer
-            # fringe cannot exceed the old full-size ripple's reach.
+            # Scale the band with the wave; the hard reach cap below trims the
+            # outermost faint fringe so the ring never covers more than
+            # RIPPLE_MAX_REACH cells.
             reach = math.ceil(radius + band_width * math.sqrt(math.log((_LUT_STEPS - 1) / 3)))
+            reach = min(reach, math.ceil(RIPPLE_MAX_REACH))
             for y in range(max(0, hit.y-reach), min(height, hit.y+reach+1)):
                 for x in range(max(0, hit.x-reach), min(width, hit.x+reach+1)):
                     cell = (x, y)
                     if cell in snap.opaque:
                         continue
                     distance = math.hypot(x-hit.x, y-hit.y)
+                    if distance > RIPPLE_MAX_REACH:
+                        continue
                     level = int(math.exp(-((distance-radius) / band_width)**2) * (_LUT_STEPS-1))
                     if level <= 2 or not _ripple_path_clear((hit.x, hit.y), cell, snap.opaque):
                         continue
@@ -1140,7 +1163,7 @@ class FXEngine:
                 overlay[(xx, yy)] = "#" + h02[cr] + h02[cg] + h02[cb]
         else:
             for (yy, xx), (r, g, b) in zip(coords, vals):
-                if (xx, yy) in surfaces:
+                if (xx, yy) in surfaces and (xx, yy) not in snap.opaque:
                     base = surfaces[(xx, yy)]
                     r, g, b = tuple(min(255, c + round(light * (255-c) / 255 * .35))
                                     for c, light in zip(base, (r, g, b)))

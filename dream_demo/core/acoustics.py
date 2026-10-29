@@ -34,6 +34,38 @@ MIN_RESIDUAL = -4
 # 「最后一圈安静」：穿过静音圈边界的声在既有损耗外**再多**衰减这么多，
 # 且每个接收格最多只算一次（来回穿越也只扣一次）。
 QUIET_EXTRA_LOSS = 6
+# 隔音软帘（扩展包 S-E11）：帘子占据的格子本身额外吃掉这么多余量。
+# 与静音圈同一口径——是对称的，玩家自己也听不清帘外的声音。
+CURTAIN_EXTRA_LOSS = 4
+# 静音折线（扩展包 sound.a03）：折线是一段「边界」而不是「墙」，声音**跨过**
+# 这条格间缝时额外损耗这么多。跨缝计费同样对称，所以两侧听对方都变弱；
+# 视线、气体与其余感知一概不动。
+FOLD_EXTRA_LOSS = 1
+FOLD_FIELD_KIND = "expansion.sound_fold"
+
+
+def fold_edges(state) -> set[tuple[tuple[int, int], tuple[int, int]]]:
+    """本层仍存活的静音折线，返回规范化（左上在前）的格间缝集合。
+
+    只读 ``state.construct_environments``，不导入构想模块：声路是逐格热路径，
+    这里多一次 import 就多一层依赖环。
+    """
+    edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for field in getattr(state, "construct_environments", ()) or ():
+        # 先按 kind 与期限筛掉其余场，比层键留到最后：声路是逐格热路径，
+        # 没有折线的地图一次都不该多算。
+        if (str(field.get("kind") or "") != FOLD_FIELD_KIND
+                or int(field.get("remaining", 0) or 0) <= 0
+                or str(field.get("layer") or "") != str(state.layer_key())):
+            continue
+        for seam in field.get("edges") or ():
+            try:
+                (ax, ay), (bx, by) = seam
+                a, b = (int(ax), int(ay)), (int(bx), int(by))
+            except (TypeError, ValueError):
+                continue
+            edges.add(tuple(sorted((a, b))))
+    return edges
 
 
 def source_strength(radius: int) -> int:
@@ -113,6 +145,7 @@ def propagate(state, x: int, y: int, radius: int) -> dict[tuple[int, int], int]:
         residual[start] = remaining
     heap = [(-residual[start], x, y)]
     directions = ((1, 0), (0, 1), (-1, 0), (0, -1))
+    folds = fold_edges(state)
     while heap:
         neg, cx, cy = heapq.heappop(heap)
         current_residual = -neg
@@ -127,6 +160,10 @@ def propagate(state, x: int, y: int, radius: int) -> dict[tuple[int, int], int]:
             cost = _edge_cost(current, neighbor)
             if cost is None:
                 continue
+            from .expansion_consumables import acoustic_cost
+            cost += acoustic_cost(state, nx, ny)
+            if folds and tuple(sorted(((cx, cy), (nx, ny)))) in folds:
+                cost += FOLD_EXTRA_LOSS
             value = current_residual - cost
             if value < MIN_RESIDUAL:
                 continue
@@ -138,18 +175,27 @@ def propagate(state, x: int, y: int, radius: int) -> dict[tuple[int, int], int]:
 
 def _dampen(state, residual: dict[tuple[int, int], int], x: int, y: int
             ) -> dict[tuple[int, int], int]:
-    """静音圈（core/item_devices.py）：穿过边界的声再多损 QUIET_EXTRA_LOSS。
+    """静音圈与隔音软帘：穿过边界的声再多损一次。
 
-    判据是「这一格与声源是否分处静音圈两侧」——分处两侧说明声音必须穿过边界，
-    于是按既有传播损耗再额外衰减一次；同一格里最多算一次，来回穿越也只扣一次。
-    圈内声音互相传不扣（没穿过边界），也不清警戒、不挡非声音感知。
+    静音圈的判据是「这一格与声源是否分处圈两侧」——分处两侧说明声音必须穿过
+    边界，于是按既有传播损耗再额外衰减一次；同一格里最多算一次，来回穿越也只
+    扣一次。圈内声音互相传不扣（没穿过边界），也不清警戒、不挡非声音感知。
+
+    隔音软帘是同一条口径的另一种形状：帘子占的格子自己再吃掉
+    ``CURTAIN_EXTRA_LOSS`` 的余量，敌我听同一张声场，所以玩家收到的声音
+    也一起变弱（方案原文「同时削弱自己能收到的声音」）。
     """
     try:
         from .item_devices import quiet_zones
         zones = quiet_zones(state)
     except Exception:
-        return residual
-    if not zones:
+        zones = ()
+    try:
+        from ..equipment import gear_tools
+        curtains = gear_tools.curtain_cells(state)
+    except Exception:
+        curtains = set()
+    if not zones and not curtains:
         return residual
     for cx, cy, radius in zones:
         source_inside = max(abs(x - cx), abs(y - cy)) <= radius
@@ -157,6 +203,10 @@ def _dampen(state, residual: dict[tuple[int, int], int], x: int, y: int
             target_inside = max(abs(gx - cx), abs(gy - cy)) <= radius
             if target_inside != source_inside:
                 residual[(gx, gy)] = value - QUIET_EXTRA_LOSS
+    if curtains:
+        for (gx, gy), value in list(residual.items()):
+            if (gx, gy) in curtains:
+                residual[(gx, gy)] = value - CURTAIN_EXTRA_LOSS
     return residual
 
 

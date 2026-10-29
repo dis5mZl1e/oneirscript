@@ -97,6 +97,8 @@ class TempoMixin:
                                extra=0.0)
             self._note_action(ActionKind.FREE, crossed=False)
             self._tick_circuit_boards()
+            from ..equipment.expansion_runtime import note_world_action
+            note_world_action(self, kind=kind)
             return
         scale = self._player_speed_scale()
         paid = amount / scale if scale > 0 else amount
@@ -135,6 +137,8 @@ class TempoMixin:
         record_action_time(self, kind=str(kind), base=amount, paid=paid,
                            extra=float(extra))
         end_action(self)
+        from ..equipment.expansion_runtime import note_world_action
+        note_world_action(self, kind=kind)
 
     def _note_action(self, kind: ActionKind, crossed: bool) -> None:
         """一次行动收尾的行动层结算：计数 → 按需效果 → 终局 → 时间偷取。

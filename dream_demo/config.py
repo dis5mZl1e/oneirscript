@@ -41,6 +41,14 @@ def _format_fx_quality(value: bool | int | str) -> str:
     return {"off": "关闭", "low": "流畅", "high": "完整"}.get(str(value), str(value))
 
 
+def _format_hitstop(value: bool | int | str) -> str:
+    try:
+        milliseconds = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "关闭" if milliseconds <= 0 else f"{milliseconds} ms"
+
+
 def _format_map_display(value: bool | int | str) -> str:
     return {"auto": "自动（推荐）", "image": "图像", "character": "字符"}.get(
         str(value), str(value))
@@ -86,10 +94,17 @@ SETTING_REGISTRY: tuple[SettingDef, ...] = (
         True,
         description="控制行囊、观测录和操作页的灰色说明。",
     ),
-    SettingDef("key_up", "向上主键", SettingType.KEY_BIND, "w"),
-    SettingDef("key_down", "向下主键", SettingType.KEY_BIND, "s"),
-    SettingDef("key_left", "向左主键", SettingType.KEY_BIND, "a"),
-    SettingDef("key_right", "向右主键", SettingType.KEY_BIND, "d"),
+    # 方向主键是右栏光标键（2026-10-24 键位治理 B10）：上下选中/滚动、左右切
+    # 子标签，**不是**地图移动键——地图移动固定用方向键/小键盘（分工见
+    # ui/input/key_routing.py 的 LOCKED_MOVE_KEYS 大注释）。
+    SettingDef("key_up", "向上主键", SettingType.KEY_BIND, "w",
+               description="右栏光标键：向上选中/滚动；不是地图移动键，地图移动用方向键。"),
+    SettingDef("key_down", "向下主键", SettingType.KEY_BIND, "s",
+               description="右栏光标键：向下选中/滚动；不是地图移动键，地图移动用方向键。"),
+    SettingDef("key_left", "向左主键", SettingType.KEY_BIND, "a",
+               description="右栏光标键：向左切子标签；不是地图移动键，地图移动用方向键。"),
+    SettingDef("key_right", "向右主键", SettingType.KEY_BIND, "d",
+               description="右栏光标键：向右切子标签；不是地图移动键，地图移动用方向键。"),
     SettingDef(
         "numpad5_wait",
         "小键盘5等待",
@@ -182,7 +197,7 @@ SETTING_REGISTRY: tuple[SettingDef, ...] = (
         description="动态光照作用于地板、墙体与一切格子；关闭则只照亮可通行的格。",
     ),
     SettingDef("skip_tutorial", "新存档跳过教程", SettingType.BOOL, False,
-               description="开启后新建存档直接进入第一层；不改变已有存档的教程状态。"),
+               description="旧配置兼容项，不再生效；新手教程从普通存档栏独立进入。"),
     SettingDef("music_enabled", "音乐", SettingType.BOOL, True,
                description="播放主页、区域、梦中梦与结局音乐；与音效开关独立。"),
     # 篡改键：地图与事件/NPC 对话共享入口，不进 RESERVED_KEY_BINDINGS
@@ -205,7 +220,7 @@ SETTING_REGISTRY: tuple[SettingDef, ...] = (
         SettingType.ENUM,
         "composite",
         choices=("composite", "floor", "low", "middle", "high", "liquid", "gas", "elevation", "terrain", "sound"),
-        description="F3 进入分层观察；观察层切换只在本次界面生效，不覆盖本机地图显示偏好。",
+        description="进入分层观察后的默认观察层；观察层切换只在本次界面生效，不覆盖本机地图显示偏好。",
         formatter=_format_map_observe,
     ),
     # 装备盘语序（docs §14.13 第 5 项）：只决定**新盘面**用哪套列角色，
@@ -238,17 +253,110 @@ SETTING_REGISTRY: tuple[SettingDef, ...] = (
         "异象整格意图高亮",
         SettingType.BOOL,
         False,
-        description="开启后异象切换意图时，在角色地图给异象所在整格字形叠前景高亮；"
-                    "默认关闭，避免大标记周期性重绘影响连续移动。右上角小角标不受影响。",
+        description="旧配置兼容项，不再生效；地图只保留小角标。",
+    ),
+    # 命中定格与减少动态（阶段 C1/C4）：只改表现层时序，不暂停回合、输入或音频。
+    SettingDef(
+        "fx_hitstop_ms",
+        "命中定格",
+        SettingType.INT,
+        55,
+        minimum=0,
+        maximum=70,
+        step=5,
+        description="命中后抖动与跳字短暂停在命中帧（40–70ms，0 关闭）；"
+                    "输入、回合结算与音效照常推进。",
+        formatter=_format_hitstop,
+    ),
+    SettingDef(
+        "fx_reduce_motion",
+        "减少动态效果",
+        SettingType.BOOL,
+        False,
+        description="关闭命中抖动与跳字上冲，保留伤害数字与命中格强调。",
+    ),
+    SettingDef(
+        "smooth_movement",
+        "平滑移动",
+        SettingType.BOOL,
+        True,
+        description="图像地图中对连续移动进行显示插值；不改变回合结算，字符模式与减少动态效果下不生效。",
     ),
 )
 
 
-from .controls import PANEL_SHORTCUTS, RESERVED_ALT_KEYS
+from .controls import PANEL_SHORTCUTS, RESERVED_ALT_KEYS, valid_alt_binding
 SETTING_REGISTRY += tuple(
     SettingDef(entry.setting, entry.label, SettingType.KEY_BIND, entry.key,
                description='面板唤起键；只打开界面，不执行其中操作。')
     for entry in PANEL_SHORTCUTS
+)
+
+# -/= 子标签切换（2026-10-24 键位治理 A1）：在右栏工作区内部的子路由间切换，
+# 消费端挂在 key_routing.on_key 分发链最末段。追加在注册表末尾——既有设置项的
+# 下标保持不变（设置页行号、keys 类目首项 key_up 的全局下标都被测试依赖）。
+SETTING_REGISTRY += (
+    SettingDef("key_subtab_prev", "上一个子标签", SettingType.KEY_BIND, "-",
+               description="右栏子标签：切到当前工作区的上一个子页签（到端停止）。"),
+    SettingDef("key_subtab_next", "下一个子标签", SettingType.KEY_BIND, "=",
+               description="右栏子标签：切到当前工作区的下一个子页签（到端停止）。"),
+)
+
+# 实验性 kitty 图形通道（2026-10-25）：默认关闭，必须在设置里手动开启。
+# 终端不支持或处于 Windows（ConPTY 吞 APC）时自动回退既有 OSC 1337 图像，
+# 因此开启也不会改变「不支持」环境下的画面。追加在末尾，不动既有下标。
+SETTING_REGISTRY += (
+    SettingDef(
+        "map_kitty_graphics",
+        "Kitty 图像协议（实验）",
+        SettingType.BOOL,
+        False,
+        description="实验性：终端支持 Kitty 图形协议时改用 APC 传图，"
+                    "可能提高图像刷新上限。Windows 的 ConPTY 会丢弃该序列，"
+                    "将自动回退现有图像通道；开启后如画面异常请关闭。",
+    ),
+)
+
+# 字符高刷模式（2026-10-25）：默认关闭的可选后端。开启后强制字符地图并跑
+# 低开销文本帧（同色连续段合并、跳过只服务图像后端的场景视觉事实）；默认
+# 图像后端与普通字符回退完全不受影响。追加在末尾，不动既有下标。
+SETTING_REGISTRY += (
+    SettingDef(
+        "map_character_fast",
+        "字符高刷模式（实验）",
+        SettingType.BOOL,
+        False,
+        description="实验性：强制字符地图并启用低开销文本帧，省掉图像编码与"
+                    "逐格图像准备。字符地图按行动步进，30Hz 采样只服务动画与"
+                    "特效，不做像素级插值；默认关闭。",
+    ),
+)
+
+# 左侧事件记录（2026-10-26）：默认关闭，开启后在地图显示框左下角叠加一层
+# 只有文字、无背景无边框的事件记录（玩家站到左下 1/4 时改贴左上）。
+# 追加在注册表末尾，既有设置项下标保持不变（设置页行号测试依赖既有下标）。
+SETTING_REGISTRY += (
+    SettingDef(
+        "left_event_log",
+        "左侧事件记录",
+        SettingType.BOOL,
+        False,
+        description="在地图左下叠加透明事件记录；开启后右侧默认页改为行囊。",
+    ),
+)
+
+# 少字模式（2026-10-26 玩家要求）：只压缩右侧栏与其子菜单——有专属图标的字段
+# 直接显示图标，没有图标的标题/字段名换英文缩写；左侧悬浮窗与全屏窗口不受影响。
+# 默认关闭；追加在注册表末尾，既有设置项下标保持不变（设置页行号测试依赖）。
+SETTING_REGISTRY += (
+    SettingDef(
+        "terse_mode",
+        "少字模式",
+        SettingType.BOOL,
+        False,
+        description="右侧栏尽量用符号和英文缩写代替文字：状态、地形、页签、子菜单与"
+                    "环境页都只留图标；左侧窗口和全屏窗口不受影响，可展开注释默认收起。",
+    ),
 )
 
 
@@ -276,6 +384,20 @@ RESERVED_KEY_BINDINGS: dict[str, str] = {
     "/": "光标区域切换",
     "h": "操作界面",
     "\\": "注释展开收起",
+    # 保留表补全（2026-10-24 键位治理 B5）：下列单键已在 key_routing.py 等处
+    # 硬编码实装，登记进保留表防止其它绑定把它们占走。
+    "p": "观察固定与盘面落点",
+    "'": "物品菜单或详情",
+    "y": "确认攻击或替换",
+    ",": "瞄准切换来源",
+    "l": "凝听或调试放置",
+    "L": "调试面板开关",
+    # ⚠️ 两类键刻意**不进**保留表：
+    #   · 可配置键的默认值（w/s/a/d、c、以及 -/= 这两个 key_subtab_*)：登记
+    #     进去会让该设置项拒绝自己的默认值（见 key_tamper 的注释与
+    #     test_tampering_input 的断言「把 c 登记进保留表会让它拒绝自己的默认
+    #     值」），重复绑定由 _keybind_issue 的「按键已用于」检查兜住；
+    #   · 大写变体（D/W/G/T 等 shift 形态）：跟随其小写主键，不单列。
 }
 from .controls import reserved_keys
 RESERVED_KEY_BINDINGS.update(reserved_keys())
@@ -462,9 +584,9 @@ class ConfigManager:
 
     @staticmethod
     def _keybind_format_issue(candidate: str) -> str | None:
-        alt = candidate.startswith('alt+') and len(candidate) == 5 and candidate[-1].isascii() and candidate[-1].isalnum()
+        alt = valid_alt_binding(candidate)
         if (len(candidate) != 1 or not candidate.isprintable()) and not alt:
-            return tr('按键须为单个可打印字符或 Alt+字母／数字。')
+            return tr('按键须为单个可打印字符或 Alt+字母／数字／方向键。')
         if candidate in RESERVED_ALT_KEYS:
             return tr('该按键由{action}保留。', action=tr(RESERVED_ALT_KEYS[candidate]))
         reserved_for = RESERVED_KEY_BINDINGS.get(candidate)
@@ -474,7 +596,7 @@ class ConfigManager:
 
     def _keybind_issue(self, key: str, candidate: str) -> str | None:
         if key.startswith('key_panel_') and not candidate.startswith('alt+'):
-            return tr('面板唤起键必须使用 Alt+字母／数字。')
+            return tr('面板唤起键必须使用 Alt+字母／数字／方向键。')
         format_issue = self._keybind_format_issue(candidate)
         if format_issue is not None:
             return format_issue

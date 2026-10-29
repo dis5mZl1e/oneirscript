@@ -17,6 +17,10 @@ COLOR_RELOAD = '#C4A7E7'
 COLOR_BLOCKED = '#DB91B4'
 COLOR_HELP = '#B6CAE8'
 
+# 子弹减少的 3 帧脉冲：亮橙 → 亮白 → 正常；只改显示，不碰世界状态。
+AIM_PULSE_STYLES = ('bold underline #FFB86B', 'bold underline #FFFFFF', '')
+AIM_PULSE_INTERVAL = .1
+
 
 def supply(count):
     return '/'*min(8,max(0,int(count)))+' '+str(count)
@@ -128,21 +132,145 @@ def _legacy_resource(state):
     return equipment_resource_text(state,dict(key=LEGACY_BASIC_ID)).plain
 
 
-def current_resource_text(app,*,compact=False):
+def _supply_refill_rounds(app, item):
+    """换弹装填动画的显示用余量（None = 不在动画中）。
+
+    只改渲染：真实 item.magazine 在动作结算时已经是新值。这里按
+    0.3s / 3 帧把旧值 → 新值分成三段，让槽条和数字逐帧补齐；不写回状态。
+    """
+    if app is None:
+        return None
+    anim = getattr(app, '_supply_refill_anim', None) or {}
+    key = getattr(item, 'instance_id', None)
+    pair = anim.get(key) if key is not None else None
+    if pair is None:
+        return None
+    old, new = int(pair[0]), int(pair[1])
+    if new <= old:
+        return None
+    phase = max(0, min(2, int(getattr(app, '_supply_feedback_phase', 0) or 0)))
+    if phase <= 0:
+        return old
+    if phase >= 2:
+        return new
+    step = (new - old + 2) // 3
+    return min(new, old + max(1, step))
+
+
+def _aim_magazine_text(item,*,compact=False,app=None):
+    """Aim bubble for magazine weapons.
+
+    2026-10-26 玩家复核：有弹匣武器仍要右侧发射界面同款的 [┃┃┊] 槽条
+    （槽条本身就是弹匣图标），只有窄宽度兜底时退成纯数字。
+    换弹完成后的 0.3 秒内按旧值→新值分帧显示槽条，形成装填动画。
+    """
+    display_rounds = _supply_refill_rounds(app, item) if app is not None else None
+    if not compact:
+        if display_rounds is None:
+            return magazine_resource_text(item)
+        from types import SimpleNamespace
+        view = SimpleNamespace(
+            definition_id=getattr(item, 'definition_id', ''),
+            magazine=display_rounds,
+            magazine_capacity=getattr(item, 'magazine_capacity', 0),
+        )
+        return magazine_resource_text(view)
+    definition_id=str(getattr(item,'definition_id','') or '')
+    spec=magazine_spec(definition_id)
+    capacity=max(1,int(getattr(item,'magazine_capacity',0) or (spec.capacity if spec else 1)))
+    rounds=max(0,int(getattr(item,'magazine',0) or 0))
+    if display_rounds is not None:
+        rounds = display_rounds
+    return Text(f'{rounds}/{capacity}',
+                style=COLOR_BLOCKED if rounds==0 else COLOR_COST if rounds==1 else COLOR_NUMBER)
+
+
+def _aim_projectile_text(item):
+    """One projectile glyph for a source without a magazine."""
+    definition_id=str(getattr(item,'definition_id','') or '')
+    full,_empty=MAGAZINE_GLYPHS.get(definition_id,('•','·'))
+    colour=MAGAZINE_COLOURS.get(definition_id,('#DCCB9A','#70634A'))[0]
+    text=Text()
+    text.append(full,style=colour)
+    try:
+        quantity=int(getattr(item,'quantity',0) or 0)
+    except (TypeError,ValueError):
+        quantity=0
+    # 设备自身的 quantity 通常只是「一件东西」；只有能叠的弹药才当余量。
+    text.append('×'+str(quantity) if quantity>1 else '∞',style=COLOR_NUMBER)
+    return text
+
+
+def _aim_emitter_text(item,*,compact=False,app=None):
+    if getattr(item,'magazine',None) is not None:
+        return _aim_magazine_text(item,compact=compact,app=app)
+    return _aim_projectile_text(item)
+
+
+def _compact_spray_text(state,choice,text):
+    import re
+    kind=str(choice.get('kind',''))
+    counts=re.findall(r'\d+/\d+',text.plain)
+    prefix=(text.plain.split(' [',1)[0]+' ') if kind.startswith('spray_') and counts else ''
+    if not counts and kind.startswith('spray_') and tr('内置') in text.plain:
+        plan=state.equipment.plan_action(kind,choice=choice.get('key'))
+        return Text(tr('内置{cost}想',cost=int(dict(plan.projectile_profile).get('cost') or 0)),style=COLOR_COST)
+    return Text(prefix+'+'.join(counts),style=COLOR_NUMBER) if counts else Text(text.plain,style=COLOR_NUMBER)
+
+
+def _aim_equipment_text(app,state,choice,*,compact=False):
+    """Aim-bubble rendering for the selected equipment row.
+
+    Magazines keep their exact digits and get one family icon; sources without
+    a magazine keep one projectile icon (with ∞ when there is no finite count).
+    Sprayers keep the material capacity readout unchanged.
+    """
+    kind=str(choice.get('kind','fire'))
+    if choice.get('key')==LEGACY_BASIC_ID:
+        view=legacy_basic_view(state)
+        return _aim_magazine_text(view,compact=compact,app=app) if view else Text()
+    if kind.startswith('spray_'):
+        text=equipment_resource_text(state,choice,source_index=getattr(app,'spray_source',None))
+        return _compact_spray_text(state,choice,text) if compact else text
+    plan=state.equipment.plan_action(kind,choice=choice.get('key'))
+    emitters=tuple(getattr(plan,'emitters',()))
+    if not emitters and (plan.requires_target or not plan.valid):
+        return Text(tr('待选目标判定') if plan.requires_target else tr(plan.reason),style=COLOR_BLOCKED)
+    pieces=[]
+    injections=[]
+    for source_id,shots in emitters:
+        item=state.equipment._item(source_id)
+        if item is None:
+            continue
+        pieces.append((item,_aim_emitter_text(item,compact=compact,app=app)))
+        if item.definition_id=='hospital.hollow_lancet':
+            amount=sum(max(0,int(n)) for n in item.contents.values())
+            injections.append(tr('注入{amount}/{capacity}',amount=amount,capacity=6))
+    if not pieces:
+        return Text(tr('供给∞'),style=COLOR_NUMBER)
+    if compact:
+        return Text('+'.join(piece.plain for _item,piece in pieces),style=COLOR_NUMBER)
+    text=Text()
+    for offset,(item,piece) in enumerate(pieces):
+        if offset:
+            text.append(' + ',style=COLOR_HELP)
+        if len(pieces)>1:
+            text.append(tr(item.name)+' ',style=COLOR_NAME)
+        text.append_text(piece)
+    for injection in injections:
+        text.append(' · '+injection,style=COLOR_CHARGE)
+    return text
+
+
+def aim_resource_text(app,*,compact=False):
+    """Resource half of the aim bubble: digits + one icon, no magazine slot bar."""
     state=app.session.state
     choice=getattr(app,'aim_action_choice',None)
     index=app.throw_item_index if app.throw_item_index is not None else app.fire_once_index
+    if app.fire_once_index is not None and app._aim_ammo_status() == 'exhausted':
+        return Text('•×0', style=COLOR_BLOCKED)
     if isinstance(choice,dict) and choice.get('key')!='aggregate' and not getattr(app,'construct_aim_id',None):
-        text=equipment_resource_text(state,choice,source_index=app.spray_source)
-        if compact:
-            import re
-            counts=re.findall(r'\d+/\d+',text.plain)
-            prefix=(text.plain.split(' [',1)[0]+' ') if choice.get('kind','').startswith('spray_') and counts else ''
-            if not counts and choice.get('kind','').startswith('spray_') and tr('内置') in text.plain:
-                plan=state.equipment.plan_action(choice['kind'],choice=choice.get('key'))
-                return Text(tr('内置{cost}想',cost=int(dict(plan.projectile_profile).get('cost') or 0)),style=COLOR_COST)
-            return Text(prefix+'+'.join(counts),style=COLOR_NUMBER) if counts else Text(text.plain,style=COLOR_NUMBER)
-        return text
+        return _aim_equipment_text(app,state,choice,compact=compact)
     name,resource=current_source(app)
     if index is not None and 0<=index<len(state.inventory):
         item=state.inventory[index]
@@ -155,8 +283,16 @@ def current_resource_text(app,*,compact=False):
         sources=_presentation_sources(app)
         if len(sources)==1 and sources[0].kind in ('equipment','legacy'):
             source=sources[0]
-            return equipment_resource_text(state,dict(kind=source.action_kind,key=source.choice_key))
+            if source.kind=='legacy':
+                view=legacy_basic_view(state)
+                return _aim_magazine_text(view,compact=compact,app=app) if view else Text()
+            return _aim_equipment_text(app,state,dict(kind=source.action_kind,key=source.choice_key),compact=compact)
     return Text(resource,style=COLOR_NUMBER)
+
+
+def current_resource_text(app,*,compact=False):
+    """Backwards-compatible name; the aim HUD's resource renderer."""
+    return aim_resource_text(app,compact=compact)
 
 
 def supply_levels(state):
@@ -164,6 +300,39 @@ def supply_levels(state):
     levels={item.instance_id:int(item.magazine) for item in state.inventory if item.magazine is not None}
     levels[LEGACY_BASIC_ID]=getattr(state,'legacy_basic_magazine',None)
     return levels
+
+
+def _stop_supply_pulse(app):
+    for timer in getattr(app,'_supply_feedback_pulse_timers',()) or ():
+        try:
+            timer.stop()
+        except Exception:
+            pass
+    app._supply_feedback_pulse_timers=()
+
+
+def _set_supply_pulse_phase(app,frame):
+    if not getattr(app,'is_running',False):
+        return
+    # 事件已过期后迟到的帧不应再把 phase 点亮。
+    if not getattr(app,'_supply_feedback',None):
+        return
+    app._supply_feedback_phase=frame
+    try:
+        app._refresh_map_hints()
+    except Exception:
+        pass
+
+
+def _start_supply_pulse(app):
+    """Three display frames (~0.1s apart); never touches cost/action/world state."""
+    _stop_supply_pulse(app)
+    app._supply_feedback_phase=0
+    timers=[]
+    for frame in (1,2):
+        timers.append(app.set_timer(AIM_PULSE_INTERVAL*frame,
+                                    lambda frame=frame: _set_supply_pulse_phase(app,frame)))
+    app._supply_feedback_pulse_timers=timers
 
 
 def note_supply_feedback(app,before,changed):
@@ -177,11 +346,21 @@ def note_supply_feedback(app,before,changed):
     if not events:
         return
     app._supply_feedback=events
+    # 换弹回填：渲染层用旧值→新值分帧补齐槽条（不写回 item.magazine）。
+    app._supply_refill_anim={
+        key: (int(value), int(after[key]))
+        for key, value in before.items()
+        if value is not None and after.get(key) is not None and int(after[key]) > int(value)
+    }
+    _start_supply_pulse(app)
     old=getattr(app,'_supply_feedback_timer',None)
     if old is not None:
         old.stop()
     def expire():
         app._supply_feedback={}
+        app._supply_refill_anim={}
+        app._supply_feedback_phase=0
+        _stop_supply_pulse(app)
         if app.is_running:
             app._refresh_map_hints()
     app._supply_feedback_timer=app.set_timer(.3,expire)
@@ -241,6 +420,10 @@ def current_source(app):
         return tr(definition['name']), tr('想象力 {cost}', cost=state._scaled_ability_cost(definition['cost']))
     index = app.throw_item_index if app.throw_item_index is not None else app.fire_once_index
     if index is not None:
+        captured = getattr(app, '_aim_source_identity', None)
+        if (app.fire_once_index is not None and captured is not None
+                and app._aim_ammo_status() == 'exhausted'):
+            return tr(captured[1].name), '×0 · ' + tr('一次性发射')
         if not 0 <= index < len(state.inventory):
             return tr('来源已失效'), ''
         item = state.inventory[index]
@@ -349,15 +532,30 @@ def _line_two(app, state, width):
     return line, zones
 
 
+def _aim_feedback_style(app, selected_ids):
+    """Display-only emphasis for the active source; '' means the idle look."""
+    if not getattr(app,'aiming',False) or not selected_ids:
+        return ''
+    import time
+    now=time.monotonic()
+    active=[kind for key,(kind,until) in getattr(app,'_supply_feedback',{}).items()
+            if key in selected_ids and until>now]
+    if not active:
+        return ''
+    if 'spent' in active:
+        phase=max(0,int(getattr(app,'_supply_feedback_phase',0) or 0))
+        return AIM_PULSE_STYLES[min(phase,len(AIM_PULSE_STYLES)-1)]
+    return 'bold underline #D8F6E9'
+
+
 def aim_hud(app, width):
     width = max(12, int(width))
     state = app.session.state
     name, resource = current_source(app)
-    resource_text = current_resource_text(app)
+    resource_text = aim_resource_text(app)
     if cell_len(resource_text.plain)>max(4,width-min(6,cell_len(name))-1):
-        resource_text=current_resource_text(app,compact=True)
+        resource_text=aim_resource_text(app,compact=True)
     resource_text.truncate(max(1,width-3),overflow='ellipsis')
-    import time
     selected=getattr(app,'aim_action_choice',None)
     if isinstance(selected,str):
         # 旧状态机/测试里仍可能塞一个裸 kind 字符串；按 fire 归一，别让 UI 崩。
@@ -365,15 +563,21 @@ def aim_hud(app, width):
     selected_ids=({LEGACY_BASIC_ID} if selected and selected.get('key')==LEGACY_BASIC_ID else
                   {item.instance_id for item in equipment_emitters(state,selected.get('kind','fire'),selected.get('key'))}
                   if isinstance(selected,dict) and selected.get('key')!='aggregate' else set())
-    active=[kind for key,(kind,until) in getattr(app,'_supply_feedback',{}).items()
-            if key in selected_ids and until>time.monotonic()]
-    if active and app.aiming:
-        resource_text.stylize('bold underline' if 'refill' not in active else 'bold underline #D8F6E9')
+    feedback_style=_aim_feedback_style(app, selected_ids)
+    if feedback_style:
+        resource_text.stylize(feedback_style)
     name_text=Text(name,style=COLOR_NAME)
     name_text.truncate(max(1,width-cell_len(resource_text.plain)-1),overflow='ellipsis')
     result = Text.assemble(name_text, ' ', resource_text)
     result.append('\n')
-    line, zones = _line_two(app, state, width)
+    status = app._aim_ammo_status() if getattr(app, 'aiming', False) else 'ready'
+    if status != 'ready':
+        message = tr('R换弹 · 其他键退出') if status == 'reload' else tr('弹药耗尽 · 任意键退出')
+        line = Text(message, style=COLOR_BLOCKED)
+        line.truncate(width, overflow='ellipsis')
+        zones = [(0, min(width, cell_len(message.split(' · ')[0])), 'reload')] if status == 'reload' else []
+    else:
+        line, zones = _line_two(app, state, width)
     result.append_text(line)
     # Padding is 0 1: widget offsets start one column left of the text.
     app._aim_hud_zones = [(start + 1, end + 1, 1, name) for start, end, name in zones]

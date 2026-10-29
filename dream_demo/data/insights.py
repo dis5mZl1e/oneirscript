@@ -104,3 +104,13 @@ def choose_event_insight(candidates: tuple[str, ...], owned, rng) -> str | None:
     if not fresh:
         return candidates[0]
     return fresh[rng.randrange(len(fresh))]
+
+# ---- 扩展包目录（2026-10-25）：`integration_status == "runtime"` 的洞察行 ----
+# 洞察的键就是中文显示名，三条获取通道都在这个名字空间里挑人；效果规则另存
+# ``EXPANSION_INSIGHTS``，由 ``core.expansion_insights`` 按 kind 分发。没有规则的行
+# 不会出现在这里（见 growth_runtime.insight_rows）。
+from .expansion.growth_runtime import insight_rows as _expansion_insight_rows  # noqa: E402
+
+EXPANSION_INSIGHTS: dict[str, dict[str, Any]] = _expansion_insight_rows()
+for _insight_name, _insight_row in EXPANSION_INSIGHTS.items():
+    INSIGHT_DEFINITIONS.setdefault(_insight_name, _insight_row["description"])

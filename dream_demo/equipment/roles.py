@@ -77,6 +77,7 @@ REACTION_OPS = {
 ACTION_MODIFIER_EFFECTS = frozenset((
     'swift_strike', 'pierce_up', 'spray_boost', 'attach_hunt', 'fire_affinity',
     'blast_radius', 'repair_up', 'throw_master', 'wet_conduct',
+    'reactive_conductive_field',
 ))
 
 
@@ -155,6 +156,66 @@ def _profile(definition: dict) -> tuple[tuple[str, object], ...]:
     return tuple(sorted(profile.items()))
 
 
+_EXPANSION_PAYLOADS = {
+    "sound": "sound", "light": "vision", "terrain": "liquid",
+    "projectile": "cut", "circuit": "electric", "realm": "blank",
+}
+
+
+def _expansion_role(definition_id: str, definition: dict, role: str,
+                    *, reading: str = "default") -> RoleResponse | None:
+    """Resolve catalog gear as executable only when its runtime is registered."""
+    if role == "condition":
+        return None
+    catalog_id = str(definition.get("expansion_catalog_id") or "")
+    # The stable ID also carries the catalog theme: expansion.<theme>.eNN.
+    theme = catalog_id.split(".")[1] if catalog_id.count(".") >= 2 else ""
+    payload = (definition.get("proposal_payload_type")
+               or _EXPANSION_PAYLOADS.get(theme, "buff"))
+    name = str(definition.get("name", definition_id))
+    readings = definition.get("position_readings") or {}
+    phrase_role = reading if role == "modifier" and reading in readings else role
+    phrase = str(readings.get(phrase_role, {}).get("zh") or "")
+    primary_effect = str(definition.get("runtime_primary_effect") or "")
+    feedback_effect = str(definition.get("runtime_feedback_effect") or "")
+    runtime = bool(primary_effect)
+    primary_profile = tuple(sorted((definition.get("runtime_primary_params") or {}).items()))
+    feedback_profile = tuple(sorted((definition.get("runtime_feedback_params") or {}).items()))
+    if role == "source":
+        return RoleResponse(role, name, "carrier", effect=primary_effect,
+                            power=1 if runtime else 0, profile=primary_profile,
+                            payload_type=payload,
+                            reading=reading)
+    if role == "object":
+        label = phrase or PAYLOAD_LABELS.get(payload, name)
+        return RoleResponse(role, label, "payload", opcode=payload,
+                            effect=primary_effect, power=1 if runtime else 0,
+                            profile=primary_profile,
+                            payload_type=payload, reading=reading)
+    if role == "modifier" and phrase:
+        return RoleResponse(role, phrase, "modifier", opcode=primary_effect,
+                            effect=primary_effect, power=1 if runtime else 0,
+                            profile=primary_profile, payload_type=payload,
+                            reading=reading)
+    if role == "complement" and phrase:
+        effect = feedback_effect if runtime else ""
+        return RoleResponse(role, phrase, "supplement", opcode=effect,
+                            effect=effect, power=1 if effect else 0,
+                            profile=feedback_profile if effect else (),
+                            payload_type=payload,
+                            reading=reading)
+    if role == "verb" and phrase:
+        if runtime:
+            return RoleResponse(role, phrase, "contract", opcode="maintain",
+                                effect=primary_effect, power=1,
+                                profile=primary_profile,
+                                payload_type=payload, reading=reading)
+        return RoleResponse(role, phrase, "proposal", opcode="proposal",
+                            profile=_profile(definition), action_modes=("proposal",),
+                            payload_type=payload, reading=reading)
+    return None
+
+
 def resolve_role(definition_id: str, role: str,
                  operand_type: str | None = None, *, reading: str = 'default') -> RoleResponse | None:
     """Resolve a fixed role or an explicitly typed branch; no world access."""
@@ -163,6 +224,8 @@ def resolve_role(definition_id: str, role: str,
     definition = ITEM_DEFINITIONS.get(definition_id)
     if definition is None:
         return None
+    if definition.get("expansion_catalog_id"):
+        return _expansion_role(definition_id, definition, role, reading=reading)
     if definition_id.startswith("library."):
         from .library import resolve_library_role
         return resolve_library_role(definition_id, role, operand_type)

@@ -2,8 +2,10 @@
 
 设计口径（升级文档见 docs/run-options-upgrade-verification.md）：
 
-- **没有固定难度档位**。难度由六项五档滑条 + 十二个开关**加权求和**得出，
+- **没有固定难度档位**。难度由六项五档滑条 + 十三个开关**加权求和**得出，
   顶部难度条显示数值与区间命名；默认（全居中、开关全关）= 中等。
+  开关只分两段：强化（负权重）与挑战（正权重）——原「增强」段已撤销
+  （2026-10-25），全图地形并入强化并参与难度计算。
 - 所有修正集中在 ``resolve_mods`` 一个出口，落到 ``GameState.run_mods``
   （纯数值 dict），运行期各系统只读数值、不知道选项存在——与「征兆 /
   装备效果」同一套「数值与机制分离」的架构纪律。
@@ -83,10 +85,9 @@ SLIDER_DEFS: dict[str, dict[str, Any]] = {
     },
 }
 
-# 三层信息（未知黑幕/暗色记忆/当前视野）的发布开关（docs 第 1 节第四批）：
-# 2026-10-22 玩家反馈默认进入就知道全图、黑暗探索没生效，已切换为默认开启。
-# 开局选项仍可手动关闭；旧档保持存档里的原值。
-MAP_MEMORY_NEW_GAME_DEFAULT = True
+# 三层信息（未知黑幕/暗色记忆/当前视野）自 2026-10-25 起是**默认能力**，不再
+# 是开局开关：新局一律开启（见 apply_run_options），旧档保留存档里的原值。
+# 字段 state.map_memory_enabled 仍然保留，因为渲染/寻路各处按它分支。
 
 # ---------------------------------------------------------------------------
 # 布尔开关（强化 = 负权重降低难度；挑战 = 正权重提高难度）
@@ -122,23 +123,16 @@ TOGGLE_DEFS: dict[str, dict[str, Any]] = {
         "desc": "心智/清醒上限 −15",
         "weight": 2, "mods": {"max_stat_penalty": 15},
     },
-    # 增强项（2026-10-18，docs/261018方案合集.md 第 1 节）：不是难度开关——
-    # 权重 0、不产生数值修正；只把「全图地形已知」的开局选择写进 state。
-    # 默认关闭；开启后仅授予当前层地形类型，不公开视野外生物/物品/环境读数，
-    # 也不写入普通探索快照（见 core/vision/knowledge.py）。
+    # 全图地形（2026-10-25 玩家定稿）：并入「强化」段、计入难度。
+    # 判定为**降低难度**的强化项：整层地形已知，路线可直接按真实层型规划，
+    # 等于省掉探路与绕行的成本，因此给负权重（与「迟滞崩解」「坚韧自我」同档）。
+    # 仍然只授予地形：不公开视野外生物/物品/环境读数，也不写入普通探索快照
+    # （见 core/vision/knowledge.py）；默认关闭。
     "full_terrain": {
-        "name": "全图地形", "kind": "enhance",
+        "name": "全图地形", "kind": "boon",
         "desc": "整层地形布局与类型已知（仅地形，不含生物、物品与环境细读）",
         "hint": "开启后可按当前层地形规划路线；不授予攻击或交互资格，不伪造普通探索进度。",
-        "weight": 0, "mods": {},
-    },
-    # 三层信息显示（docs 第 1 节）：未知黑幕 + 暗色记忆 + 当前视野。
-    # 2026-10-22 起默认开启（见 MAP_MEMORY_NEW_GAME_DEFAULT）；选项本身不改变难度。
-    "map_memory": {
-        "name": "三层信息", "kind": "enhance",
-        "desc": "未探索区域显示黑幕，已探索区域保留暗色地形记忆，当前视野保持完整。",
-        "hint": "不改世界规则与难度；只改变地图与格子详情显示的信息权限，可随存档保存。",
-        "weight": 0, "mods": {},
+        "weight": -3, "mods": {},
     },
 }
 
@@ -198,12 +192,12 @@ STARTING_MEMORY_EXCLUDE = ("first_cry_memory",)
 def default_selection() -> dict[str, Any]:
     """默认开局选项：全部居中、开关全关（= 中等难度）。
 
-    三层信息由 MAP_MEMORY_NEW_GAME_DEFAULT 预选（2026-10-22 起默认开启）；
+    三层信息不再是开关（2026-10-25）：由 apply_run_options 一律置为开启；
     未探索区域保持黑幕，已探索区域显示暗色记忆，当前视野完整。
     """
     return {
         "sliders": {key: DEFAULT_SLIDER_INDEX for key in SLIDER_DEFS},
-        "toggles": ["map_memory"] if MAP_MEMORY_NEW_GAME_DEFAULT else [],
+        "toggles": [],
     }
 
 
@@ -251,8 +245,10 @@ def difficulty_score(selection: dict | None) -> int:
 
 
 def option_rows():
+    # 2026-10-25：段位只剩「强化 / 挑战」——原「增强」段已撤销，全图地形并入
+    # 强化并计入难度；三层信息升为默认能力，不再是选项。
     return ([('slider', key) for key in SLIDER_DEFS]
-            + [('toggle', key) for kind in ('boon', 'challenge', 'enhance')
+            + [('toggle', key) for kind in ('boon', 'challenge')
                for key, spec in TOGGLE_DEFS.items() if spec['kind'] == kind]
             + [('confirm', None)])
 
@@ -309,8 +305,10 @@ def apply_run_options(state, selection: dict | None) -> None:
     state.run_options = selection
     state.run_mods = mods
     # 信息权限开关（不是数值修正）：只写 state 字段，不进 run_mods。
+    # 三层信息 2026-10-25 起是默认能力（玩家定稿：不该做成开局开关），
+    # 因此无视选项一律开启；旧档由 persistence 保留存档里的原值。
     state.terrain_known = 'full_terrain' in selection['toggles']
-    state.map_memory_enabled = 'map_memory' in selection['toggles']
+    state.map_memory_enabled = True
     from .settlement import REASON_MAX_CHANGE, apply_max_change
     apply_max_change(state, "mind", int(mods["max_mind"]),
                      reason=REASON_MAX_CHANGE, source="开局调律")
@@ -322,8 +320,16 @@ def apply_run_options(state, selection: dict | None) -> None:
 
 
 def roll_starting_memories(rng: random.Random, count: int = 3) -> list[str]:
-    """开局碎片候选：从全部碎片（除终局专属）里随机 count 枚不重复。"""
-    pool = [key for key in MEMORY_RARITY if key not in STARTING_MEMORY_EXCLUDE]
+    """开局碎片候选：从全部碎片（除终局专属）里随机 count 枚不重复。
+
+    扩展包碎片自带 `min_depth`（深层记忆不该在 1 层就装进槽）；既有手写碎片
+    没有这个键，默认 0 表示不受限，口径不变。
+    """
+    from ..data.items import ITEM_DEFINITIONS
+
+    pool = [key for key in MEMORY_RARITY
+            if key not in STARTING_MEMORY_EXCLUDE
+            and int(ITEM_DEFINITIONS.get(key, {}).get("min_depth", 0) or 0) <= 1]
     count = max(1, min(count, len(pool)))
     return rng.sample(pool, count)
 

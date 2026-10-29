@@ -14,6 +14,8 @@ from ..materials import (
     WALL_DEFINITIONS,
     floor_effect_for,
     plant_burns,
+    plant_conducts,
+    plant_gas_flow_divisor,
     plant_survives_liquid,
     portent_def,
     floor_fireproof,
@@ -35,6 +37,9 @@ from ..materials.logic import LOGIC_KINDS
 CHECKER_BUFF_PORTENTS = ("calmed", "warmed", "tear_warm", "moist")
 from .entities import Cell, Entity
 from ..data.anomalies import ANOMALY_DEFINITIONS
+from .gas_kernel import (collect_gas_sources as _kernel_collect_gas_sources,
+                         plan_material_transfers as _kernel_plan_transfers)
+from ..cy_kernels import enabled as _kernel_enabled
 from .constants import (
     ELEV_STEP,
     GAS_DECAY_INTERVAL,
@@ -90,7 +95,10 @@ class MaterialSimMixin:
     def _conductive_cell(cell: Cell) -> bool:
         return not cell.solid and (
             cell.liquid >= 8 and cell.liquid_kind in {"水", "导电液态记忆", "稀墨"}
-            or cell.aggregate_variant == "金属聚合物")
+            or cell.aggregate_variant == "金属聚合物"
+            # 导电脚线（2026-10-26）：植物也能当介质——它自己不发电，只把一段
+            # 断开的导电路接通；能不能被点亮仍由电系求解与实际放电决定。
+            or plant_conducts(cell.plant))
 
     def _conductive_zone(self, origin: tuple[int, int]) -> set[tuple[int, int]]:
         """电场只沿四邻连通介质传播，半径四格且最多二十格。"""
@@ -165,7 +173,8 @@ class MaterialSimMixin:
         return None
 
     def _charge_electric_field(self, cells, *, source: str = "player",
-                               origin: tuple[int, int] | None = None) -> None:
+                               origin: tuple[int, int] | None = None,
+                               duration: int = 5) -> None:
         # 使用现有的浮点记账字典持久化，不增加存档字段。同来源重新放电替换旧区，
         # 不同来源并存；同格伤害在 tick 时取最大寿命，不重复结算。
         cells = list(cells)
@@ -174,18 +183,31 @@ class MaterialSimMixin:
         origin = tuple(origin) if origin is not None else min(cells)
         prefix = self._electric_prefix()
         origin_prefix = self._electric_origin_prefix()
+        start_prefix = f"__electric_start__:{self.depth}:{self.realm_id}:{self.realm_depth}:"
         for key in list(self.player.portent_debt):
             if key.startswith(origin_prefix):
                 entry = self._electric_origin_entry(key, origin_prefix)
             elif key.startswith(prefix):
                 entry = self._electric_entry(key, prefix)
+            elif key.startswith(start_prefix):
+                parts = key[len(start_prefix):].split(":", 1)
+                entry = (parts[0],) if parts else None
             else:
                 continue
             if entry is not None and entry[0] == source:
                 self.player.portent_debt.pop(key)
+        duration = max(1, int(duration))
+        if source in {"player", "battery", "static_arc", "thunder_orb",
+                      "arc_bolt", "expansion_e07"}:
+            from ..equipment.expansion_runtime import owned_field_duration
+            duration = min(6, duration + min(1, owned_field_duration(self)))
+        expiry = float(self.time + duration)
         for x, y in cells:
-            self.player.portent_debt[f"{prefix}{source}:{x}:{y}"] = float(self.time + 5)
-        self.player.portent_debt[f"{origin_prefix}{source}@{origin[0]}:{origin[1]}"] = float(self.time + 5)
+            self.player.portent_debt[f"{prefix}{source}:{x}:{y}"] = expiry
+            self.player.portent_debt[
+                f"{start_prefix}{source}:{x}:{y}"
+            ] = float(self.time)
+        self.player.portent_debt[f"{origin_prefix}{source}@{origin[0]}:{origin[1]}"] = expiry
 
     def electric_field_cells(self, *, at_time: int | None = None) -> set[tuple[int, int]]:
         at_time = self.time if at_time is None else at_time
@@ -255,12 +277,36 @@ class MaterialSimMixin:
                 best = max(best, float(expiry))
         return best
 
+    def _electric_sources_at(self, x: int, y: int) -> set[str]:
+        prefix = self._electric_prefix()
+        sources = set()
+        for key, expiry in self.player.portent_debt.items():
+            if not key.startswith(prefix) or float(expiry) < self.time:
+                continue
+            entry = self._electric_entry(key, prefix)
+            if entry is not None and entry[1:] == (x, y):
+                sources.add(entry[0])
+        return sources
+
     def _prune_electric_fields(self) -> None:
         for key in list(self.player.portent_debt):
             if not (key.startswith("__electric__:")
                     or key.startswith("__electric_origin__:")):
                 continue
             if float(self.player.portent_debt[key]) < self.time + 1:
+                self.player.portent_debt.pop(key, None)
+        start_prefix = f"__electric_start__:{self.depth}:{self.realm_id}:{self.realm_depth}:"
+        field_prefix = self._electric_prefix()
+        for key in list(self.player.portent_debt):
+            if not key.startswith(start_prefix):
+                continue
+            parts = key[len(start_prefix):].split(":", 3)
+            if len(parts) != 3:
+                self.player.portent_debt.pop(key, None)
+                continue
+            source, x_text, y_text = parts
+            field_key = f"{field_prefix}{source}:{x_text}:{y_text}"
+            if field_key not in self.player.portent_debt:
                 self.player.portent_debt.pop(key, None)
 
     def _tick_electric_fields(self, amount: int) -> None:
@@ -273,25 +319,62 @@ class MaterialSimMixin:
             pos = (entity.x, entity.y)
             if entity.integrity <= 0 or pos not in cells:
                 continue
-            expiry = self._electric_expiry_at(entity.x, entity.y)
-            # 2026-10-15 混乱化改造：电场寿命 +3→+5，伤害窗口同步改为「全程灼电」
-            # （窗口 = (expiry-5, expiry] 恰好覆盖充能后的整个活动期）——电场更持久
-            # 也更致命，而不是多晾四回合再电两下。
-            ticks = sum(expiry-5 < tick <= expiry
-                        for tick in range(self.time-amount+1, self.time+1))
+            tick_range = range(self.time-amount+1, self.time+1)
+            field_prefix = self._electric_prefix()
+            start_prefix = f"__electric_start__:{self.depth}:{self.realm_id}:{self.realm_depth}:"
+            active_windows = []
+            for key, field_expiry in self.player.portent_debt.items():
+                if not key.startswith(field_prefix):
+                    continue
+                entry = self._electric_entry(key, field_prefix)
+                if entry is None or entry[1:] != pos:
+                    continue
+                start_key = f"{start_prefix}{entry[0]}:{entity.x}:{entity.y}"
+                start = self.player.portent_debt.get(start_key)
+                # Older saves have expiry but no explicit start; preserve their
+                # original five-tick electric-field window.
+                start = float(start) if start is not None else float(field_expiry) - 5
+                active_windows.append((entry[0], start, float(field_expiry)))
+            ticks = sum(any(start < tick <= field_expiry
+                            for _source, start, field_expiry in active_windows)
+                        for tick in tick_range)
+            active_sources = {source for source, start, field_expiry in active_windows
+                              if any(start < tick <= field_expiry for tick in tick_range)}
             if not ticks:
                 continue
             if entity is self.player:
                 from .settlement import REASON_ENVIRONMENT, settle_delta
+                trauma = self._identity_environment_trauma(ticks, 'electric')
+                if active_sources.intersection({"player", "battery", "static_arc", "thunder_orb",
+                                                "arc_bolt", "expansion_e07"}):
+                    from ..equipment.expansion_runtime import environment_guard
+                    trauma = environment_guard(self, "owned_field_damage_and_guard", trauma)
                 settle_delta(self, 'lucidity',
-                             -self._identity_environment_trauma(ticks, 'electric'),
+                             -trauma,
                              reason=REASON_ENVIRONMENT, source='电场')
             elif entity.relation == "稳定意识":
                 # 电场只有玩家电系一个充能来源（actions 充能点唯一）——全部归因。
+                damage = ticks
+                if active_sources.intersection({"player", "battery", "static_arc", "thunder_orb",
+                                                "arc_bolt", "expansion_e07"}):
+                    from ..equipment.expansion_runtime import electric_field_damage_bonus
+                    damage += electric_field_damage_bonus(self, entity)
                 self._npc_scorched(entity, label="电弧", cause_uid="electric",
-                                   damage=ticks, attributed=True)
+                                   damage=damage, attributed=True)
             else:
-                entity.integrity = max(0, entity.integrity-ticks)
+                damage = ticks
+                owned = bool(active_sources.intersection({"player", "battery", "static_arc", "thunder_orb",
+                                                          "arc_bolt", "expansion_e07"}))
+                if owned:
+                    from ..equipment.expansion_runtime import electric_field_damage_bonus
+                    damage += electric_field_damage_bonus(self, entity)
+                _damage_number_before = entity.integrity
+                entity.integrity = max(0, entity.integrity-damage)
+                from .hit_events import note_integrity_loss
+                note_integrity_loss(self, entity, _damage_number_before)
+                if owned and entity.integrity > 0:
+                    from ..equipment.expansion_runtime import electric_field_slow
+                    electric_field_slow(self, entity)
                 if entity.integrity <= 0:
                     self._resolve_enemy(entity)
             affected.append(pos)
@@ -498,12 +581,33 @@ class MaterialSimMixin:
             self.realm_id == 'ember_bridge' or
             (self.realm_id == 'toy_memories' and bool(self.circuit_boards))))
 
+    @staticmethod
+    def wall_break_noise_radius(definition) -> int:
+        """破墙声径：由厚度/高度/硬度与碎裂方式决定，特殊墙体明显更响。"""
+        radius = (5 + int(getattr(definition, "thickness", 1) or 1) * 2
+                  + max(0, int(getattr(definition, "height", 1) or 1) - 1)
+                  + max(0, int(getattr(definition, "hardness", 1) or 1) // 2))
+        special = {
+            "shatter": 6,            # 尖啸瓷墙：高频碎裂，传得很远
+            "void_spores": 4,        # 千层叠岩
+            "millennium_summon": 7,  # 蓝屏终端/主机
+            "dreamcrystal": 3,       # 梦晶簇
+            "summon": 3,             # 回魂陶俑
+            "explode": 3,            # 不稳定燃料墙
+            "whisper": 2,            # 静默碑岩/回响黑曜岩
+            "popup_drop": 3,         # 弹窗墙
+        }
+        radius += special.get(str(getattr(definition, "break_effect", "")), 0)
+        return max(4, min(18, radius))
+
     def destroy_wall(
         self,
         x: int,
         y: int,
         cause: str,
         triggered: set[tuple[int, int]] | None = None,
+        *,
+        integrity_before: int | None = None,
     ) -> bool:
         if not (0 <= x < self.width and 0 <= y < self.height):
             return False
@@ -527,6 +631,12 @@ class MaterialSimMixin:
             return False
         triggered.add((x, y))
         definition = wall_def(cell.wall_kind)
+        # 2026-10-25：玩家用子弹或推动打碎「完整度超过 150」的墙体，崩解度 +1。
+        # 只认这两种原因；徒手/构想/爆炸/燃烧/侵蚀/敌方破墙等一律不增长。
+        if (cause in ("projectile", "push")
+                and max(int(cell.integrity), int(definition.integrity),
+                        int(integrity_before or 0)) > 150):
+            self._add_wall_break_dissolution(definition.name)
         # §11 §7 灰烬记忆：只有亲眼看碎裂才记录轮廓；看不见的碎裂仅留声音线索。
         witnessed = bool(self.is_visible(x, y))
         self.clear_wall(cell)
@@ -568,7 +678,10 @@ class MaterialSimMixin:
                     else:
                         self.messages.append(tr("碎瓷划过你，清醒度 −1。"))
                 elif victim is not None:
+                    _damage_number_before = victim.integrity
                     victim.integrity = max(0, victim.integrity - 1)
+                    from .hit_events import note_integrity_loss
+                    note_integrity_loss(self, victim, _damage_number_before)
                     if victim.integrity <= 0:
                         self._resolve_enemy(victim)
         elif definition.break_effect == "summon":
@@ -619,13 +732,16 @@ class MaterialSimMixin:
         # 投射物／构想实际破坏时发 5 格脉冲；尖啸瓷墙以自己的 9 格碎裂声代替，
         # 不再叠加普通破墙声。爆炸导致的破墙不重复发声（爆心已有自己的脉冲），
         # 软性融蚀与自然消失保持无声。
+        noise = self.wall_break_noise_radius(definition)
+        player_causes = ("hand", "projectile", "ability", "push", "spool",
+                         "carve", "world_tamper")
         if definition.break_effect == "shatter":
-            self._sound_pulse(x, y, 9, by_player=cause in ("hand", "ability"),
+            self._sound_pulse(x, y, noise, by_player=cause in player_causes,
                               category="porcelain", source=tr("尖啸瓷墙碎裂"),
                               triggers_rewards=False)
-        elif cause in ("hand", "projectile", "ability", "enemy_breach"):
-            self._sound_pulse(x, y, 5, by_player=cause in ("hand", "ability"),
-                              category="wall_break", source=tr("墙体破坏"),
+        elif cause in (*player_causes, "enemy_breach"):
+            self._sound_pulse(x, y, noise, by_player=cause in player_causes,
+                              category="wall_break", source=tr(definition.name),
                               triggers_rewards=False)
         from .tactical_layouts import note_gate_breach
         note_gate_breach(self,x,y,cause)
@@ -668,6 +784,11 @@ class MaterialSimMixin:
         triggered = triggered if triggered is not None else set()
         disorder = self.physics_modifiers()["explosion_bonus"]
         effective_power = power + disorder
+        from ..equipment.expansion_runtime import (
+            blast_guard, consume_feedback_for_blast_slow, explosion_damage_bonus,
+        )
+        enemy_bonus, self_bonus = explosion_damage_bonus(self, from_player)
+        blast_slow_used = False
         affected = 0
         ignition: list[tuple[int, int]] = []
         from .throwing import flight_path
@@ -705,8 +826,12 @@ class MaterialSimMixin:
                     hit_entities.add(id(entity))
                     if from_player:
                         self._kill_full_reward = True
-                    damage = max(1, effective_power * 2 - max(0, abs(x-cx)+abs(y-cy)-1))
+                    damage = max(1, effective_power * 2 - max(0, abs(x-cx)+abs(y-cy)-1)
+                                 + enemy_bonus)
+                    _damage_number_before = entity.integrity
                     entity.integrity = max(0, entity.integrity - damage)
+                    from .hit_events import note_integrity_loss
+                    note_integrity_loss(self, entity, _damage_number_before)
                     affected += 1
                     # 冲击推动（设计文档 §9.4）：实体被推离爆心 1 格——
                     # 沿爆心→实体方向找开放格，推得动才推（撞墙不动）。
@@ -720,13 +845,19 @@ class MaterialSimMixin:
                             and self.entity_at(nx, ny) is None
                         ):
                             entity.x, entity.y = nx, ny
+                    if entity.integrity > 0:
+                        blast_slow_used = consume_feedback_for_blast_slow(
+                            self, entity, blast_slow_used)
                     if entity.integrity <= 0:
                         self._resolve_enemy(entity)
                 # 玩家自伤（扩展设计 2026-09-22）：爆炸不绕开玩家——半径内吃
                 # effective_power 点清醒创伤（凤凰羽衣免疫，不被推离）。
                 if self.entity_at(x, y) is self.player and effective_power > 0:
                     if not self._effect_power("fire_ward"):
-                        trauma = max(1, effective_power - min(1, self._effect_power("blast_padding")))
+                        trauma = max(1, effective_power + self_bonus
+                                     - min(1, self._effect_power("blast_padding")))
+                        if from_player:
+                            trauma = blast_guard(self, True, trauma)
                         from .settlement import REASON_ENVIRONMENT, settle_delta
                         settle_delta(self, 'lucidity', -trauma,
                                      reason=REASON_ENVIRONMENT, source='爆炸冲击')
@@ -1021,7 +1152,9 @@ class MaterialSimMixin:
                         cell.plant_fuel = 12 if cell.plant == 2 else 6
                     cell.plant_fuel = max(0, cell.plant_fuel - 3)
                     if not cell.plant_fuel:
-                        self.set_plant(x, y, 0)
+                        burned_plant = self.set_plant(x, y, 0)
+                        if burned_plant:
+                            self._note_plant_wither(x, y, burned_plant, "burned")
                 burned_floor = floor_effect_for(cell).burns_to
                 if burned_floor:
                     cell.floor_fuel = max(0, (cell.floor_fuel or 12) - 3)
@@ -1125,7 +1258,8 @@ class MaterialSimMixin:
             # 威力随心智失序档加成，低心智时连锁更狂暴。
             radius = 1 + min(2, concentration // 50)
             self.messages.append(tr("高浓度的气体轰然引爆！") + self._psyche_suffix())
-            self._explode(x, y, radius, 2 + self.mind_tier, triggered=set(chain))
+            self._explode(x, y, radius, 2 + self.mind_tier, triggered=set(chain),
+                          from_player=bool(by_player or attribute_player))
             if by_player:
                 self._note_player_ignition()
             return True
@@ -1243,17 +1377,32 @@ class MaterialSimMixin:
             if entity is self.player:
                 if self._effect_power("fire_ward") > 0:
                     continue  # 凤凰羽衣：火焰烧不着梦中的自己
+                trauma = self._identity_environment_trauma(amount, 'fire')
+                if (trauma > 0 and (entity.x, entity.y) in owner_cells):
+                    from ..equipment.expansion_runtime import flame_guard
+                    trauma = flame_guard(self, trauma)
                 from .settlement import REASON_ENVIRONMENT, settle_delta
                 settle_delta(
-                    self, 'lucidity', -self._identity_environment_trauma(amount, 'fire'),
+                    self, 'lucidity', -trauma,
                     reason=REASON_ENVIRONMENT, source='火焰')
                 self.messages.append(tr("火焰舔过你的意识边缘（清醒 −1）。"))
             elif entity.relation == "稳定意识":
+                damage = amount
+                if (entity.x, entity.y) in owner_cells:
+                    from ..equipment.expansion_runtime import owned_environment_bonus
+                    damage += owned_environment_bonus(self, "owned_flame_damage", entity)
                 self._npc_scorched(
-                    entity, label="火", cause_uid="fire", damage=amount,
+                    entity, label="火", cause_uid="fire", damage=damage,
                     attributed=(entity.x, entity.y) in owner_cells)
             else:
-                entity.integrity = max(0, entity.integrity - amount)
+                damage = amount
+                if (entity.x, entity.y) in owner_cells:
+                    from ..equipment.expansion_runtime import owned_environment_bonus
+                    damage += owned_environment_bonus(self, "owned_flame_damage", entity)
+                _damage_number_before = entity.integrity
+                entity.integrity = max(0, entity.integrity - damage)
+                from .hit_events import note_integrity_loss
+                note_integrity_loss(self, entity, _damage_number_before)
                 if entity.integrity <= 0:
                     self._resolve_enemy(entity)
 
@@ -1274,7 +1423,10 @@ class MaterialSimMixin:
 
         now = int(self.time)
         before = entity.integrity
+        _damage_number_before = entity.integrity
         entity.integrity = max(0, entity.integrity - max(1, damage))
+        from .hit_events import note_integrity_loss
+        note_integrity_loss(self, entity, _damage_number_before)
         fled = self._flee_from_danger(entity)
         if attributed and before > entity.integrity:
             last = getattr(entity, "_last_harm_note", -10)
@@ -1406,9 +1558,42 @@ class MaterialSimMixin:
                 if enemy.integrity > 0 and enemy.relation == "失控意识":
                     heat = floor_effect_for(self.cell(enemy.x, enemy.y)).scald_lucidity
                     if heat:
+                        _damage_number_before = enemy.integrity
                         enemy.integrity = max(0, enemy.integrity - heat * heat_ticks)
+                        from .hit_events import note_integrity_loss
+                        note_integrity_loss(self, enemy, _damage_number_before)
                         if enemy.integrity == 0:
                             self._resolve_enemy(enemy)
+
+    def shed_piezo_charge(self, entity, amount: int = 1) -> int:
+        """验电时泄掉一格蓄电层（洞察「不把亮灯当通电」，2026-10-25）。
+
+        只动 ``_piezo_stacks`` 这一本账：不拆地板、不提前恢复任何东西，也**不**走
+        ``_remember_portent_end``——那会顺手开三回合保护窗，等于白送一层护身；而这里
+        只是「身上这点电泄掉了」，压电地板下一回合照常继续充电（这就是「仍须实际
+        断电，不因灯灭就安全」的结构实现）。返回这次真正泄掉的层数。
+        """
+        stacks = getattr(self, "_piezo_stacks", None)
+        if not isinstance(stacks, dict):
+            return 0
+        key = id(entity)
+        remaining = int(stacks.get(key, 0) or 0)
+        if remaining <= 0:
+            return 0
+        taken = min(max(1, int(amount)), remaining)
+        stacks[key] = remaining - taken
+        if stacks[key] <= 0:
+            stacks.pop(key, None)
+            for book in (entity.portents, entity.portent_stacks, entity.portent_debt,
+                         entity.portent_deadlines, entity.portent_attach):
+                book.pop("charged_piezo", None)
+        else:
+            entity.portent_stacks["charged_piezo"] = stacks[key]
+            # 征兆层数就是层数本身（同一本账，见 ``_simulate_new_floors``）；
+            # 保护窗里征兆本就不在字典里，那时只改层数、不把征兆写回来。
+            if "charged_piezo" in entity.portents:
+                entity.portents["charged_piezo"] = stacks[key]
+        return taken
 
     def _discharge_piezo(self, origin, occupants: dict) -> None:
         # 2026-09-19：触发后压电地板消失（退回普通聚合物）。
@@ -1437,7 +1622,10 @@ class MaterialSimMixin:
                         # 中心也只看个烟花，清醒度分毫不扣。
                         continue
                     # 2026-10-07：异象吃 2 点（对齐玩家侧清醒 −2 的量级）。
+                    _damage_number_before = victim.integrity
                     victim.integrity = max(0, victim.integrity - 2)
+                    from .hit_events import note_integrity_loss
+                    note_integrity_loss(self, victim, _damage_number_before)
                     struck.append(victim)
                     if victim.integrity <= 0:
                         self._resolve_enemy(victim)
@@ -1546,6 +1734,28 @@ class MaterialSimMixin:
                             capacity -= taken
                             self._sync_material_position(nx2,ny2)
 
+    def _note_seen_reaction(self, recipe, x: int, y: int) -> None:
+        """亲眼见过的液气反应记一笔（洞察「留意产物」的账）。
+
+        只记**看得见**的格子：墙后自己响掉的反应不算「亲眼见过」，因此那条洞察也
+        不会替你反演它。账按「反应物对＋产物」记（``reactions.reaction_key``），
+        同一对材料换一格再看不会重复。
+        """
+        if not self.is_visible(x, y):
+            return
+        features = getattr(self, "realm_features", None)
+        if not isinstance(features, dict):
+            return
+        from ..materials.reactions import reaction_key
+
+        ledger = features.setdefault("seen_reactions", {})
+        if not isinstance(ledger, dict):
+            return
+        ledger[reaction_key(recipe)] = int(self.time)
+        if len(ledger) > 24:          # 只留最近见过的 24 条，旧档不会无限长
+            for stale in sorted(ledger, key=lambda key: ledger[key])[:-24]:
+                ledger.pop(stale, None)
+
     def _simulate_recipe_reactions(self) -> None:
         """液气反应与其他反应（墙/地板参与）的逐拍结算（materials/reactions.py）。
 
@@ -1586,6 +1796,7 @@ class MaterialSimMixin:
                         cell.gas = min(100, cell.gas + cell.liquid)
                         cell.liquid, cell.liquid_kind = 0, ""
                     self._sync_material_position(x, y)
+                    self._note_seen_reaction(recipe, x, y)
                     notify(recipe)
                     continue
             # ---- 其他反应：液体格的邻接结算 ----
@@ -1982,7 +2193,13 @@ class MaterialSimMixin:
         budget: int,
         *,
         equalize: bool,
+        use_kernel: bool,
     ) -> list[tuple[tuple[int, int], int]]:
+        # use_kernel 由调用方在**每拍开始前**解析一次再传进来（2026-10-27）：
+        # 本函数逐气体/液体源调用，单拍约 950 次；enabled() 每次都要读两个环境
+        # 变量（实测 2.4µs/次 ≈ 2.3ms/行动），放在这里纯属重复付费。
+        if use_kernel:
+            return _kernel_plan_transfers(x, y, targets, amounts, reserved, budget, equalize)
         source_remaining = amounts.get((x, y), 0)
         target_levels = {
             target: amounts.get(target, 0) + reserved.get(target, 0)
@@ -2042,7 +2259,12 @@ class MaterialSimMixin:
         self._deferred_liquid_sources = candidates[budget:]
         proposals: list[tuple[tuple[int, int], tuple[int, int], str, int]] = []
         reserved: dict[tuple[int, int], int] = {}
+        from .expansion_abilities import liquid_pinned_cells
+        pinned = liquid_pinned_cells(self)
+        use_kernel = _kernel_enabled("gas")
         for x, y, amount, kind in sources:
+                if (x,y) in pinned:
+                    continue
                 grid = self.cells
                 source_cell = grid[y][x]
                 definition = LIQUID_DEFINITIONS[kind]
@@ -2055,6 +2277,8 @@ class MaterialSimMixin:
                     for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
                     if self._flow_passable(grid[ny][nx]) and grid[ny][nx].wall_kind != "云块"
                 ]
+                from ..equipment.remaining_gear import liquid_edge_allowed
+                neighbors = [p for p in neighbors if liquid_edge_allowed(self,(x,y),p)]
                 lower = [(nx, ny) for nx, ny in neighbors if grid[ny][nx].elevation < source_cell.elevation]
                 if lower:
                     targets = lower
@@ -2089,6 +2313,7 @@ class MaterialSimMixin:
                     reserved,
                     budget,
                     equalize=equalize,
+                    use_kernel=use_kernel,
                 ):
                     proposals.append(((x, y), target, kind, transfer))
                     reserved[target] = reserved.get(target, 0) + transfer
@@ -2123,7 +2348,9 @@ class MaterialSimMixin:
             cell.liquid = min(100, amount)
             if cell.liquid > 0 and cell.plant and not plant_survives_liquid(cell.plant):
                 # 液体流进来的格子：植物被淹死（蘑菇扎根，液面漫过也不消失）。
-                self.set_plant(x, y, 0)
+                drowned_plant = self.set_plant(x, y, 0)
+                if drowned_plant:
+                    self._note_plant_wither(x, y, drowned_plant, "drowned")
             self._sync_material_position(x, y)
 
     def _apply_liquid_evaporation(self, instability: int) -> None:
@@ -2227,31 +2454,50 @@ class MaterialSimMixin:
         # 2026-09-19 性能改造：直接遍历气体活动格索引，不再全图扫描。
         sources: list[tuple[int, int, int, str]] = []
         amounts: dict[tuple[int, int], int] = {}
-        candidates: list[tuple[int, int, int, str]] = list(
-            getattr(self, "_deferred_gas_sources", ()) or ()
-        )
-        height, width = self.height, self.width
-        for x, y in tuple(self._gas_cells):
-            if not (0 <= y < height and 0 <= x < width):
-                continue  # 陈旧索引坐标：丢弃
-            cell = self.cells[y][x]
-            if (
-                cell.gas >= GAS_MIN_FLOW
-                and cell.gas_kind in GAS_DEFINITIONS
-                and not (cell.solid and cell.height > 1)
-                and cell.wall_kind not in CONTAINER_KINDS
-            ):
-                candidates.append((x, y, cell.gas, cell.gas_kind))
-        budget = self.SIM_SOURCE_BUDGET
-        for x, y, amount, kind in candidates[:budget]:
-            if (x, y) in sealed or not (0 < x < self.width - 1 and 0 < y < self.height - 1):
-                continue  # 跨层残留坐标：丢弃
-            sources.append((x, y, amount, kind))
-            amounts[(x, y)] = amount
-        self._deferred_gas_sources = candidates[budget:]
+        # 开关在**每拍开头解析一次**再复用（2026-10-27 A4）：本函数原先在候选
+        # 筛选与逐源转移两处各读一次 enabled()，而每次 enabled() 要读两个环境
+        # 变量、且 gas pass 每动作会跑数拍。每次 pass 现读保证
+        # ONEIRSCRIPT_CY_KERNEL_GAS 的运行时切换在下一拍立即生效（不做跨动作缓存）。
+        use_kernel = _kernel_enabled("gas")
+        if use_kernel:
+            # CY-4：候选筛选的纯循环交给编译内核；顺序与预算完全一致。
+            sources, amounts, deferred = _kernel_collect_gas_sources(
+                self.cells, self.width, self.height, self._gas_cells,
+                getattr(self, "_deferred_gas_sources", ()), sealed,
+                self.SIM_SOURCE_BUDGET,
+            )
+            self._deferred_gas_sources = deferred
+        else:
+            candidates: list[tuple[int, int, int, str]] = list(
+                getattr(self, "_deferred_gas_sources", ()) or ()
+            )
+            height, width = self.height, self.width
+            for x, y in tuple(self._gas_cells):
+                if not (0 <= y < height and 0 <= x < width):
+                    continue  # 陈旧索引坐标：丢弃
+                cell = self.cells[y][x]
+                if (
+                    cell.gas >= GAS_MIN_FLOW
+                    and cell.gas_kind in GAS_DEFINITIONS
+                    and not (cell.solid and cell.height > 1)
+                    and cell.wall_kind not in CONTAINER_KINDS
+                ):
+                    candidates.append((x, y, cell.gas, cell.gas_kind))
+            budget = self.SIM_SOURCE_BUDGET
+            for x, y, amount, kind in candidates[:budget]:
+                if (x, y) in sealed or not (0 < x < self.width - 1 and 0 < y < self.height - 1):
+                    continue  # 跨层残留坐标：丢弃
+                sources.append((x, y, amount, kind))
+                amounts[(x, y)] = amount
+            self._deferred_gas_sources = candidates[budget:]
         proposals: list[tuple[tuple[int, int], tuple[int, int], str, int]] = []
         reserved: dict[tuple[int, int], int] = {}
+        from .expansion_abilities import liquid_pinned_cells
+        pinned = liquid_pinned_cells(self)
+        # use_kernel 已在本次 pass 开头解析（见上）。
         for x, y, amount, kind in sources:
+                if (x,y) in pinned:
+                    continue
                 grid = self.cells
                 source_cell = grid[y][x]
                 targets = [
@@ -2268,6 +2514,11 @@ class MaterialSimMixin:
                 liquid = LIQUID_DEFINITIONS.get(source_cell.liquid_kind)
                 if liquid and source_cell.liquid >= liquid.gas_flow_threshold:
                     budget = max(1, budget // max(1, liquid.gas_flow_divisor))
+                # 气泡藻（E11）：本格向四邻的扩散预算减半，对入流、自然消散与
+                # 材料反应不加成——有益气体留得住，毒雾也留得住。
+                divisor = plant_gas_flow_divisor(source_cell.plant)
+                if divisor > 1:
+                    budget = max(1, budget // divisor)
                 for target, transfer in self._plan_material_transfers(
                     x,
                     y,
@@ -2276,6 +2527,7 @@ class MaterialSimMixin:
                     reserved,
                     budget,
                     equalize=True,
+                    use_kernel=use_kernel,
                 ):
                     proposals.append(((x, y), target, kind, transfer))
                     reserved[target] = reserved.get(target, 0) + transfer
@@ -2457,3 +2709,18 @@ class MaterialSimMixin:
         if floor_effect_for(cell).burns_to:
             return True
         return bool((cell.liquid >= liquid_min and liquid and liquid.flammable) or (cell.gas > 0 and gas and gas.flammable))
+
+    # ---- 植物枯萎/烧尽的视觉旁路（2026-10-26 Task 8）----------------------
+    def _note_plant_wither(self, x: int, y: int, code: int, cause: str) -> None:
+        """真实被烧尽/淹死的植株各登记一次枯萎事件（稳态采样不会重复）。"""
+        if not code:
+            return
+        from .visual_events import emit_visual
+        emit_visual(
+            self, kind="plant.wither", outcome="hit", source=(int(x), int(y)),
+            targets=((int(x), int(y)),), paths=(),
+            affected_cells=((int(x), int(y)),),
+            visual_key="plant.growth", tier=1, theme="plant",
+            facts=(("plant", int(code)), ("cause", str(cause))),
+            layer_key="plant",
+        )

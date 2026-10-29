@@ -35,7 +35,7 @@ class TutorialCard(OrnamentBorderMixin, Static):
         from ..core.origin_course import COURSE_TEMPLATE_VERSION
         if self.app.session.state.tutorial.get('version')==COURSE_TEMPLATE_VERSION:
             event.stop()
-            self.app._toggle_panel('tasks')
+            self.app._toggle_panel('tasks', manual=False)
             return
         from .floating_toast import FloatingToast
         FloatingToast._forward_mouse(self, event, "down")

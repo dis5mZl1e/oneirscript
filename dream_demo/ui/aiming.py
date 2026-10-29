@@ -49,7 +49,7 @@ class AimingMixin:
         self._construct_landing = None
         self._rewire_source = None
         self._capture_aim_source()
-        self.panel_mode = 'world'
+        self.panel_mode = self._default_panel_mode()
         self.path.clear()
         self.observe_walk_path.clear()
         dx, dy = self.facing if self.facing and any(self.facing) else (1, 0)
@@ -183,7 +183,7 @@ class AimingMixin:
         from ..core.throwing import directional_landing
         dx, dy = self.facing or (1, 0)
         self._aim_free_cursor = directional_landing(state, int(dx), int(dy),known_only=True)
-        self.panel_mode = "world"
+        self.panel_mode = self._default_panel_mode()
         self.path.clear()
         self.observe_walk_path.clear()
         self.show_toast(tr("举起{item}——点选落点或按方向键投掷（Esc 取消，不消耗）。",
@@ -223,7 +223,7 @@ class AimingMixin:
                      else item_targeting.valid_pair_anchor(state, definition_id, facing))
             self._aim_free_cursor = facing if valid else None
         self.aiming = True
-        self.panel_mode = "world"
+        self.panel_mode = self._default_panel_mode()
         self.path.clear()
         self.observe_walk_path.clear()
         hint = {'point': tr("点选落点 · Enter 确认 · Esc 取消"),
@@ -258,8 +258,50 @@ class AimingMixin:
         self._aim_assist_pos = self._aim_assist_identity = self._aim_free_cursor = None
         self._aim_source_identity = None
         self.assist_path = []
-        self.panel_mode = 'world'
+        self.panel_mode = self._default_panel_mode()
         self._clear_held()
+
+    def _aim_ammo_status(self):
+        """Typed supply state for this transaction, independent of translated errors."""
+        if not self.aiming or getattr(self, 'construct_aim_id', None) or getattr(self, 'item_aim_index', None) is not None:
+            return 'ready'
+        state = self.session.state
+        if self.fire_once_index is not None:
+            captured = getattr(self, '_aim_source_identity', None)
+            if captured is not None:
+                item = captured[1]
+                return 'ready' if any(i is item and getattr(i, 'quantity', 1) > 0 for i in state.inventory) else 'exhausted'
+            return 'ready'
+        choice = self.aim_action_choice
+        if not isinstance(choice, dict):
+            return 'ready'
+        if choice.get('key') == 'aggregate':
+            return 'ready' if state.projectile_charges > 0 else 'exhausted'
+        from ..core.firing_sources import LEGACY_BASIC_ID, legacy_basic_view
+        if choice.get('key') == LEGACY_BASIC_ID:
+            item = legacy_basic_view(state)
+            return 'ready' if item is not None and item.magazine > 0 else 'reload'
+        if choice.get('kind') != 'fire' or not hasattr(state, 'equipment'):
+            return 'ready'
+        plan = state.equipment.plan_action('fire', choice=choice.get('key'))
+        for source_id, shots in getattr(plan, 'emitters', ()):
+            item = state.equipment._item(source_id)
+            if item is not None and item.magazine is not None and item.magazine < max(1, int(shots)):
+                return 'reload'
+        return 'ready'
+
+    def _empty_aim_key(self, key):
+        if not self.aiming or getattr(self, 'equipment_choice', None) is not None:
+            return False
+        status = self._aim_ammo_status()
+        if status == 'ready':
+            return False
+        if status == 'reload' and key == 'r':
+            self.action_reload_weapon()
+        else:
+            self.cancel_aim()
+            self.refresh_view()
+        return True
 
     def _aim_range(self):
         if getattr(self, 'construct_aim_id', None):
@@ -290,7 +332,8 @@ class AimingMixin:
 
     def _aim_context_details(self):
         """Read the live selected action without spending or changing aim state."""
-        from ..core.weapons import SPRAY_COST, SPRAY_RANGE, spray_plan
+        from ..core.weapons import (SPRAY_RANGE, bound_spray_source,
+                                    spray_imagination_cost, spray_plan)
         state = self.session.state
         pending = getattr(self, 'sentence_aim', None)
         target = (pending['cursor'] if pending is not None else
@@ -358,9 +401,10 @@ class AimingMixin:
                 plan = spray_plan(state, index, choice=key, **context)
                 if not plan.valid:
                     plan = spray_plan(state, index, choice=key)
-                profile = dict(plan.projectile_profile)
+                # 有弹药按容器价（2 点），无弹药按自带水源价（喷水枪 3 点）。
+                source_index, _reason = bound_spray_source(state, plan, index)
                 details.update(action='喷射', range=SPRAY_RANGE,
-                               imagination_cost=int(profile.get('cost', SPRAY_COST)))
+                               imagination_cost=spray_imagination_cost(plan, source_index))
             else:
                 plan = state.equipment.plan_action('fire', choice=key, **context)
                 if not plan.valid:
@@ -637,6 +681,8 @@ class AimingMixin:
 
     def _finish_targeted_aim(self, result):
         if result.changed:
+            from ..core.origin_course import note
+            note(self.session.state, 'ability_cast')
             self.cancel_aim()
         self.show_toast(result.message, 4)
         self.refresh_view()
@@ -699,6 +745,8 @@ class AimingMixin:
         result = state.activate_ability(ability_id, target=call_target,
                                         direction=aim_dir, **kwargs)
         if result.changed:
+            from ..core.origin_course import note
+            note(state, 'ability_cast')
             self.cancel_aim()
         else:
             self._aim_failed = True
@@ -873,12 +921,12 @@ class AimingMixin:
         if keep_aim:
             # 普通武器成功开火后留在瞄准：下一发仍只由一次确认触发。
             self._stay_in_equipment_aim(choice_before)
+        elif result.changed and self.fire_once_index is not None and self._aim_ammo_status() == 'exhausted':
+            # Keep a terminal supply state so the next click may become pathfinding.
+            self._aim_failed = False
         elif result.changed:
             self.cancel_aim()
-        elif (choice_before is not None and choice_before.get('kind')=='fire'
-                and result.message in (tr('弹匣已空，请先换弹。'),tr('弹匣不足，请先换弹。'),
-                                       tr('旧档继承的基础发射已经用完，请先换弹。'),tr('聚合弹库存不足。'))):
-            # An empty explicit magazine is a reload state, not a failed target.
+        elif choice_before is not None and self._aim_ammo_status() != 'ready':
             self._stay_in_equipment_aim(choice_before)
         elif getattr(self, "equipment_choice", None) is None:
             # 失败且没有弹出「换一个动作」选择时，记下失败态：下一次左键/任意
@@ -975,6 +1023,8 @@ class AimingMixin:
         if getattr(self, 'equipment_choice', None) is not None:
             # 瞄准中打开的来源表优先接管输入；否则方向键会同时移动落点。
             return False
+        if self._empty_aim_key(key):
+            return True
         # 失败态下任意键 = 取消（方向键也不例外；正常瞄准不走这条）。
         if self._cancel_failed_aim():
             return True

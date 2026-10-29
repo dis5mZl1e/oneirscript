@@ -16,10 +16,19 @@ base64 4.3–4.5 ms）、optimize=1（33–38 ms）都不作候选；level3/6 �
 C7：叠加层脏格补丁（ONEIRSCRIPT_IMAGE_PATCHES，默认 0 关闭）。没有原生
 可见帧/叠放顺序证据前不改变输出路径；这里只提供纯函数与可选路径，供
 tests/test_output_frames_261022.py 在测试模型里验证「补丁序列 == 整图重发」。
+
+Kitty 图形协议（2026-10-25，实验性，默认关闭）：设置项 map_kitty_graphics
+开启后才发 APC。Windows 的 ConPTY 会吞掉 kitty 图形 APC（wezterm#1673；
+本机纯终端探针 0 帧），所以 win32 下即使打开设置也仍然走上面的 OSC 1337。
+非 Windows 的 WezTerm 需要 enable_kitty_graphics=true（随包配置已写入），
+非 kitty 能力的终端同样回退 OSC 1337——默认路径的字节完全不变。
 """
 from __future__ import annotations
 
 import base64
+import os
+import sys
+from collections import OrderedDict
 from io import BytesIO
 
 from ..env_compat import get as env_get, name as env_name
@@ -27,6 +36,11 @@ from ..env_compat import get as env_get, name as env_name
 DEFAULT_PNG_LEVEL = 2
 PNG_LEVEL_ENV = env_name('PNG_LEVEL')
 IMAGE_PATCHES_ENV = env_name('IMAGE_PATCHES')
+# kitty 分块：base64 载荷每块不超过 4096 字节 → 原始数据每块 3072 字节。
+KITTY_CHUNK_BYTES = 3072
+# 已用 image id 的池上限；每个终端矩形键复用同一个 id（发送前先删旧图），
+# 避免逐帧换 id 让终端永久保留所有历史放置。
+KITTY_IMAGE_POOL = 64
 # 单帧补丁脏格上限：超过它说明「少量叠加格」的前提不成立（例如大范围
 # preview/FX 变化），整包重发更便宜也更接近现行路径，直接回退。
 PATCH_CELL_LIMIT = 128
@@ -58,11 +72,115 @@ def image_patches_enabled() -> bool:
         '1', 'true', 'yes', 'on')
 
 
+_kitty_enabled = False
+_kitty_capable: bool | None = None
+_kitty_clear_pending = False
+_kitty_next_id = 1000
+_kitty_ids: 'OrderedDict[tuple[int, int, int, int], int]' = OrderedDict()
+KITTY_DELETE_ALL = '\x1b_Ga=d,d=A,q=2;\x1b\\'
+
+
+def kitty_terminal_available(environ=None, platform=None) -> bool:
+    """当前终端能否接收 kitty 图形 APC（只做能力判断，不看设置项）。
+
+    win32 一律不可用：ConPTY 会丢弃 APC（wezterm#1673，本机 0 帧）。
+    tmux 需要额外 passthrough 配置，同样视为不可用。
+    """
+    env = os.environ if environ is None else environ
+    plat = sys.platform if platform is None else platform
+    if plat == 'win32' or env.get('TMUX'):
+        return False
+    if env.get('KITTY_WINDOW_ID') or env.get('TERM') == 'xterm-kitty':
+        return True
+    if env.get('TERM_PROGRAM') == 'WezTerm' and env.get('WEZTERM_PANE'):
+        return True
+    return bool(env.get('GHOSTTY_RESOURCES_DIR')) or env.get('TERM_PROGRAM') == 'ghostty'
+
+
+def set_kitty_graphics(enabled: bool) -> None:
+    """设置项 map_kitty_graphics 的同步入口（幂等，每帧调用也几乎零成本）。"""
+    global _kitty_enabled, _kitty_capable, _kitty_clear_pending
+    enabled = bool(enabled)
+    if enabled == _kitty_enabled:
+        return
+    was_active = _kitty_enabled and kitty_graphics_active()
+    _kitty_enabled = enabled
+    _kitty_capable = None
+    if not enabled:
+        _kitty_ids.clear()
+        # 关闭 kitty 后，旧的 APC 图块要等下一次 OSC 1337 覆盖；先删一次，
+        # 免得叠加在错误的位置。从未启用/从未可用时不必发。
+        _kitty_clear_pending = was_active
+
+
+def kitty_graphics_active() -> bool:
+    global _kitty_capable
+    if not _kitty_enabled:
+        return False
+    if _kitty_capable is None:
+        _kitty_capable = kitty_terminal_available()
+    return _kitty_capable
+
+
+def _kitty_delete(image_id: int) -> str:
+    return f'\x1b_Ga=d,d=i,i={image_id},q=2;\x1b\\'
+
+
+def _kitty_image_id(key: tuple[int, int, int, int]) -> tuple[int, bool, list[int]]:
+    """同一终端矩形复用同一 image id；返回 (id, 是否复用, 被淘汰的 id)。"""
+    global _kitty_next_id
+    reused = key in _kitty_ids
+    image_id = _kitty_ids.pop(key, None)
+    if image_id is None:
+        image_id = _kitty_next_id
+        _kitty_next_id += 1
+    _kitty_ids[key] = image_id
+    evicted = []
+    while len(_kitty_ids) > KITTY_IMAGE_POOL:
+        _old_key, old_id = _kitty_ids.popitem(last=False)
+        evicted.append(old_id)
+    return image_id, reused, evicted
+
+
+def _kitty_sequence(image, x: int, y: int, columns: int, rows: int) -> str:
+    stream = BytesIO()
+    image.save(stream, format='PNG', compress_level=png_level())
+    payload = stream.getvalue()
+    image_id, reused, evicted = _kitty_image_id(
+        (int(x), int(y), int(columns), int(rows)))
+    parts = [_kitty_delete(old_id) for old_id in evicted]
+    if reused:
+        # kitty 规定：重传同一 id 前必须先删掉旧图及其全部放置。
+        parts.append(_kitty_delete(image_id))
+    parts.append(f'\x1b7\x1b[{y+1};{x+1}H')
+    chunks = [payload[offset:offset + KITTY_CHUNK_BYTES]
+              for offset in range(0, len(payload), KITTY_CHUNK_BYTES)] or [b'']
+    for index, chunk in enumerate(chunks):
+        more = 1 if index < len(chunks) - 1 else 0
+        data = base64.b64encode(chunk).decode('ascii')
+        if index == 0:
+            header = (f'a=T,f=100,t=d,i={image_id},p=1,c={columns},r={rows},'
+                      f'C=1,q=2,m={more}')
+        else:
+            # kitty 要求续块只带 m（可选 q），其余键只出现在首块。
+            header = f'm={more}'
+        parts.append(f'\x1b_G{header};{data}\x1b\\')
+    parts.append('\x1b8')
+    return ''.join(parts)
+
+
 def image_sequence(image, x: int, y: int, columns: int, rows: int) -> str:
+    global _kitty_clear_pending
+    prefix = ''
+    if _kitty_clear_pending:
+        prefix = KITTY_DELETE_ALL
+        _kitty_clear_pending = False
+    if kitty_graphics_active():
+        return prefix + _kitty_sequence(image, x, y, columns, rows)
     stream = BytesIO()
     image.save(stream, format='PNG', compress_level=png_level())
     payload = base64.b64encode(stream.getvalue()).decode('ascii')
-    return (f'\x1b7\x1b[{y+1};{x+1}H\x1b]1337;File=inline=1;'
+    return (prefix + f'\x1b7\x1b[{y+1};{x+1}H\x1b]1337;File=inline=1;'
             f'size={len(stream.getvalue())};width={columns};height={rows};preserveAspectRatio=0;'
             f'doNotMoveCursor=1:{payload}\x07\x1b8')
 

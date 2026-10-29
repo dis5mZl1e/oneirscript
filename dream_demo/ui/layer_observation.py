@@ -84,7 +84,8 @@ class LayerStrip(Static):
     DEFAULT_CSS = """
     LayerStrip {
         display: none;
-        dock: top;
+        position: absolute;
+        layer: overlay;
         width: 100%;
         height: 1;
         padding: 0;
@@ -103,7 +104,13 @@ class LayerStrip(Static):
 
 
 class LayerStatus(LayerStrip):
-    DEFAULT_CSS = 'LayerStatus { dock: bottom; height: 2; }'
+    DEFAULT_CSS = """
+    LayerStatus {
+        position: absolute;
+        layer: overlay;
+        height: 2;
+    }
+    """
 
 
 class LayerObservationMixin:
@@ -443,6 +450,7 @@ class LayerObservationMixin:
             overlay.display = view.legend_open
             if view.legend_open:
                 self._update_layer_panel()
+        self._place_layer_bars()
         self._update_layer_strip()
         self._update_layer_status()
         panel = self.query_one('#panel')
@@ -453,6 +461,21 @@ class LayerObservationMixin:
         map_view.observe_cursor = view.cursor
         map_view.update_interaction()
         self.query_one('#map-mode-hint').display = False
+
+    def _place_layer_bars(self):
+        """把两条观察条摆在 #map-pane 上下沿的 overlay 层里。
+
+        它们用绝对定位而不是 dock：dock 会把 `#map` 整体下推一行、并吃掉 3 行
+        可视格，进/出分层观察时地图重居中——就是「观感跳跃」。浮放后地图长宽、
+        视口、相机全都不变，代价只是上下沿那几行格子被条子本身盖住（光标可见
+        带在 `MapView.viewport_for` 里按同样行数收进来）。
+        每次同步 UI 都重算底条 offset，窗口或面板让宽后它才贴得住。
+        """
+        pane = self.query_one('#map-pane')
+        self.query_one('#layer-strip').styles.offset = (0, 0)
+        status = self.query_one('#layer-status')
+        height = status.size.height or 2
+        status.styles.offset = (0, max(0, pane.content_size.height - height))
 
     def _update_layer_strip(self):
         """One-line left selector; never writes into the right panel."""

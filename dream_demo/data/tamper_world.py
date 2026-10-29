@@ -80,24 +80,26 @@ WORD_DEFS.update({
     # 植物专属（docs §十长尾材质）：拔除走真实拔植物结算，稀有植物照样给收益。
     'uproot': dict(name='拔除', slot='plant_only', verb='uproot', imagination=2, chaos=5,
                    note='把所选植物连根拔起；稀有植物按原拔除口径结算收益。'),
-    # 液/气聚拢（docs §十互动）：把相邻同类流体收进所选格，总量守恒并可能触发真实反应。
+    # 液/气聚拢（docs §十互动）：把整片所选流体搬进一个相邻落点，总量守恒并
+    # 可能触发真实反应。默认落点 = 距玩家最近的合法相邻格，V 查看地图可改。
     'gather_liquid': dict(name='聚流', slot='liquid_only', verb='gather', imagination=3, chaos=6,
-                          note='把相邻格的液态记忆收进所选格；总量守恒，混合同格可能当场触发反应。'),
+                          note='把这片液态记忆聚进一个相邻落点：默认最近的可放格，V 查看地图可改；总量守恒。'),
     'gather_gas': dict(name='聚气', slot='gas_only', verb='gather', imagination=3, chaos=6,
-                       note='把相邻格的弥散印象收进所选格；总量守恒，混合同格可能当场触发反应。'),
+                       note='把这片弥散印象聚进一个相邻落点：默认最近的可放格，V 查看地图可改；总量守恒。'),
     # 植物状态（docs §十一细分材质）：催生改变植株高度，枯萎把植株变干（日后更耐烧）。
     'grow': dict(name='催生', slot='plant_only', verb='grow', imagination=2, chaos=4,
                  note='低草长成高丛（遮挡视线）；已经长到头或稀有植物长不动。'),
     'wither': dict(name='枯萎', slot='plant_only', verb='wither', imagination=2, chaos=4,
                    note='让植株提前干枯：燃烧时燃料更耐久；植物本身还在。'),
-    # 液体形态（docs §十一）：蒸发走材料定义里的蒸发产物；凝固按材料表立起新墙。
+    # 液体形态（docs §十一）：蒸发优先走材料定义里的蒸发产物，没有则化成水蒸气；
+    # 凝固按材料表立起新墙。
     'evaporate': dict(name='蒸发', slot='liquid_only', verb='evaporate', imagination=3, chaos=6,
-                      note='把部分液体按它自己的蒸发产物化为气体；不会蒸发的液体给可读拒绝。'),
+                      note='把部分液体化为气体：有自己的蒸发产物就用它，没有就化成水蒸气。'),
     'solidify': dict(name='凝固', slot='liquid_only', verb='solidify', imagination=4, chaos=9,
                      note='把可凝固的液体立成一堵新墙（完整度取墙种定义），液体消失。'),
-    # 气体沉降：按材料表凝回液体，总量按比例折算。
-    'settle': dict(name='沉降', slot='gas_only', verb='settle', imagination=3, chaos=6,
-                   note='把部分气体凝回对应的液体；没有沉降产物的气体给可读拒绝。'),
+    # 气体凝结：按材料表凝回液体，总量按比例折算；没有对应物就凝成水。
+    'settle': dict(name='凝结', slot='gas_only', verb='settle', imagination=3, chaos=6,
+                   note='把部分气体凝回对应的液体：有对应液体就用它，没有就凝成水。'),
 })
 WORD_DEFS['dispel']['duration'] = 10
 WORD_DEFS['dispel']['note'] = '惊散 10 回合；受击会提前解除。'
@@ -122,17 +124,31 @@ WORD_DEFS['thin']['name'] = '消散'
 # 蚀梦菌毯、吸光苔墙都是 1 格高的吸水材质；植物另行判定。
 FIBER_WALLS: frozenset[str] = frozenset({'潮解纸墙', '枕木', '倦怠棉垛', '蚀梦菌毯', '吸光苔墙'})
 
-#: 催生：低草（码 1）长成高丛（码 2）。其它码视为已经长到头。
-PLANT_GROWTH: dict[int, int] = {1: 2}
+#: 催生：低草（码 1）长成高丛（码 2）；42/43 是错帧片/散页脊的 H1 收拢态，
+#: 催生它们才立起来变成 30/32（挡视线）。未登记 = 已经长到头。
+PLANT_GROWTH: dict[int, int] = {1: 2, 42: 30, 43: 32}
+#: 催生的**具体**拒绝原因：不能一句「已经长到头了」打发所有材质。
+PLANT_GROWN_OUT_REASONS: dict[int, str] = {
+    30: '这叠错帧片已经立起来了。',
+    32: '这叠散页脊已经张开了。',
+}
 #: 枯萎：把植株的燃烧燃料抬到该值；植物本身保留。
 WITHER_FUEL = 12
+#: 枯萎的**材质**拒绝原因（docs §10.1：金属线/光阑等不可套燃料增长）。
+PLANT_WITHER_REFUSALS: dict[str, str] = {
+    'plastic': '软塑不会干枯，只会熔化。',
+    'metal': '金属不会干枯。',
+    'fungus': '菌盖干不了——它本来就点不着。',
+    'membrane': '薄膜囊里装的是液，干不了。',
+}
 #: 凝固：液体 → 墙体。只登记语义成立的蜡/凝胶类；未登记液体给可读拒绝。
 SOLIDIFY_WALLS: dict[str, str] = {
     '熔融蜡烛': '蜡化记忆墙',
     '血蜡膏': '蜡化记忆墙',
     '凝胶基液': '梦晶簇',
 }
-#: 沉降：气体 → (液体, 折算比)。水蒸气最典型；麻醉雾与毒气沿用同族液体语义。
+#: 凝结：气体 → (液体, 折算比)。水蒸气最典型；麻醉雾与毒气沿用同族液体语义。
+#: 未登记的气体不再拒绝，统一凝成水（2026-10-28 用户要求）。
 GAS_SETTLE_LIQUIDS: dict[str, tuple[str, int]] = {
     '水蒸气': ('水', 2),
     '麻醉雾': ('镇静溶液', 2),
@@ -213,11 +229,14 @@ DELETE_WALL_CHAOS_EXTRA = 4
 # 每层「删除」成功次数上限（文档 §15.5 防滥用）：异象、墙体、物件共用同一份额度。
 MAX_DELETES_PER_LAYER = 2
 
-# 槽类别 → 面板颜色（与地图既有配色一致：异象暖色/地形冷灰蓝/物件旧纸金）。
+# 槽类别 → 面板颜色（与地图既有配色一致：异象暖色/地形冷灰蓝/物件旧纸金；
+# 液/气沿用地图流体叠加层的青/紫，地图选中框与面板同名同色）。
 SLOT_CATEGORY_COLORS: dict[str, str] = {
     "anomaly": "#e8a08a",
     "terrain": "#9ab8d9",
     "object": "#e8c77b",
+    "liquid": "#7fd0e8",
+    "gas": "#c2a3ff",
     "ground": "#9ab8d9",
 }
 

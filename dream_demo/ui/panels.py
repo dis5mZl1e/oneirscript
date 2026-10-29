@@ -199,6 +199,7 @@ from ..materials import (
 
 
     plant_def_for,
+    plant_spent,
 
 
     wall_def,
@@ -207,10 +208,10 @@ from ..materials import (
 )
 
 
-from ..symbols import drop_glyph
+from ..symbols import drop_glyph, symbol
 
 
-from . import glyphs
+from . import glyphs, terse
 
 
 from .panel_fields import FIELD_COLORS as FC, LABEL_FIELDS, field_text, panel_color, rich_lines
@@ -268,6 +269,122 @@ from .styles import (
 
 
 )
+
+
+
+# ---- 纸感分区排版原语（2026-10-24 批次，色板与口径见 paper_zones.py）----
+# 右栏内部按「桌上的纸」分区：正文区底色由 CSS 铺（ZONE_BODY），纸上的
+# 通栏条（分组标题/滚动提示）用这里的原语以 span 底色 + pad 满行宽实现。
+from .paper_zones import (
+    SCROLL_HINT_STYLE,
+    SPLIT_DIVIDER_STYLE,
+    ZONE_CAST_LIST,
+    ZONE_CAST_PREVIEW,
+    ZONE_STRIP,
+)
+
+
+def paper_pad(line: Text, zone_bg: str, width: int) -> Text:
+    """把折行/截断后的**物理行**铺满整行宽的分区底色。
+
+    末尾用空格补到 ``width`` 列并整行叠上 ``zone_bg`` 底——只在尾部加
+    空格：行数不变、既有列的起点不变，``_panel_rows``/``_panel_row_keys``
+    的行命中映射在 pad 之后登记照旧成立（底色 span 不携带语义）。
+    """
+    padded = Text(line.plain, style=line.style)
+    padded.spans = list(line.spans)
+    fill = width - cell_len(padded.plain)
+    if fill > 0:
+        padded.append(' ' * fill)
+    padded.stylize_before(f'on {zone_bg}', 0, len(padded.plain))
+    return padded
+
+
+def two_zone_row(left: Text, right: Text, left_bg: str, right_bg: str,
+                 left_w: int, right_w: int) -> Text:
+    """左右分块的单个物理行（2026-10-24 深化：环境页左右分区）。
+
+    左半行截到 ``left_w`` 列铺 ``left_bg``，中间一列细竖线（track 灰的
+    「缝」，不是要读的字），右半行截到 ``right_w`` 列铺 ``right_bg``——
+    合计正好整行宽。折行由调用方先做（各自列宽内 fold），本函数只组装。
+    通栏行（键位行等）不走这里：竖线在通栏行截止。
+    """
+    def half(line: Text, limit: int, bg: str) -> Text:
+        out = Text(line.plain, style=line.style)
+        out.spans = list(line.spans)
+        if cell_len(out.plain) > limit:
+            out.truncate(limit, overflow='ellipsis')
+        return paper_pad(out, bg, limit)
+
+    row = half(left, left_w, left_bg)
+    row.append(Text('│', style=SPLIT_DIVIDER_STYLE))
+    row.append_text(half(right, right_w, right_bg))
+    return row
+
+
+def zone_strip(title: str, width: int, *, color: str = '') -> Text:
+    """整行铺 ZONE_STRIP 底的通栏分组标题条（正文分组标题用）。
+
+    ``title`` 是 tr() 之后的成品文案（沿用原「—— 标题 ——」键，不动 i18n）；
+    ``color`` 传该分组原本的语义色（word/identity/condition…），它们对牛皮
+    条底全部 ≥4.5（tests/test_paper_zones.py 验收），缺省用标题色。返回
+    单个物理行（cell_len == width，超宽标题先截断再补底），调用方照常走
+    add() 登记行映射（-1 装饰行）。
+    """
+    ink = color or FC['heading']
+    line = Text(title)
+    line.stylize(f'bold {ink}')
+    line.stylize('underline')
+    if cell_len(line.plain) > width:
+        line.truncate(width, overflow='ellipsis')
+    return paper_pad(line, ZONE_STRIP, width)
+
+
+def kv_grid(pairs, width: int, *, two_from: int = 44) -> list[Text]:
+    """键值对网格排版（2026-10-24 批次 D：详情页两列化）。
+
+    - ``width`` ≥ ``two_from``（默认 44 列）时两列、列宽对半，**中间一条
+      细竖线**分隔（2026-10-24 玩家优化 5）；否则单列逐行。
+    - 每项是 ``(label, value, color)``，第 4 元为 True 表示选中态
+      （▶ 前缀 + 加粗下划线，只作用于自己那一格，不淹没同格另一项）。
+    - 超宽**折行**不截断（2026-10-24 玩家优化 5）：一格放不下的字换行
+      续排，不再省略号丢字；左右格行数不齐时短的一侧补空行对齐，
+      行映射登记由调用方按「选中项优先、否则左格」逐行落行。
+
+    返回 Text 行列表，每行 cell_len ≤ width；两列时第 i 对在第 i//2 行。
+    """
+    col = width if width < two_from else max(1, width // 2)
+
+    def cell_lines(pair, span: int) -> list[Text]:
+        selected = len(pair) > 3 and bool(pair[3])
+        line = Text(('▶ ' if selected else '') + pair[0] + '  ' + pair[1],
+                    style=pair[2] + (' bold underline' if selected else ''))
+        if cell_len(line.plain) <= span:
+            return [line]
+        return list(line.wrap(_WRAP_CONSOLE, max(1, span), overflow='fold'))
+
+    if width < two_from:
+        return [row for pair in pairs for row in cell_lines(pair, col)]
+    # 两列：中缝一条细竖线（muted 色，视觉上「非常细」），两侧各留一列空隙。
+    left_span = max(1, width // 2 - 2)
+    right_span = max(1, width - left_span - 2)
+    divider_style = PANEL_MUTED
+    rows: list[Text] = []
+    for index in range(0, len(pairs), 2):
+        left = cell_lines(pairs[index], left_span)
+        right = cell_lines(pairs[index + 1], right_span) if index + 1 < len(pairs) else []
+        for line_no in range(max(len(left), len(right), 1)):
+            left_line = left[line_no] if line_no < len(left) else None
+            right_line = right[line_no] if line_no < len(right) else None
+            row = Text()
+            row.append_text(left_line if left_line is not None else Text())
+            row.append(' ' * max(1, left_span - cell_len(left_line.plain if left_line is not None else '')))
+            row.append('│', style=divider_style)
+            if right_line is not None:
+                row.append(' ' * max(1, right_span - cell_len(right_line.plain)))
+                row.append_text(right_line)
+            rows.append(row)
+    return rows
 
 
 
@@ -726,7 +843,8 @@ def _skill_summary_text(summary: dict[str, Any]) -> str:
         parts.append(tr("距离 {n}").format(n=int(summary["max_range"])))
 
 
-    return f"{tr('技能 ')}{tr(summary.get('name', ''))}：{' · '.join(parts)}"
+    colon = ': ' if get_language().startswith('en') else '：'
+    return f"{tr('技能 ')}{tr(summary.get('name', ''))}{colon}{' · '.join(parts)}"
 
 
 
@@ -738,7 +856,8 @@ def _skill_summary_text(summary: dict[str, Any]) -> str:
 def _skill_summary_rich(summary):
 
 
-    text = Text(tr('技能 ') + tr(summary.get('name', '')) + '：', style=FC['word'])
+    colon = ': ' if get_language().startswith('en') else '：'
+    text = Text(tr('技能 ') + tr(summary.get('name', '')) + colon, style=FC['word'])
 
 
     channel = summary.get('trauma_channel', '')
@@ -835,6 +954,121 @@ class PanelViewMixin:
 
 
         return "themed" if glyphs._unicode_mode(None) else "ascii"
+
+
+    # ---- 少字模式（terse mode）右栏/悬停专用渲染原语 -------------------------
+    # 只压缩右侧栏与悬停读数；左侧事件记录、全屏窗口仍走普通口径。
+
+    def _terse_active(self) -> bool:
+        """少字模式是否生效（读玩家设置 terse_mode）。"""
+        return terse.enabled(getattr(self, "config", None))
+
+    def _terse_details_collapsed(self) -> bool:
+        """少字模式且玩家尚未手动按 \\ 展开时，可展开注释默认收起。"""
+        return self._terse_active() and not getattr(self, "_terse_details_manual", False)
+
+    def _details_visible(self) -> bool:
+        """注释当前是否显示：普通模式看全局开关，少字模式再看手动展开位。"""
+        return bool(self.details_expanded) and not self._terse_details_collapsed()
+
+    def _terse_floor_glyph(self, aggregate_variant, floor):
+        """少字地板图标：聚合物统一地板点（保留变体配色），其它地板用定义符号。"""
+        from ..materials import floor_def
+        mode = self._symbol_mode()
+        if floor == Material.PLAIN_AGGREGATE:
+            payload = floor_def(str(aggregate_variant or ""))
+            if payload.symbol_key == "floor":
+                return (symbol("floor", mode),
+                        AGGREGATE_PANEL_STYLES.get(str(aggregate_variant or ""), PANEL_MUTED))
+            return symbol(payload.symbol_key, mode), FC['text']
+        return symbol(floor_def(str(getattr(floor, "value", floor) or "")).symbol_key, mode), FC['text']
+
+    @staticmethod
+    def _terse_layer_token(index: int, value: Text) -> Text:
+        """「⇓/⇔/⇗/⇑:」+ 层内容（层内容只有图标，不写中文地形名）。"""
+        token = Text(terse.layer_glyph(index) + ":", style=FC['label'])
+        token.append_text(value)
+        return token
+
+    @staticmethod
+    def _terse_merged_icons(parts) -> Text:
+        """同一层并列内容（图标 + 原定义色）用 / 连接，忽略空项。"""
+        result = Text()
+        for index, (glyph, color) in enumerate(parts):
+            if index:
+                result.append("/", style=FC['label'])
+            result.append(glyph, style=panel_color(color))
+        return result
+
+    @staticmethod
+    def _hover_cell_entry_line(x: int, y: int, terse_mode: bool) -> Text:
+        """悬停读数末尾的「当前所在格详情」点击入口。"""
+        if terse_mode:
+            return Text(terse.current_cell_entry(), style=FC['muted'])
+        return Text(f"▸ {tr('当前格')} ({x},{y}) · {tr('点击查看')}", style=FC['muted'])
+
+    def _terse_terrain_layers(self, state, cell, *, visible: bool, concealed: bool,
+                              mode: str) -> tuple[list, list, list]:
+        """少字四层地形：地板/表面/高处/空中各只留图标（'?' 表示视野外未知）。"""
+        surface: list[tuple[str, str]] = []
+        high: list[tuple[str, str]] = []
+        sky: list[tuple[str, str]] = []
+        if cell.solid and not concealed:
+            definition = wall_def(cell.wall_kind)
+            icon = (symbol(definition.symbol_key, mode), definition.color)
+            surface.append(icon)
+            if cell.height >= 2:
+                high.append(icon)
+            if cell.height >= 3:
+                sky.append(icon)
+            elif cell.gas > 0:
+                if visible:
+                    gas_definition = gas_def(cell.gas_kind)
+                    sky.append((f"{glyphs.gas_glyph(cell.gas, mode).strip()} {cell.gas}", gas_definition.color))
+                else:
+                    sky.append(("?", PANEL_MUTED))
+            if visible and cell.liquid > 0:
+                liquid_definition = liquid_def(cell.liquid_kind)
+                surface.append((f"{symbol(glyphs.liquid_depth_key(cell.liquid), mode).strip()} {cell.liquid}",
+                                liquid_definition.color))
+        elif visible:
+            if cell.plant:
+                plant = plant_def_for(cell.plant)
+                icon = (symbol(plant.key, mode), plant.color)
+                surface.append(icon)
+                if plant.height >= 2:
+                    high.append(icon)
+            if cell.liquid > 0:
+                liquid_definition = liquid_def(cell.liquid_kind)
+                surface.append((f"{symbol(glyphs.liquid_depth_key(cell.liquid), mode).strip()} {cell.liquid}",
+                                liquid_definition.color))
+            if cell.gas > 0:
+                gas_definition = gas_def(cell.gas_kind)
+                sky.append((f"{glyphs.gas_glyph(cell.gas, mode).strip()} {cell.gas}", gas_definition.color))
+        else:
+            if state.insight_active("双读") and not concealed:
+                if cell.liquid > 0:
+                    surface.append((symbol(glyphs.liquid_depth_key(cell.liquid), mode),
+                                    PANEL_MUTED))
+                if cell.gas > 0:
+                    sky.append((glyphs.gas_glyph(cell.gas, mode), PANEL_MUTED))
+            if not surface:
+                surface.append(("?", PANEL_MUTED))
+            if not high:
+                high.append(("?", PANEL_MUTED))
+            if not sky:
+                sky.append(("?", PANEL_MUTED))
+        return surface, high, sky
+
+
+    def _terse_known_wall_text(self, info) -> Text:
+        """知识权限下的墙面图标（不是当前视野；视野外仍是记忆里的墙材）。"""
+        if getattr(info, "solid", False) and getattr(info, "wall_kind", ""):
+            definition = wall_def(info.wall_kind)
+            return Text(symbol(definition.symbol_key, self._symbol_mode()),
+                        style=panel_color(definition.color))
+        return Text("?", style=PANEL_MUTED)
+
 
 
 
@@ -960,6 +1194,16 @@ class PanelViewMixin:
                 viewport = max(1, viewport - len(strip_lines))
 
 
+            # 右栏篡改页把「转到地图侧」的入口钉在最后一行：这一行也要从视窗里
+            # 扣掉，否则滚到底时最后一条正文会被它顶出视野（与渲染分支同一口径）。
+
+
+            if self._world_tamper_side_footer_line() is not None:
+
+
+                viewport = max(1, viewport - 1)
+
+
             return max(0, len(lines) - viewport)
 
 
@@ -970,6 +1214,7 @@ class PanelViewMixin:
 
 
         state = self.session.state
+        messages = self._visible_game_messages(state)
 
 
         try:
@@ -1002,7 +1247,7 @@ class PanelViewMixin:
         fitted = 0
 
 
-        for message in state.messages:
+        for message in messages:
 
 
             message_rows = max(1, (cell_len("● " + message) + panel_width - 1) // panel_width)
@@ -1020,7 +1265,7 @@ class PanelViewMixin:
             fitted += 1
 
 
-        return max(0, len(state.messages) - fitted)
+        return max(0, len(messages) - fitted)
 
 
 
@@ -1044,7 +1289,7 @@ class PanelViewMixin:
         self.panel_scroll = min(self._max_panel_scroll(), max(0, self.panel_scroll + delta))
 
 
-        self.refresh_view()
+        self._refresh_navigation_selection()
 
 
 
@@ -1333,6 +1578,9 @@ class PanelViewMixin:
         # 三层信息（2026-10-18 docs 第 1 节第二批）：开关打开时，未知/记忆/
         # 全图地形/始终可见格走知识口径，不读取实时液体/气体/生物/物品读数。
         observe = bool(getattr(self, "observe_mode", False))
+        # 少字模式：字段名换英文缩写/语义图标，地形四层只留图标；非少字模式保持原文。
+        terse_mode = self._terse_active()
+        symbol_mode = self._symbol_mode()
         fog_info = None
         if bool(getattr(state, "map_memory_enabled", False)) and not visible:
             fog_info = state.cell_knowledge(x, y)
@@ -1341,11 +1589,15 @@ class PanelViewMixin:
         # 行1：位置与悬停坐标同行；其后环境描述按显示宽度自动折行：
         # 不固定某一项在某一行，仅当当前行放不下时才换行，直至显示完全。
         # 观察模式（x）下同一个读数改叫「观察:」——它跟着白色 ? 走，不是鼠标。
-        if observe:
-            coord_label = tr("观察:")
+        # 少字模式只压字段名（P/O/C/H/G），坐标数字原样保留。
+        if terse_mode:
+            position_label = terse.abbrev("位置") + ":"
+            coord_label = terse.abbrev(
+                "观察" if observe else ("悬停" if hovered else "当前")) + ":"
         else:
-            coord_label = tr("悬停:") if hovered else tr("当前:")
-        text = Text.assemble((f"{tr('位置:')}({state.player.x},{state.player.y}) ", FC['position']),
+            position_label = tr("位置:")
+            coord_label = tr("观察:") if observe else (tr("悬停:") if hovered else tr("当前:"))
+        text = Text.assemble((f"{position_label}({state.player.x},{state.player.y}) ", FC['position']),
                              (f'{coord_label}({x},{y})', FC['position']))
         # 地面上有掉落物时，紧跟在坐标同一行后面显示物品名（无则完全不显示）。
         ground_item = next(
@@ -1357,7 +1609,8 @@ class PanelViewMixin:
             shown_item = "？？？" if amnesia else tr(ground_item.name)
             # 物品名 = 物品自己的定义色（2026-09-21：不同物品不同颜色）。
             ground_style = item_name_color(ground_item)
-            text.append(f" {tr('地上:')}{drop_glyph(ground_item, self._symbol_mode())}{shown_item}", style=ground_style)
+            ground_label = (terse.abbrev("地上") + ":") if terse_mode else tr('地上:')
+            text.append(f" {ground_label}{drop_glyph(ground_item, symbol_mode)}{shown_item}", style=ground_style)
         text.append("\n")
         # 四层结构：地板（初始生成，与墙体无关）→ 表面（低层）→ 高处（中层）→ 空中（高层）。
         # 中墙（height=2）占表面与高处，阻碍液体、可共存气体；
@@ -1370,6 +1623,13 @@ class PanelViewMixin:
         concealed_container = cell.wall_kind in CONTAINER_KINDS and not visible
         if concealed_container:
             floor_name, floor_style = tr("普通聚合物"), AGGREGATE_PANEL_STYLES["普通聚合物"]
+        terse_floor = None
+        terse_layers = None
+        if terse_mode:
+            terse_floor = self._terse_floor_glyph(
+                "普通聚合物" if concealed_container else cell.aggregate_variant, cell.floor)
+            terse_layers = self._terse_terrain_layers(
+                state, cell, visible=visible, concealed=concealed_container, mode=symbol_mode)
         # 每一层（表面/高处/空中）都是一个「并列清单」：同一高度上可以同时存在
         # 多个东西（低矮固体 + 它承载的液体、漫过植物的液体、与低墙并存的气体……），
         # 全部用 "/" 列出，而不是后来者覆盖先来者。
@@ -1447,21 +1707,41 @@ class PanelViewMixin:
                                    Text(content, style=panel_color(color)))
             return result
 
-        surface = merged(surface_parts)
-        if wall_stats:
-            surface.append_text(Text(' '))
-            for label, value, key in (('硬', cell.hardness, 'hardness'),
-                                      ('厚', cell.thickness, 'thickness'),
-                                      ('完', cell.integrity, 'integrity')):
-                surface.append_text(field_text(label, value, field=key))
-                surface.append(' ')
-        tokens = [_labeled('地板', Text(floor_name, style=panel_color(floor_style))),
-                  _labeled('表面', surface), _labeled('高处', merged(high_parts)),
-                  _labeled('空中', merged(sky_parts))]
-        proximity = state.proximity_effects()
-        if proximity:
-            tokens.append(field_text('贴近：', tr('、').join(tr(p) for p in proximity),
-                                     field='condition', separator=''))
+        if terse_mode:
+            surface_icons, high_icons, sky_icons = terse_layers
+            surface = self._terse_merged_icons(surface_icons)
+            if cell.solid and not concealed_container:
+                # 少字：硬/厚/完 → H/T/I + 数字（H3 T2 I40），保留原字段配色。
+                surface.append_text(Text(' '))
+                for label, value, key in (('H', cell.hardness, 'hardness'),
+                                          ('T', cell.thickness, 'thickness'),
+                                          ('I', cell.integrity, 'integrity')):
+                    surface.append_text(field_text(label, value, field=key, separator=''))
+                    surface.append(' ')
+            tokens = [self._terse_layer_token(0, Text(terse_floor[0], style=panel_color(terse_floor[1]))),
+                      self._terse_layer_token(1, surface),
+                      self._terse_layer_token(2, self._terse_merged_icons(high_icons)),
+                      self._terse_layer_token(3, self._terse_merged_icons(sky_icons))]
+            proximity = state.proximity_effects()
+            if proximity:
+                tokens.append(field_text('N:', tr('、').join(tr(p) for p in proximity),
+                                         field='condition', separator=''))
+        else:
+            surface = merged(surface_parts)
+            if wall_stats:
+                surface.append_text(Text(' '))
+                for label, value, key in (('硬', cell.hardness, 'hardness'),
+                                          ('厚', cell.thickness, 'thickness'),
+                                          ('完', cell.integrity, 'integrity')):
+                    surface.append_text(field_text(label, value, field=key))
+                    surface.append(' ')
+            tokens = [_labeled('地板', Text(floor_name, style=panel_color(floor_style))),
+                      _labeled('表面', surface), _labeled('高处', merged(high_parts)),
+                      _labeled('空中', merged(sky_parts))]
+            proximity = state.proximity_effects()
+            if proximity:
+                tokens.append(field_text('贴近：', tr('、').join(tr(p) for p in proximity),
+                                         field='condition', separator=''))
         used = 0
         for content in tokens:
             for chunk in rich_lines(content, width):
@@ -1474,10 +1754,21 @@ class PanelViewMixin:
                     used += 1
                 text.append_text(chunk)
                 used += cost
-        for line in self._hover_extra_lines(state, x, y):
+        extra_lines = self._hover_extra_lines(state, x, y)
+        if terse_mode:
+            extra_lines = [terse.compress(line, symbol_mode) for line in extra_lines]
+        for line in extra_lines:
             for chunk in self._split_text_by_width(line, width):
                 text.append("\n")
                 text.append_text(chunk)
+        if not terse_mode and get_language() == "en":
+            # 英文普通模式：悬停读数里的长单词缩写；入口行另行翻译，不参与。
+            text = terse.compact_english(text)
+        # 末尾点击入口：当前所在格详情（少字模式只留语义图标）。
+        # 与正文同一条折行口径，极窄宽度下也不超宽。
+        for chunk in self._split_text_by_width(self._hover_cell_entry_line(state.player.x, state.player.y, terse_mode), width):
+            text.append("\n")
+            text.append_text(chunk)
         return text
 
 
@@ -1588,57 +1879,119 @@ class PanelViewMixin:
 
     def _hover_text_fog(self, state, x, y, info, width, hovered, observe) -> Text:
         """三层信息下的悬停读数：只显示当前授权范围内的内容，不再标注来源。"""
-        coord_label = tr("观察:") if observe else (tr("悬停:") if hovered else tr("当前:"))
+        terse_mode = self._terse_active()
+        mode = self._symbol_mode()
+        if terse_mode:
+            position_label = terse.abbrev("位置") + ":"
+            coord_label = terse.abbrev(
+                "观察" if observe else ("悬停" if hovered else "当前")) + ":"
+        else:
+            position_label = tr("位置:")
+            coord_label = tr("观察:") if observe else (tr("悬停:") if hovered else tr("当前:"))
         text = Text(
-            f"{tr('位置:')}({state.player.x},{state.player.y}) {coord_label}({x},{y})",
+            f"{position_label}({state.player.x},{state.player.y}) {coord_label}({x},{y})",
             style=FC['text'],
         )
         text.append("\n")
         tokens: list[tuple[str, str]] = []
+        terse_tokens: list[Text] = []
         if info.status == "unknown":
-            tokens.append((tr("未探索"), PANEL_MUTED))
-            if state.insight_active("双读"):
-                # 双读只给类别，不给具体种类、数量、生物或物品。
-                cell = state.cell(x, y)
-                if cell.liquid > 0:
-                    tokens.append((tr("液态记忆"), PANEL_MUTED))
-                if cell.gas > 0:
-                    tokens.append((tr("弥散印象"), PANEL_MUTED))
+            if terse_mode:
+                terse_tokens.append(Text(tr("未探索"), style=PANEL_MUTED))
+                if state.insight_active("双读"):
+                    cell = state.cell(x, y)
+                    if cell.liquid > 0:
+                        terse_tokens.append(Text(tr("液态记忆"), style=PANEL_MUTED))
+                    if cell.gas > 0:
+                        terse_tokens.append(Text(tr("弥散印象"), style=PANEL_MUTED))
+            else:
+                tokens.append((tr("未探索"), PANEL_MUTED))
+                if state.insight_active("双读"):
+                    # 双读只给类别，不给具体种类、数量、生物或物品。
+                    cell = state.cell(x, y)
+                    if cell.liquid > 0:
+                        tokens.append((tr("液态记忆"), PANEL_MUTED))
+                    if cell.gas > 0:
+                        tokens.append((tr("弥散印象"), PANEL_MUTED))
         elif info.status == "always_visible":
             category = info.sources[-1] if info.sources else ""
-            tokens.append((tr("始终可见：") + tr(category), PANEL_MUTED))
-            if info.solid and info.wall_kind:
-                tokens.append((tr("表面:") + self._known_wall_name(info), PANEL_MUTED))
+            if terse_mode:
+                if category:
+                    terse_tokens.append(Text(tr(category), style=PANEL_MUTED))
+                terse_tokens.append(self._terse_layer_token(
+                    1, self._terse_known_wall_text(info)))
             else:
-                tokens.append((tr("表面:") + "?", PANEL_MUTED))
+                tokens.append((tr("始终可见：") + tr(category), PANEL_MUTED))
+                if info.solid and info.wall_kind:
+                    tokens.append((tr("表面:") + self._known_wall_name(info), PANEL_MUTED))
+                else:
+                    tokens.append((tr("表面:") + "?", PANEL_MUTED))
         else:
-            if info.site:
-                tokens.append((tr("已发现地点：") + tr(info.site), FC['degree']))
-            tokens.append((tr("地板:") + self._known_floor_name(info), PANEL_MUTED))
-            if info.solid and info.wall_kind:
-                tokens.append((tr("表面:") + self._known_wall_name(info), PANEL_MUTED))
+            if terse_mode:
+                if info.site:
+                    terse_tokens.append(Text(tr("已发现地点：") + tr(info.site),
+                                             style=FC['degree']))
+                floor_glyph, floor_color = self._terse_floor_glyph(
+                    info.aggregate_variant, info.floor)
+                terse_tokens.append(self._terse_layer_token(
+                    0, Text(floor_glyph, style=panel_color(floor_color))))
+                terse_tokens.append(self._terse_layer_token(
+                    1, self._terse_known_wall_text(info)))
+                terse_tokens.append(self._terse_layer_token(2, Text("?", style=PANEL_MUTED)))
+                terse_tokens.append(self._terse_layer_token(3, Text("?", style=PANEL_MUTED)))
             else:
-                tokens.append((tr("表面:") + "?", PANEL_MUTED))
-            tokens.append((tr("高处:") + "?", PANEL_MUTED))
-            tokens.append((tr("空中:") + "?", PANEL_MUTED))
+                if info.site:
+                    tokens.append((tr("已发现地点：") + tr(info.site), FC['degree']))
+                tokens.append((tr("地板:") + self._known_floor_name(info), PANEL_MUTED))
+                if info.solid and info.wall_kind:
+                    tokens.append((tr("表面:") + self._known_wall_name(info), PANEL_MUTED))
+                else:
+                    tokens.append((tr("表面:") + "?", PANEL_MUTED))
+                tokens.append((tr("高处:") + "?", PANEL_MUTED))
+                tokens.append((tr("空中:") + "?", PANEL_MUTED))
         used = 0
-        for content, style in tokens:
-            for chunk in self._split_by_width(content, width):
-                cost = cell_len(chunk)
-                if used > 0 and used + 1 + cost > width:
-                    text.append("\n")
-                    used = 0
-                if used > 0:
-                    text.append(" ")
-                    used += 1
-                text.append(chunk, style=style)
-                used += cost
+        if terse_mode:
+            for content in terse_tokens:
+                for chunk in self._split_text_by_width(content, width):
+                    cost = cell_len(chunk.plain)
+                    if used > 0 and used + 1 + cost > width:
+                        text.append("\n")
+                        used = 0
+                    if used > 0:
+                        text.append(" ")
+                        used += 1
+                    text.append_text(chunk)
+                    used += cost
+        else:
+            for content, style in tokens:
+                for chunk in self._split_by_width(content, width):
+                    cost = cell_len(chunk)
+                    if used > 0 and used + 1 + cost > width:
+                        text.append("\n")
+                        used = 0
+                    if used > 0:
+                        text.append(" ")
+                        used += 1
+                    text.append(chunk, style=style)
+                    used += cost
         if info.status != "unknown":
             # 记忆／全图地形／恒显格保留地形记忆洞察（视野外的最近一次确认快照）。
             hazard = self._hazard_memory_line(state, x, y, info.status)
             for chunk in self._split_by_width(hazard, width) if hazard else ():
                 text.append("\n")
                 text.append(chunk, style=PANEL_MUTED)
+        if terse_mode:
+            # 视野外读数里的「未探索 / 液态记忆 / 弥散印象 / 始终可见」等
+            # 文字在少字模式下换成符号/缩写；入口行保持纯符号，不参与压缩。
+            text = terse.compress(text, mode)
+        elif get_language() == "en":
+            # 英文普通模式：知识权限读数里的长单词缩写。
+            text = terse.compact_english(text)
+        # 末尾点击入口：当前所在格详情（少字模式只留语义图标）。
+        # 与正文同一条折行口径，极窄宽度下也不超宽。
+        for chunk in self._split_text_by_width(self._hover_cell_entry_line(state.player.x, state.player.y, terse_mode), width):
+            text.append("\n")
+            text.append_text(chunk)
         return text
 
 
@@ -1934,6 +2287,7 @@ class PanelViewMixin:
 
     def _panel_subtabs_lines(self) -> list[Text]:
         """面板顶部的分层页签（可能折成多行）；没有分层的界面返回空列表。"""
+        from .sidebar_workspaces import SUBTAB_COLORS
         ids = self._panel_subpage_ids()
         self._panel_subtab_hits = []
         if not ids or self.panel_mode in ('equipment', 'actions'):
@@ -1944,9 +2298,16 @@ class PanelViewMixin:
         line = Text()
         column = 0
         row = 0
+        terse_mode = self._terse_active()
         for index, subpage_id in enumerate(ids):
             selected = subpage_id == active
-            label = self._panel_subpage_label(subpage_id)
+            if terse_mode:
+                label = terse.subpage_symbol(subpage_id, self._symbol_mode())
+            elif get_language() == 'en':
+                # 英文普通模式：右栏小页签用短名，完整词在详情界面。
+                label = terse.subpage_english_short(subpage_id)
+            else:
+                label = self._panel_subpage_label(subpage_id)
             token = ("▶" if selected else " ") + label
             token_width = cell_len(token)
             separator = 0 if index == 0 else 1
@@ -1960,8 +2321,8 @@ class PanelViewMixin:
                 line.append(" ", style=PANEL_MUTED)
                 column += separator
             start = column
-            line.append(token, style=(f"bold underline {FC['condition']}" if selected
-                                     else PANEL_MUTED))
+            color = SUBTAB_COLORS[index % len(SUBTAB_COLORS)]
+            line.append(token, style=(f"bold underline {color}" if selected else color))
             column += token_width
             self._panel_subtab_hits.append((row, start, column, subpage_id))
         if line.plain:
@@ -2263,7 +2624,7 @@ class PanelViewMixin:
                         self._panel_scroll_hint(start + 1, last, total_lines),
 
 
-                        style=PORTENT_HINT_STYLE,
+                        style=SCROLL_HINT_STYLE,
 
 
                     )
@@ -2281,12 +2642,25 @@ class PanelViewMixin:
                 self._panel_rows.append(-3)
             # 标题行的行映射必须占位——_panel_rows 是「可视行 → 条目序号」的
             # 逐行对应表（缺一行则整块点击都差一行）。标题钉住不滚动。
-            text.append_text(Text(tr("操作界面"), style=f"bold {FC['condition']}"))
+            heading = 'ACT' if self._terse_active() else tr("操作界面")
+            text.append_text(zone_strip(heading, self._portent_panel_width(), color=FC["condition"]))
             self._panel_rows.append(-1)
             lines, row_indices = self._actions_lines(state)
+            # 右栏篡改页把「转到地图侧」的入口钉在最后一行（与任务页钉底同一口径）：
+            # 这行由 _world_tamper_side_lines 随正文写下，编辑器不在右栏时一律不认。
+            # 构想页的键位行同样钉底（_panel_footer，2026-10-24 口径）。
+            footer = self._world_tamper_side_footer_line() or self._panel_footer(state)
             viewport = self._portent_viewport_rows()
             if strip_lines:
                 viewport = max(1, viewport - len(strip_lines))
+            if footer is not None:
+                viewport = max(1, viewport - 1)
+            if self._panel_subpage_id() == 'constructs':
+                # Only reserve a scroll-hint row when content actually overflows.
+                viewport = max(1, self.query_one('#panel').content_size.height
+                               - 1 - len(strip_lines) - int(footer is not None))
+                if len(lines) > viewport:
+                    viewport = max(1, viewport - 1)
             max_scroll = max(0, len(lines) - viewport)
             self.panel_scroll = min(self.panel_scroll, max_scroll)
             start = self.panel_scroll
@@ -2298,9 +2672,13 @@ class PanelViewMixin:
                 last = min(len(lines), start + viewport)
                 text.append(
                     self._panel_scroll_hint(start + 1, last, len(lines)),
-                    style=PORTENT_HINT_STYLE,
+                    style=SCROLL_HINT_STYLE,
                 )
                 self._panel_rows.append(-1)
+            if footer is not None:
+                text.append("\n")
+                text.append_text(footer)
+                self._panel_rows.append(getattr(self, "_panel_footer_entry", -1))
 
 
         else:
@@ -2308,14 +2686,16 @@ class PanelViewMixin:
 
             text = Text.assemble((tr("事件记录"), f"bold {FC['degree']}"))
 
+            visible_messages = self._visible_game_messages(state)
+
 
             available_rows = max(1, self.query_one("#panel").content_size.height - 1)
 
 
-            end = len(state.messages) - self.panel_scroll
+            end = len(visible_messages) - self.panel_scroll
 
 
-            candidates = state.messages[:max(0, end)] if end else []
+            candidates = visible_messages[:max(0, end)] if end else []
 
 
             messages: list[str] = []
@@ -2355,6 +2735,22 @@ class PanelViewMixin:
 
 
                 text.append_text(self._message_text(message))
+
+
+        # 少字模式（terse_mode）：右栏正文统一压缩（状态名→图标、字段名→缩写）。
+        # 日志(world)与构筑(equipment)保持原文；行数不变，_panel_rows 行映射照旧。
+        # 双列页先排版并建立列级命中表，不能再对整段文字做变长替换。
+        # 构想和篡改各自在生成列内容时缩写，保持分隔线和命中列不变。
+        column_layout = (self.panel_mode == 'actions'
+                         and self._panel_subpage_id() in ('constructs', 'tamper'))
+        if self._terse_active() and self.panel_mode not in ("world", "equipment") and not column_layout:
+            text = terse.compress(text, self._symbol_mode())
+        elif (not self._terse_active() and get_language() == "en"
+              and self.panel_mode not in ("world", "equipment") and not column_layout):
+            # 英文普通模式：右栏长单词缩写。环境页/数值页连正文词一起压；
+            # 行囊/操作页只压字段与标题，物品名与构想名保持完整。
+            text = terse.compact_english(
+                text, word_level=self.panel_mode in ("nearby", "self_stats"))
 
 
         return text
@@ -2465,109 +2861,86 @@ class PanelViewMixin:
 
         preview = self._terrain_preview_for(state)
 
-
-        preview_anchor: int | None = None
-
-
-
-
-
+        # —— 构想列表块（2026-10-24 重构：列表 + 简介常显，同族纸 ZONE_CAST_LIST）——
         # 主动构想：随操作面板一同展示，Enter 激活。
-
-
-        add(Text(tr("—— 主动构想 ——"), style=f"bold {FC['word']}"))
-
-
+        add(zone_strip(tr("—— 主动构想 ——"), width + 4, color=FC['word']))
         if not abilities:
-
-
-            add(Text(tr("尚未习得任何构想（书卷与残页中藏着它们）"), PANEL_MUTED))
-
-
+            add(paper_pad(Text(tr("尚未习得任何构想（书卷与残页中藏着它们）"), PANEL_MUTED),
+                          ZONE_CAST_LIST, width + 4))
         for offset, ability_id in enumerate(abilities):
-
-
             definition = ABILITY_DEFINITIONS[ability_id]
-
-
             selected = (context_count + offset) == self.panel_selection
-
-
             cooldown = state.ability_cooldowns.get(ability_id, 0)
-
-
             # 消耗想象**始终**在第一位；冷却只是在它后面追加一段，不替代它——
-
-
             # 玩家反馈「冷却时看不到消耗」（要判断还差多久能用、值不值得等，
-
-
             # 两件事都要看见）。
-
-
-            status = f"{state._scaled_ability_cost(int(definition['cost']))} {tr('想象力')}"
-
-
-            if cooldown:
-
-
-                status += tr("　·　") + tr("冷却 {n} 回合").format(n=cooldown)
-
-
             marker = "▶ " if selected else "  "
+            head = Text.assemble(
+                (marker, FC['word']),
+                icon_label(
+                    'ability.' + ability_id, tr(definition['name']),
+                    FC['word'] + (' bold underline' if selected else '')),
+                ('  ' + str(state._scaled_ability_cost(int(definition['cost']))) + ' ' + tr('想象力'), FC['cost']),
+                ('　·　' + tr('冷却 {n} 回合', n=cooldown), FC['cooldown']) if cooldown else '')
+            add(paper_pad(head, ZONE_CAST_LIST, width + 4), context_count + offset)
+            # 简介默认折叠（2026-10-24 玩家定稿，撤回同日"常显"）：\ 全局展开
+            # （details_expanded）；实际右栏由 sidebar_management 的左右分区版
+            # 接管：普通点击单条展开，Shift+点击保持激活/施放。
+            if self._details_visible():
+                for wrapped in Text(f"    {tr(definition['description'])}", style=PANEL_MUTED).wrap(
+                        _WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
+                    add(paper_pad(wrapped, ZONE_CAST_LIST, width + 4), context_count + offset)
 
-
-            add(
-
-
-                Text.assemble((marker,FC['word']),
-                    icon_label(
-                        'ability.'+ability_id,tr(definition['name']),FC['word'] + (' bold underline' if selected else '')),
-
-
-                    ('  ' + str(state._scaled_ability_cost(int(definition['cost']))) + ' ' + tr('想象力'), FC['cost']),
-
-
-                    ('　·　' + tr('冷却 {n} 回合', n=cooldown), FC['cooldown']) if cooldown else ''),
-
-
-                context_count + offset,
-
-
-            )
-
-
-            if self.details_expanded:
-
-
-                add(Text(f"    {tr(definition['description'])}", style=PANEL_MUTED))
-
-
-            if selected and preview is not None:
-
-
-                preview_anchor = len(lines)
-
-
-        if preview is not None and preview_anchor is not None:
-
-
-            rows = []
-
-
-            for offset, line in enumerate(preview.lines):
-
-
-                body = Text(line, style=f"bold {FC['word']}" if offset == 0 else PANEL_MUTED)
-
-
-                rows.extend(body.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False))
-
-
-            lines[preview_anchor:preview_anchor] = rows
-
-
-            row_indices[preview_anchor:preview_anchor] = [-1] * len(rows)
+        # —— 使用预览块（2026-10-24 重构：选中构想的具体施放说明，ZONE_CAST_PREVIEW）——
+        # 取代旧的「地形预览钉在选中行下面」：预览集中成第二块，写清这一发
+        # 怎么放、形态射程、花多少；地形预览（§15.6）并入块尾。
+        add(zone_strip(tr("—— 使用预览 ——"), width + 4, color=FC['word']))
+        selected_ability = None
+        if abilities:
+            sel = self.panel_selection - context_count
+            selected_ability = abilities[sel] if 0 <= sel < len(abilities) else abilities[0]
+        if selected_ability is None:
+            add(paper_pad(Text(tr("习得构想后，这里显示选中一发的形态与施放流程。"), PANEL_MUTED),
+                          ZONE_CAST_PREVIEW, width + 4))
+        else:
+            definition = ABILITY_DEFINITIONS[selected_ability]
+            cooldown = state.ability_cooldowns.get(selected_ability, 0)
+            from ..core.combat_constructs import is_combat
+            from ..core.ability_targeting import is_targeted
+            head = Text.assemble(
+                (tr(definition['name']), 'bold ' + FC['word']),
+                ('  ' + str(state._scaled_ability_cost(int(definition['cost']))) + ' ' + tr('想象力'), FC['cost']),
+                ('　·　' + tr('冷却 {n} 回合', n=cooldown), FC['cooldown']) if cooldown else '')
+            for wrapped in head.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
+                add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
+            combat = definition.get('combat') or {}
+            if combat:
+                forms = {'melee': tr('近战'), 'launch': tr('弹道'), 'throw': tr('投掷'),
+                         'area': tr('范围'), 'blink': tr('位移')}
+                detail = Text(tr('形态') + ' ' + forms.get(str(combat.get('form')), str(combat.get('form'))),
+                              style=FC['grammar'])
+                if combat.get('range') is not None:
+                    detail.append(' · ' + tr('射程') + ' ' + str(combat['range']), style=FC['range'])
+                if combat.get('targeting'):
+                    detail.append(' · ' + tr('目标') + ' ' + tr(str(combat['targeting'])), style=FC['category'])
+                if combat.get('sound'):
+                    detail.append(' · ' + tr('声响') + ' ' + str(combat['sound']), style=FC['noise'])
+                for wrapped in detail.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
+                    add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
+            # 施放流程按真实分支写（_activate_panel_selection 的口径）：战斗/选点
+            # 类先零消耗瞄准、确认才支付；其余立即施放。
+            flow = (tr('Enter/左键 进入零消耗瞄准，确认时才支付。')
+                    if is_combat(selected_ability) or is_targeted(selected_ability)
+                    else tr('Enter/左键 立即施放。'))
+            add(paper_pad(Text(flow, style=FC['windup']), ZONE_CAST_PREVIEW, width + 4))
+            for wrapped in Text(tr(definition['description']), PANEL_MUTED).wrap(
+                    _WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
+                add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
+            if preview is not None:
+                for line_offset, line in enumerate(preview.lines):
+                    body = Text(line, style=f"bold {FC['word']}" if line_offset == 0 else PANEL_MUTED)
+                    for wrapped in body.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
+                        add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
 
 
         identity_abilities = state.identity_abilities()
@@ -2576,7 +2949,7 @@ class PanelViewMixin:
         if identity_abilities:
 
 
-            add(Text(tr('—— 身份能力 ——'), style=f'bold {FC["identity"]}'))
+            add(zone_strip(tr('—— 身份能力 ——'), width + 4, color=FC['identity']))
 
 
         for offset, ability in enumerate(identity_abilities):
@@ -2621,7 +2994,7 @@ class PanelViewMixin:
         if sentence_options:
 
 
-            add(Text(tr('—— 装备语句 ——'), style=f'bold {FC["identity"]}'))
+            add(zone_strip(tr('—— 装备语句 ——'), width + 4, color=FC['identity']))
 
 
         for offset, option in enumerate(sentence_options):
@@ -2696,7 +3069,7 @@ class PanelViewMixin:
             # 但渲染放在构想之后，▶ 标记与选中序号始终一一对应。
 
 
-            add(Text(f"{tr('—— 目标操作 ——')} {self.context_menu_target}", style=f"bold {FC['condition']}"))
+            add(zone_strip(f"{tr('—— 目标操作 ——')} {self.context_menu_target}", width + 4, color=FC['condition']))
 
 
             for offset, action in enumerate(self._actions_for(self.context_menu_target)):
@@ -2742,93 +3115,84 @@ class PanelViewMixin:
 
 
     def _fire_actions_lines(self, state: GameState) -> tuple[list[Text], list[int]]:
-        """操作界面·发射分层：当前来源、各来源余量与换弹口径（只读）。"""
+        """Selectable sources, one current supply block, then contextual controls."""
         from ..core.content import ITEM_DEFINITIONS
-        from ..core.firing_sources import LEGACY_BASIC_ID, LEGACY_BASIC_NAME, collect_firing_sources
-        from .firing_presentation import (current_resource_text, current_source,
-                                          equipment_resource_text, magazine_resource_text,
-                                          reload_status)
-
-        lines: list[Text] = []
-        row_indices: list[int] = []
-        width = max(1, self.query_one("#panel").content_size.width - 4)
-
-        def add(line: Text, row_index: int = -1) -> None:
-            for wrapped in line.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                lines.append(wrapped)
-                row_indices.append(row_index)
-
-        name, resource = current_source(self)
-        head = Text(tr("发射") + "  ", style=f"bold {FC['grammar']}")
-        head.append(tr("当前发射源"), style=FC["label"])
-        add(head)
-        summary = Text("  ")
-        summary.append(tr(name), style=FC["word"])
-        if resource:
-            summary.append(" · ", style=FC["count"])
-            summary.append(tr(resource), style=FC["count"])
-        current = current_resource_text(self)
-        if current.plain:
-            summary.append(" · ", style=FC["count"])
-            summary.append_text(current)
-        add(summary)
-        add(Text(tr("—— 发射来源 ——"), style=f"bold {FC['word']}"))
+        from ..core.firing_sources import collect_firing_sources, equipment_emitters, legacy_basic_view
+        from .firing_presentation import equipment_resource_text, reload_status
         sources = collect_firing_sources(state)
+        width = max(8, self.query_one('#panel').content_size.width)
+        lines, rows = [], []
+
+        def add(value='', index=-1, style=PANEL_MUTED):
+            line = value.copy() if isinstance(value, Text) else Text(value, style=style)
+            line.truncate(width, overflow='ellipsis')
+            lines.append(line)
+            rows.append(index)
+
+        def name(source):
+            return ' + '.join(tr(LEGACY_BASIC_NAME) if key == LEGACY_BASIC_ID else
+                tr(ITEM_DEFINITIONS.get(key, {}).get('name', key))
+                for key in source.definition_ids) or tr('聚合弹')
+
+        # Reserve supply and controls before spending short-panel rows on the list.
+        compact = self.query_one('#panel').content_size.height < 14
+        if not compact:
+            add(tr('发射来源'), style=f"bold {FC['word']}")
         if not sources:
-            add(Text(tr("尚未解锁任何发射来源。"), style=PANEL_MUTED))
-        for source in sources:
-            line = Text("  ")
-            kind = {"equipment": tr("装备"), "legacy": tr("旧档继承"),
-                    "aggregate": tr("聚合弹"), "item": tr("一次性")}.get(source.kind, source.kind)
-            line.append(kind, style=FC["label"])
-            line.append(" · ", style=FC["label"])
-            if source.definition_ids:
-                names = [tr(LEGACY_BASIC_NAME) if definition_id == LEGACY_BASIC_ID
-                         else tr(ITEM_DEFINITIONS.get(definition_id, {}).get("name", definition_id))
-                         for definition_id in source.definition_ids]
-                line.append(" + ".join(names), style=FC["word"])
-            else:
-                line.append(tr("聚合弹"), style=FC["word"])
-            if source.kind == "equipment":
-                line.append(" · ", style=FC["count"])
-                line.append_text(equipment_resource_text(
-                    state, dict(kind=source.action_kind, key=source.choice_key)))
-            elif source.count is not None:
-                line.append(f" ×{source.count}", style=FC["count"])
-            if not source.can_fire:
-                line.append(" · " + tr(source.reason or "当前不可发射"), style=FC["condition"])
-            add(line)
-        add(Text(tr("—— 换弹 ——"), style=f"bold {FC['cooldown']}"))
-        weapons = [item for item in state.inventory if getattr(item, "magazine", None) is not None]
-        if not weapons:
-            add(Text(tr("没有可换弹的武器。"), style=PANEL_MUTED))
-        for item in weapons:
-            line = Text("  ")
-            line.append(tr(item.name), style=item_name_color(item))
-            line.append("  ", style=FC["label"])
-            line.append_text(magazine_resource_text(item, unicode=self._symbol_mode() != "ascii"))
-            status, blocked = reload_status(state, item)
-            if status:
-                line.append(" · " + status, style=FC["condition"] if blocked else FC["count"])
-            add(line)
-        add(Text(tr("F 进入发射瞄准 · Tab 切换来源 · R 换弹 · 发射按真实弹匣结算。"),
-                 style=PANEL_MUTED))
-        return lines, row_indices
-
-
-    def _tamper_sentence_for_actions(self, state: GameState):
-        """简化篡改页用的目标句：与 C 键同一套收集/兜底口径（只读）。"""
-        from ..core.tamper_world import collect_sentence, nearest_sentence, sentence_word_ids
-        sentence = collect_sentence(state, pinned=getattr(self, "pinned_target", None),
-                                    hover=getattr(self, "hover_cell", None),
-                                    facing=self.facing)
-        if sentence is None or not sentence_word_ids(sentence, state):
-            sentence = nearest_sentence(state)
-        return sentence
+            add(tr('尚未解锁任何发射来源。'))
+            return lines, rows
+        selected = min(max(0, self.panel_selection), len(sources) - 1)
+        visible_sources = list(enumerate(sources))
+        if compact:
+            current = sources[selected]
+            reserved = 1 + int(current.kind in ('equipment', 'legacy')) + int(not current.can_fire)
+            budget = max(1, self._portent_viewport_rows() - reserved)
+            start = min(max(0, selected - budget // 2), max(0, len(sources) - budget))
+            visible_sources = visible_sources[start:start + budget]
+        for index, source in visible_sources:
+            marker = '▶ ' if index == selected else '  '
+            suffix = f' ×{source.count}' if source.count is not None else ''
+            label = Text(name(source), style=FC['word'])
+            label.truncate(max(1, width - 2 - cell_len(suffix)), overflow='ellipsis')
+            add(Text.assemble((marker, FC['grammar']), label, (suffix, FC['count'])), index)
+        source = sources[selected]
+        if not compact:
+            add()
+            add(tr('当前发射源'), style=f"bold {FC['word']}")
+            add(name(source), style=FC['word'])
+        if source.kind in ('equipment', 'legacy'):
+            add(equipment_resource_text(state, dict(kind=source.action_kind, key=source.choice_key)))
+            weapons = ([legacy_basic_view(state)] if source.kind == 'legacy' else
+                       equipment_emitters(state, source.action_kind, source.choice_key))
+            for item in weapons:
+                if item is not None:
+                    status, blocked = reload_status(state, item)
+                    if status:
+                        add(status, style=FC['condition'] if blocked else FC['cooldown'])
+                        if compact:
+                            break
+        else:
+            add(tr('余量 {count}', count=source.count), style=FC['count'])
+        if not source.can_fire:
+            add(tr(source.reason or '当前不可发射'), style=FC['condition'])
+        # 键位提示统一放在右栏底部 #panel-help，与完整键位表同处；正文不再
+        # 悬浮一行操作提示。
+        return lines, rows
 
 
     def _tamper_actions_lines(self, state: GameState) -> tuple[list[Text], list[int]]:
-        """操作界面·篡改分层：简化摘要；Enter/点击才开左侧完整界面。"""
+        """操作界面·篡改页：编辑器在前就是完整右栏界面，否则只留兜底空状态。
+
+        2026-10-28 玩家定稿：右栏「操作·篡改」就是完整的篡改编辑器（host ==
+        'side'，见 ui/tamper_world.py::_world_tamper_side_lines）；提交成功后
+        编辑器会按新环境原地重建，不关闭、也不再回退到旧版「简版摘要页」
+        （目标/原句/可改写对象那套渲染已移除）。编辑器不在时只说明当前没有
+        可改写目标，并保留行 0 的 ``tamper:open`` 重试入口（Enter/左键都能
+        重新打开右栏编辑器）。编辑器只是被搬到地图浮层时给一句状态与回栏入口。
+        """
+        editor = getattr(self, "world_tamper_editor", None)
+        if editor is not None and getattr(editor, "host", "map") == "side":
+            return self._world_tamper_side_lines(state)
         lines: list[Text] = []
         row_indices: list[int] = []
         width = max(1, self.query_one("#panel").content_size.width - 4)
@@ -2838,25 +3202,16 @@ class PanelViewMixin:
                 lines.append(wrapped)
                 row_indices.append(row_index)
 
-        add(Text.assemble((tr("篡改") + "  ", f"bold {FC['condition']}"),
-                          (tr("简版"), PANEL_MUTED)))
-        sentence = self._tamper_sentence_for_actions(state)
-        if sentence is None:
+        if editor is None:
             add(Text(tr("视野里没有可以改写的名字。"), style=PANEL_MUTED))
-            add(Text(tr("C 键仍可直接打开左侧篡改界面。"), style=PANEL_MUTED))
-            return lines, row_indices
-        slot = sentence.slots[0] if sentence.slots else None
-        if slot is not None:
-            goal = Text(tr("目标："), style=PANEL_MUTED)
-            goal.append(tr(slot.display_name()), style=slot.color)
-            add(goal)
-        add(Text.assemble((tr("原句："), PANEL_MUTED), (tr(sentence.text), FC["text"])))
-        add(Text(tr("可改写对象 {n} 处；完整字词、条件与预览请在左侧界面查看。",
-                    n=max(1, len(sentence.slots))), style=PANEL_MUTED))
+            add(Text(tr("按 C 打开地图侧篡改面板 / Enter 重试"), style=PANEL_MUTED))
+            label = tr("重试：打开篡改界面")
+        else:
+            add(Text(tr("正在地图侧篡改。"), style=PANEL_MUTED))
+            label = tr("回到右栏继续改")
         selected = self.panel_selection == 0
-        add(Text(("▶ " if selected else "  ") + tr("打开篡改界面（左侧）"),
+        add(Text(("▶ " if selected else "  ") + label,
                  style=f"bold underline {FC['condition']}" if selected else FC["condition"]), 0)
-        add(Text(tr("C 键同样只打开左侧界面，不切换右侧面板。"), style=PANEL_MUTED))
         return lines, row_indices
 
 
@@ -2881,7 +3236,9 @@ class PanelViewMixin:
         if (self.panel_mode == "world_tamper"
 
 
-                or (getattr(self, "world_tamper_editor", None) is not None and index >= 100)):
+                or (getattr(self, "world_tamper_editor", None) is not None
+                    and self.panel_mode == 'actions' and self._panel_subpage_id() == 'tamper'
+                    and getattr(self.world_tamper_editor, "host", "map") == "side")):
 
 
             # 行语义序号：0..n-1 = 字词；100+i = 目标槽；100+槽数+i = 条件行
@@ -2909,6 +3266,12 @@ class PanelViewMixin:
 
 
                 return 'details:toggle'
+
+
+            if index == 903:
+
+
+                return 'tamper:map'
 
 
             if index >= 1000:
@@ -3003,7 +3366,9 @@ class PanelViewMixin:
             if page == "tamper":
                 return "tamper:open" if index == 0 else None
             if page == "fire":
-                return None
+                from ..core.firing_sources import collect_firing_sources
+                sources = collect_firing_sources(state)
+                return f'firing:{sources[index].key}' if 0 <= index < len(sources) else None
             # 构想页：目标操作条目排在构想之前（与渲染/计数同一口径）。
             context = len(self._actions_for(self.context_menu_target)) if self.context_menu_target else 0
             if 0 <= index < context:
@@ -3027,7 +3392,17 @@ class PanelViewMixin:
     def _entry_expanded(self, key: str | None) -> bool:
 
 
-        """单个条目的注释是否展开：反斜杠键全局开，或该条目被左键单独展开。"""
+        """单个条目的注释是否展开：反斜杠键全局开，或该条目被左键单独展开。
+
+        少字模式下即使全局展开也默认收起，只保留玩家手动展开的那一条
+        （_terse_details_manual 由输入层在反斜杠键上置位）。
+        """
+
+
+        if self._terse_details_collapsed():
+
+
+            return key is not None and self.expanded_key == key
 
 
         if self.details_expanded:
@@ -3210,7 +3585,34 @@ class PanelViewMixin:
             self.item_menu_target = items[index].instance_id
 
 
-            self.panel_selection = index
+            self._menu_hover_row = None  # 新菜单从无悬停开始，不继承上一张菜单的行号
+
+
+            # 选中项必须与右键的那一行一致：携带意象页的 panel_selection
+
+
+            # 是「列表序号」，行囊页才是真实下标（2026-10-26 玩家反馈：右键
+
+
+            # 查看物品后选中项跳到别的条目）。
+
+
+            if self.panel_mode == "equipment":
+
+
+                equipment_indices = [i for i, entry in enumerate(items) if entry.slot]
+
+
+                if index in equipment_indices:
+
+
+                    self.panel_selection = equipment_indices.index(index)
+
+
+            else:
+
+
+                self.panel_selection = index
 
 
             self.refresh_view()
@@ -3385,141 +3787,63 @@ class PanelViewMixin:
 
 
     def _item_menu_text(self, state: GameState) -> Text:
-
-
         """左侧物品菜单：数量、介绍与「键位 操作名」功能按钮。
 
-
-
-
-
-        物品名称整行居中；功能按钮行悬停时叠粗体与下划线（第十九节 §2 禁止整行反色），
-
-
-        与右侧面板键盘选中的视觉效果一致。
-
-
-        行映射存入 _menu_rows（与右面板 _panel_rows 互不覆盖），
-
-
-        功能行的值是会话动作 id，左键点击直接执行。
-
-
+        功能按钮行悬停时叠粗体与下划线（禁止整行反色），与右侧面板视觉一致。
+        行映射存入 _menu_rows，功能行的值是会话动作 id，左键点击直接执行。
+        映射按**实际正文宽度**逐物理行登记：长介绍被折成两行时也登记两个 -1，
+        功能行下标不会漂移。
         """
-
-
         item = next(
-
-
             (entry for entry in state.inventory if entry.instance_id == self.item_menu_target),
-
-
             None,
-
-
         )
-
-
-        text = Text.assemble((tr("物品"), f"bold {FC['condition']}"))
-
-
-        self._menu_rows = [-1]
-
-
+        width = max(8, self._overlay_content_width())
+        logical: list[tuple[Text, int | str]] = [
+            (Text.assemble((tr("物品"), f"bold {FC['condition']}")), -1)
+        ]
         if item is None:
-
-
-            text.append("\n" + tr("物品已不在行囊中。"), PANEL_MUTED)
-
-
-            self._menu_rows.append(-1)
-
-
-            return text
-
+            logical.append((Text(tr("物品已不在行囊中。"), PANEL_MUTED), -1))
+            return self._render_menu_lines(logical, width)
 
         equipped = " *" if item.instance_id in state.equipped.values() else ""
-
-
-        # 名称行居中：按菜单实际内容宽度补左留白（宽字符按 2 列计）。
-
-
         name_line = f"{tr(item.name)} ×{item.quantity}{equipped}"
-
-
-        name_padding = max(0, (max(8, self._item_menu_width()) - cell_len(name_line)) // 2)
-
-
-        # 名称行 = 物品自己的定义色（2026-09-21：不同物品不同颜色）。
-
-
-        text.append('\n' + ' ' * name_padding)
-
-
-        text.append(tr(item.name), style='bold ' + item_name_color(item))
-
-
-        text.append(f' ×{item.quantity}', style=FC['count'])
-
-
+        name_padding = max(0, (width - cell_len(name_line)) // 2)
+        name_text = Text(" " * name_padding)
+        name_text.append(tr(item.name), style="bold " + item_name_color(item))
+        name_text.append(f" ×{item.quantity}", style=FC["count"])
         if equipped:
+            name_text.append(equipped, style=FC["effect"])
+        logical.append((name_text, -1))
 
-
-            text.append(equipped, style=FC['effect'])
-
-
-        self._menu_rows.append(-1)
-
-
-        for chunk in self._split_by_width(_item_description(item, state), max(8, self._item_menu_width() - 4)):
-
-
-            text.append("\n    " + chunk, style=PANEL_MUTED)
-
-
-            self._menu_rows.append(-1)
-
-
-        # 真实发声物品（汽笛／蜂鸣诱饵／带 pulse 的装备）才写发声点与半径；
-
-
-        # 其它物品不加假提示（口径见 core.sound_preview.item_sound_previews）。
-
-
+        for chunk in self._split_by_width(_item_description(item, state), max(4, width - 4)):
+            logical.append((Text("    " + chunk, style=PANEL_MUTED), -1))
+        # 真实发声物品（汽笛／蜂鸣诱饵／带 pulse 的装备）才写发声点与半径。
         for line in _item_sound_lines(state, item):
+            for chunk in self._split_by_width(line, max(4, width - 4)):
+                logical.append((Text("    " + chunk, style=PANEL_MUTED), -1))
 
-
-            for chunk in self._split_by_width(line, max(8, self._item_menu_width() - 4)):
-
-
-                text.append("\n    " + chunk, style=PANEL_MUTED)
-
-
-                self._menu_rows.append(-1)
-
-
-        text.append("\n")
-
-
-        self._menu_rows.append(-1)  # 空行
-
-
+        logical.append((Text(""), -1))  # 空行
         for key, label, action_id in self._item_menu_actions(item):
+            logical.append((Text(f"[{key}] {tr(label)}", style=FC["degree"]), action_id))
+        return self._render_menu_lines(logical, width)
 
-
-            hovered = self._menu_hover_row == len(self._menu_rows)
-
-
-            text.append(f"\n[{key}] {tr(label)}", style=FC['degree'] + (" bold underline" if hovered else ""))
-
-
-            self._menu_rows.append(action_id)
-
-
+    def _render_menu_lines(self, logical: list[tuple[Text, int | str]], width: int) -> Text:
+        """按正文宽度逐物理行渲染左侧菜单，并同步登记 _menu_rows。"""
+        text = Text()
+        self._menu_rows = []
+        for line, row_value in logical:
+            wrapped = line.wrap(_WRAP_CONSOLE, width, overflow="fold", no_wrap=False)
+            if not wrapped:
+                wrapped = [Text("")]
+            for piece in wrapped:
+                if text.plain:
+                    text.append("\n")
+                if isinstance(row_value, str) and self._menu_hover_row == len(self._menu_rows):
+                    piece.stylize("bold underline")
+                text.append_text(piece)
+                self._menu_rows.append(row_value)
         return text
-
-
-
 
 
     def activate_item_menu(self, key: str) -> None:
@@ -5424,10 +5748,20 @@ class PanelViewMixin:
     def _panel_scroll_hint(self, first: int, last: int, total: int) -> str:
 
 
-        """Keep the footer on its own physical row, including narrow English panels."""
+        """Keep the footer on its own physical row, including narrow English panels.
 
 
-        hint = tr("第 {a}-{b}/{c} 行 · 滚轮或 ↑↓ 滚动").format(a=first, b=last, c=total)
+        2026-10-24 纸感分区：滚动提示改「细牛皮条」——调用方以 SCROLL_HINT_STYLE
+        （muted 字 + 通栏 ZONE_STRIP 底）附加样式，这里用 paper_pad 把物理行
+        pad 满行宽。只补尾部空格：行数不变、列起点不变，行命中映射照旧。
+        """
+
+
+        if self._world_tamper_side_active():
+            # 右栏篡改页的 ↑↓ 是选字词，不是滚动；提示必须说这一页真能用的键。
+            hint = tr("第 {a}-{b}/{c} 行 · 滚轮或 PgUp/PgDn 滚动").format(a=first, b=last, c=total)
+        else:
+            hint = tr("第 {a}-{b}/{c} 行 · 滚轮或 ↑↓ 滚动").format(a=first, b=last, c=total)
 
 
         width = self._portent_panel_width()
@@ -5445,7 +5779,7 @@ class PanelViewMixin:
         line.truncate(width, overflow="ellipsis")
 
 
-        return "\n" + line.plain
+        return "\n" + paper_pad(line, ZONE_STRIP, width).plain
 
 
 
@@ -5923,7 +6257,7 @@ class PanelViewMixin:
     ) -> list[Text]:
 
 
-        """技能的效果/条件注释行（按宽度折行；2026-10-10 补全）。
+        """技能说明段：效果与条件合成一段不带标签的普通句子（按宽度折行）。
 
 
 
@@ -5950,16 +6284,10 @@ class PanelViewMixin:
         lines: list[Text] = []
 
 
-        for label, key in (
+        sentences: list[str] = []
 
 
-            ("效果", "effect_text"),
-
-
-            ("条件", "condition_text"),
-
-
-        ):
+        for key in ("effect_text", "condition_text"):
 
 
             text = str(summary.get(key, "") or "").strip()
@@ -5980,10 +6308,37 @@ class PanelViewMixin:
                 continue
 
 
-            header = tr(label) + "："
+            if get_language() != 'zh':
 
 
-            for chunk in self._split_by_width(header + translated, max(8, width - 6)):
+                if translated[-1] not in ".!?":
+
+
+                    translated += "."
+
+
+                sentences.append(translated)
+
+
+            else:
+
+
+                if translated[-1] not in "。！？；":
+
+
+                    translated += "。"
+
+
+                sentences.append(translated)
+
+
+        joined = " ".join(sentences) if get_language() != 'zh' else "".join(sentences)
+
+
+        if joined:
+
+
+            for chunk in self._split_by_width(joined, max(8, width - 6)):
 
 
                 lines.append(Text(indent + chunk, style=style))
@@ -6224,42 +6579,34 @@ class PanelViewMixin:
 
 
     def _overlay_content_width(self) -> int:
+        """左侧浮层的**正文**可用列数。
 
-
-        if getattr(self,'_inspection_full_cell',False):
-
-
-            width=self.query_one('#signal-detail-text').content_size.width
-
-
-            scroll_width=self.query_one('#signal-detail-scroll').content_size.width
-
-
+        旧实现返回 ``_overlay_layout_size()[0]``（外框上限），比真实正文宽了
+        边框 2 列 + 左右内边距 4 列。按外框宽度预折行后，Textual 还会再折一次，
+        可视行数比逻辑行数多，鼠标行→对象就整体错位（2026-10-26 玩家反馈：
+        左侧悬浮页鼠标位置和选中项对不上）。这里直接按 #map-pane 内容宽扣掉
+        浮层 gutter，返回真正能放下文字的列数。
+        """
+        if getattr(self, '_inspection_full_cell', False):
+            width = self.query_one('#signal-detail-text').content_size.width
+            scroll_width = self.query_one('#signal-detail-scroll').content_size.width
             if width and scroll_width:
-
-
                 # Reserve the vertical scrollbar before Textual decides that
-
-
                 # the newly rendered full detail needs it, avoiding reflow drift.
-
-
-                return max(8,min(width,scroll_width-1))
-
-
+                return max(8, min(width, scroll_width - 1))
         try:
-
-
-            return self._overlay_layout_size()[0]
-
-
+            pane = self.query_one('#map-pane')
+            pane_width = pane.content_size.width
+            if pane_width > 0:
+                # 非对话浮层：round 边框 2 列 + padding 左右各 2 列 = 6 列 gutter。
+                # _fit_map_overlay 把外框上限钳在 pane_width - 4，正文即再减 6。
+                return max(8, pane_width - 10)
         except Exception:
-
-
-            return self._portent_panel_width()
-
-
-
+            pass
+        try:
+            return max(8, self._overlay_layout_size()[0] - 6)
+        except Exception:
+            return max(8, self._portent_panel_width() - 6)
 
 
     def _anomaly_detail_viewport(self) -> int:
@@ -6365,7 +6712,7 @@ class PanelViewMixin:
         description = tr(definition.get("description", ""))
 
 
-        if description and self.details_expanded:
+        if description and self._details_visible():
 
 
             # 介绍与观测面板同规矩：归在「注释」里，\ 键展开时才出现，
@@ -6536,13 +6883,14 @@ class PanelViewMixin:
                     entry.append(tr(portent["name"]), style=PORTENT_STYLE)
 
 
-                    entry.append(f"（{portent['remaining']} {tr('回合')}）", style=PANEL_MUTED)
+                    entry.append(tr('（{n} 回合）', n=portent['remaining']),
+                                 style=PANEL_MUTED)
 
 
                     lines.append(entry); selectable.append(True)
 
 
-                    if self.details_expanded:
+                    if self._details_visible():
 
 
                         for chunk in self._split_by_width(tr(portent["effect"]), max(8, width - 8)):
@@ -6571,6 +6919,16 @@ class PanelViewMixin:
 
 
 
+
+        # 长行会由 Textual 在浮层里再折成多个物理行；先把物理行显式摊平，
+        # 否则 _detail_line_count 比实际显示行少，鼠标行→条目整体错位。
+        physical_lines: list[Text] = []
+        physical_selectable: list[bool] = []
+        for line, selected in zip(lines, selectable):
+            wrapped = rich_lines(line, max(8, width)) or [Text("")]
+            physical_lines.extend(wrapped)
+            physical_selectable.extend([selected] * len(wrapped))
+        lines, selectable = physical_lines, physical_selectable
 
         self._detail_line_count = len(lines)
 
@@ -6885,6 +7243,10 @@ class PanelViewMixin:
 
 
         self.pickup_target = target
+        # 2026-10-28：拾取面板是左侧覆盖面板，打开即把键盘焦点交给它。
+        # 旧实现只设 pickup_target 不改 cursor_zone；焦点仍在地图时，下一次
+        # G/↑↓ 会先被「面板之外的按键只关面板」兜底吃掉，面板看起来按键无反应。
+        self.cursor_zone = 'overlay'
 
 
         self.pickup_picked = set()
@@ -7679,13 +8041,11 @@ class PanelViewMixin:
                     band("液体", "液态记忆")
                 if cell.gas > 0:
                     band("空中", "弥散印象")
-            add(Text("  " + tr("来源：未探索"), style=PANEL_MUTED))
             return
         if info.status == "always_visible":
             category = info.sources[-1] if info.sources else ""
             band("表面", self._known_wall_name(info) if (info.solid and info.wall_kind) else "?")
             add(Text("  " + tr("始终可见：") + tr(category), style=PANEL_MUTED))
-            add(Text("  " + tr("来源：始终可见"), style=PANEL_MUTED))
             return
         if info.site:
             add(Text("  " + tr("已发现地点：") + tr(info.site), style=FC['degree']))
@@ -7696,8 +8056,6 @@ class PanelViewMixin:
         band("空中", "?")
         if info.status == "memory":
             add(Text("  " + tr("实时变化不会改写记忆；再次看见才会更新。"), style=PANEL_MUTED))
-        add(Text("  " + (tr("来源：记忆") if info.status == "memory" else tr("来源：全图地形")),
-                 style=PANEL_MUTED))
         hazard = self._hazard_memory_line(state, info.x, info.y, info.status)
         if hazard:
             add(Text("  " + hazard, style=PANEL_MUTED))
@@ -7817,6 +8175,8 @@ class PanelViewMixin:
             shown, disguised = cell_detail.display_identity(state, entity)
 
 
+            definition = ANOMALY_DEFINITIONS.get(getattr(entity, "catalog_id", ""), {})
+            kind = definition.get("anomaly_kind", "")
             head = Text("  ")
 
 
@@ -7826,16 +8186,29 @@ class PanelViewMixin:
             head.append(shown, style=FC['degree'])
 
 
+            if kind:
+
+
+                head.append(tr("（{kind}）", kind=tr(kind)), style=PANEL_MUTED)
+
+
             if marker:
 
 
                 head.append(marker, style=PANEL_MUTED)
 
 
-            head.append(f"  {tr(entity.relation)}", style=PANEL_MUTED)
+            # 常态是「失控意识」不重复写；只有中立/友方与特殊感知来源才补注。
+            if entity.relation not in ("失控意识", ""):
 
 
-            head.append(" · " + tr(entry["sense"]), style=PANEL_MUTED)
+                head.append(" · " + tr(entity.relation), style=PANEL_MUTED)
+
+
+            if entry["sense"] != cell_detail.SENSE_SIGHT:
+
+
+                head.append(" · " + tr(entry["sense"]), style=PANEL_MUTED)
 
 
             if disguised:
@@ -7871,28 +8244,18 @@ class PanelViewMixin:
             maximum = str(bounds["max"]) if bounds["confirmed"] else f"{bounds['max']}?"
 
 
-            integrity_line = Text("   ")
-
-
-            integrity_line.append(tr("完整度") + " ", style=PANEL_MUTED)
-
-
-            integrity_line.append(
-
-
-                f"{bounds['current']}/{maximum}",
-
-
-                style=PANEL_DANGER if bounds["current"] * 2 <= bounds["max"] else FC['effect'],
-
-
-            )
-
-
-            integrity_line.append(" · " + tr("上限：{source}", source=tr(bounds["source"])),
-
-
-                                  style=PANEL_MUTED)
+            # 一行读全：视野 / 听觉 / 完整度 / 状态；上限来源不再写给玩家。
+            from ..data.perception import perception_profile
+            perception = perception_profile(getattr(entity, "catalog_id", ""))
+            vision = (perception.vision if perception and perception.vision is not None
+                      else definition.get("vision"))
+            stats: list[tuple[str, str, str]] = []
+            if vision is not None:
+                stats.append((tr("视野"), str(vision), PANEL_MUTED))
+            hearing = perception.hearing if perception else None
+            stats.append((tr("听觉"), "—" if hearing is None else str(hearing), PANEL_MUTED))
+            stats.append((tr("完整度"), f"{bounds['current']}/{maximum}",
+                          PANEL_DANGER if bounds["current"] * 2 <= bounds["max"] else FC['effect']))
 
 
             from ..data.semantic_icons import semantic_icon
@@ -7900,21 +8263,26 @@ class PanelViewMixin:
                 "未察觉": "alert.unaware", "怀疑": "alert.suspicious",
                 "警戒": "alert.wary", "追踪": "alert.tracking",
             }.get(entity.alert_state, ""))
-            if alert_icon:
-                integrity_line.append(alert_icon + " ")
-            integrity_line.append(" · " + tr(entity.alert_state),
+            alert_value = (alert_icon + " " if alert_icon else "") + tr(entity.alert_state)
+            stats.append((tr("状态"), alert_value,
+                          ALERT_STYLES.get(entity.alert_state, PANEL_MUTED)))
 
 
-                                  style=ALERT_STYLES.get(entity.alert_state, PANEL_MUTED))
+            stat_line = Text("   ")
+            for position, (label, value, style) in enumerate(stats):
+                if position:
+                    stat_line.append(" · ", style=PANEL_MUTED)
+                stat_line.append(label + " ", style=PANEL_MUTED)
+                stat_line.append(value, style=style)
 
 
             # 与悬停同一份切换事实：右键详情与键盘观察读到同一句说明。
             from .anomaly_intent_marks import intent_text
             switched = intent_text(state, entity.x, entity.y)
             if switched:
-                integrity_line.append(" · " + tr("刚才切换：{label}", label=tr(switched[1])),
+                stat_line.append(" · " + tr("刚才切换：{label}", label=tr(switched[1])),
                                       style=PANEL_MUTED)
-            push(integrity_line, True, entity)
+            push(stat_line, True, entity)
 
 
 
@@ -8342,6 +8710,13 @@ class PanelViewMixin:
             }.get(fog_info.status if fog_info is not None else "", tr("视野外"))
             title.append("  " + status_label, style=PANEL_MUTED)
         add(title)
+        # 环境总览读数（docs 2026-10-26 §13.2）：格子详情管「这一格」，这里补
+        # 「这一层还剩什么」。只在有实时视野时显示——未探索层不该透出还剩几株。
+        if live:
+            from ..core import plant_survey
+            overview = plant_survey.summary_line(state)
+            if overview:
+                add(Text("  " + overview, style=PANEL_MUTED))
         # 提示区（§16.3 末段）：事件属于任务提示，固定在标题下，不混进物理层序。
         if live:
             for event in state.events:
@@ -8387,7 +8762,7 @@ class PanelViewMixin:
             from ..materials.descriptions import material_effect_description
             detail = material_effect_description(floor_name)
             for chunk in self._split_by_width(detail, intro_width) if detail else ():
-                add(Text('      ' + tr('作用：') + chunk, style=PANEL_MUTED))
+                add(Text('      ' + chunk, style=PANEL_MUTED))
         if not live:
             # 关闭地图记忆的旧口径：地板与记忆中的墙体可知，其余分层以 ? 占位。
             self._cd_creature_rows(state, creatures, lines, selectable, width, targets)
@@ -8479,6 +8854,13 @@ class PanelViewMixin:
                 ) if part
             )
             row("植物", plant.name, plant.color, lines, selectable, width, extra=traits)
+            # 常驻效果与「踩踏／拔除会放出什么」必须在触发前读得到（§3.4.4）：
+            # 这里与篡改预览共用 core.plant_notes 的同一份文案。
+            from ..core.plant_notes import plant_lines
+            for note in plant_lines(
+                plant, depleted=plant_spent(cell.plant, cell.plant_state),
+            ):
+                add(Text("      " + note, style=PANEL_MUTED))
         if cell.flame > 0:
             line = Text("  ")
             line.append(tr("火焰") + " ", style=PANEL_MUTED)
@@ -8803,7 +9185,8 @@ class PanelViewMixin:
             text.append_text(strip_line)
             text.append("\n")
             rows.append(-3)
-        text.append_text(header)
+        header.stylize("bold underline")
+        text.append_text(paper_pad(header, ZONE_STRIP, self._portent_panel_width()))
         rows.append(-1)
         for offset in range(start, min(len(lines), start + viewport)):
             text.append("\n")
@@ -8812,7 +9195,7 @@ class PanelViewMixin:
         if len(lines) > viewport:
             last = min(len(lines), start + viewport)
             text.append(self._panel_scroll_hint(start + 1, last, len(lines)),
-                        style=PORTENT_HINT_STYLE)
+                        style=SCROLL_HINT_STYLE)
             rows.append(-1)
         if footer is not None:
             text.append("\n")
@@ -8846,7 +9229,28 @@ class PanelViewMixin:
             return self._active_tasks_footer(state)
 
 
+        # 2026-10-24 玩家反馈：构想/环境/发射的键位行不再留在正文下方，
+        # 统一交给右栏底部 #panel-help（紧邻完整键位表入口）。
         return None
+
+
+    def _panel_context_hint(self) -> str:
+        """右栏底部 #panel-help 本页键位提示；空串走「完整键位表」默认文案。"""
+        if self.home_mode:
+            return ''
+        # 瞄准/语句瞄准时提示行回到「完整键位表」：本页键位此时不适用，
+        # 也不能顶掉 Alt+H 入口。
+        if self.aiming or self.sentence_aim is not None:
+            return ''
+        if self.panel_mode == 'actions':
+            page = self._panel_subpage_id()
+            if page == 'constructs':
+                return tr('↑↓ 选构想 · Enter 施放 · Esc 返回 · 键位表')
+            if page == 'fire':
+                return tr('↑↓ 选来源 · Enter 设为当前 · F 瞄准 · R 换弹 · 键位表')
+        if self.panel_mode == 'nearby':
+            return tr('Enter 详情 · F3/Alt+V 分层 · ↑↓ 选异象 · 键位表')
+        return ''
 
 
 
@@ -9247,7 +9651,7 @@ class PanelViewMixin:
             header = Text.assemble(
 
 
-                (tr("意识行囊"), f"bold {FC['condition']}"),
+                ('PACK' if self._terse_active() else tr("意识行囊"), f"bold {FC['condition']}"),
 
 
                 (f"  {state.inventory_used}/{state.inventory_capacity}", FC['text']),
@@ -9259,7 +9663,7 @@ class PanelViewMixin:
             visible = self._inventory_visible_indices() if hasattr(self, '_inventory_visible_indices') else range(len(state.inventory))
 
 
-            if hasattr(self, 'inventory_query'):
+            if getattr(self, 'inventory_query', '') or getattr(self, 'inventory_sort', '原序') != '原序':
 
 
                 add(Text.assemble((tr('搜索')+'：',FC['label']),
@@ -9274,9 +9678,11 @@ class PanelViewMixin:
                     (tr(self.inventory_sort),FC['position'])))
 
 
-            add(Text(tr('结果：{n}', n=len(visible)), style=FC['count']))
+            if getattr(self, 'inventory_query', ''):
+                add(Text(tr('结果：{n}', n=len(visible)), style=FC['count']))
             if not visible:
-                add(Text(tr('没有匹配物品；点击上方 × 清除搜索，或切换分类。'), style=PANEL_MUTED))
+                add(Text(tr('没有匹配物品；按 Alt+F 修改搜索，或切换分类。')
+                         if getattr(self, 'inventory_query', '') else tr('（空）'), style=PANEL_MUTED))
             for index in visible:
 
 
@@ -9334,7 +9740,7 @@ class PanelViewMixin:
                 add(line, index)
 
 
-                if not amnesia and (selected or self._entry_expanded(item.instance_id)):
+                if not amnesia and self._entry_expanded(item.instance_id):
 
 
                     for chunk in self._split_by_width(_item_description(item, state), width):
@@ -9438,7 +9844,9 @@ class PanelViewMixin:
                 for row in board_glyphs():
 
 
-                    add(row)
+                    # -4 = 盘面示意图：鼠标左键点它直接进入联想盘编辑器
+                    # （2026-10-24 玩家定稿：页签行不再挂「盘」按钮）。
+                    add(row, -4)
 
 
                 if board.pieces:
@@ -9489,7 +9897,7 @@ class PanelViewMixin:
                 hint.truncate(max(1, width - 4), overflow="ellipsis")
 
 
-                add(Text.assemble(("└ ", PANEL_MUTED), hint, (" ┘", PANEL_MUTED)))
+                add(Text.assemble(("└ ", PANEL_MUTED), hint, (" ┘", PANEL_MUTED)), -4)
 
 
                 for position, placement in enumerate(ordered_words):
@@ -9570,7 +9978,7 @@ class PanelViewMixin:
             equipment_indices = [index for index, item in enumerate(state.inventory) if item.slot]
 
 
-            add(Text(tr("行囊中的携带意象："), style=f"bold {FC['condition']}"))
+            add(zone_strip(tr("行囊中的携带意象："), width+4, color=FC["condition"]))
 
 
             if not equipment_indices:
@@ -9812,7 +10220,7 @@ class PanelViewMixin:
                 self._panel_scroll_hint(start + 1, last, total),
 
 
-                style=PORTENT_HINT_STYLE,
+                style=SCROLL_HINT_STYLE,
 
 
             )
@@ -9873,6 +10281,34 @@ class PanelViewMixin:
 
 
 
+
+
+    def _message_body_text(self, message: str) -> Text:
+        """事件记录条目的正文（不含行首 ●／· 点号），与右栏同色同高亮。
+
+        右侧事件记录、左侧透明事件记录、顶部播报都复用这一份取词/染色口径；
+        左侧叠加层要求「除了文字无任何遮挡」，因此点号也由调用方决定是否加。
+        """
+        rendered = Text(message, style=PANEL_MUTED)
+        for entity in self.session.state.enemies:
+            if entity.label in message:
+                color = RELATION_STYLES.get(entity.relation, FC['text'])
+                rendered.highlight_words([entity.label], style=color)
+        for trauma, color in TRAUMA_STYLES.items():
+            if trauma in message:
+                rendered.highlight_words([trauma], style=color)
+        if "现实洞察" in message:
+            rendered.highlight_words(["现实洞察"], style=INSIGHT_STYLE)
+        insight_names = [event["insight_id"] for event in EVENT_DEFINITIONS if event.get("insight_id")]
+        rendered.highlight_words(insight_names, style=INSIGHT_STYLE)
+        for definition in ITEM_DEFINITIONS.values():
+            if definition["name"] in message:
+                # 物品名 = 物品自己的定义色（2026-09-21：不同物品不同颜色）。
+                rendered.highlight_words(
+                    [definition["name"]],
+                    style=definition.get("color") or CATEGORY_STYLES.get(definition["category"], FC['text']),
+                )
+        return rendered
 
 
     def _message_text(self, message: str) -> Text:
@@ -10010,7 +10446,9 @@ class PanelViewMixin:
         cap = int(spec.get("cap", 25))
 
 
-        text.append(tr(item.name) + f"（{sum(item.contents.values())}/{cap}）\n", style=f"bold {FC['condition']}")
+        used = sum(item.contents.values())
+        text.append(tr(item.name) + tr("（{n}/{capacity}）", n=used, capacity=cap) + "\n",
+                    style=f"bold {FC['condition']}")
 
 
         if item.contents:

@@ -448,7 +448,7 @@ def preview(state: Any, record: Any, name: str) -> dict[str, Any]:
     command = find_command(definition or {}, name)
     if command is None:
         return {"ok": False, "failure": tr("这台设施不会做这个。"), "met": []}
-    refresh(state, record)
+    refresh(state, record, emit_visual=False)
     met, failure = evaluate(state, record, command.get("conditions", ()))
     if not failure and command.get("cost"):
         failure = state._check_npc_cost(command["cost"]) or ""
@@ -508,11 +508,23 @@ def operate(state: Any, record: Any, name: str) -> ActionResult:
     if effect.get("type") == "open_gate":
         # 嵌镜是免费的一步：只把门推进「等待支付」并唤出祭品选择面板。真正的代价
         # （三件祭品与一个行动）落在 GameState.confirm_gate_offering——面板确认时才付。
+        was_offered = bool(record.flags.get("offered"))
+        before_state = record.state
         record.flags["offered"] = True
         record.state = "等待支付"
         message = tr("{name}：透镜嵌进灯座，青灯转向你——挑三件会消散的东西。",
                      name=tr(definition["name"]))
         state.messages.append(message)
+        if not was_offered:
+            # 只有「未开启 → 等待支付」这一次真实转移播嵌镜；重复打开等待面板不重播。
+            _emit_visual(state, kind="facility.gate_offer", outcome="entry",
+                         source=_anchor_cell(record), affected_cells=(),
+                         visual_key="fold.travel", tier=1, theme="fold",
+                         source_id=str(record.scene_uid),
+                         facts=_facility_facts(record, definition, name, "offer",
+                                               extra=(("before_state", str(before_state)),
+                                                      ("after_state", str(record.state)),
+                                                      ("actual_amount", 1))))
         return ActionResult(True, message, {"scene": record.scene_uid, "command": name,
                                             "state": record.state,
                                             "lens_offering": record.scene_uid,
@@ -550,6 +562,9 @@ def operate(state: Any, record: Any, name: str) -> ActionResult:
         # 玩家亲手把材料填了回去：§10.2 说的是「还能支持一次操作」，那就该回到可激活。
         record.state = _idle_state(state, record, definition)
     _advance_lifecycle(state, record, definition, command)
+    # 视觉事件在「真实改变 + 生命周期转交」之后、_action_time 之前登记一次；
+    # 失败/拒绝在上面已提前返回，到达这里的事件与刚提交的落点/数量/旗标同源。
+    _emit_command_visual(state, record, definition, command, done, before_state=before)
     facts.record(state, "facility", actor_uid=player_uid(state), target_uid=record.scene_uid,
                  position=_anchor_cell(record), owner_uid=record.scene_uid,
                  cause_uid=f"{definition['definition_id']}#{name}", source_kind="scene",
@@ -772,46 +787,87 @@ def _apply(state: Any, record: Any, command: dict[str, Any],
         x, y = queued["steps"][0]["cell"]
         lit = state._ignite_cell(x, y, int(effect.get("strength", 3)), by_player=True)
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
-        return _result([tr("{name}烧起来了。", name=label)] if lit else [], int(lit))
+        return _result(
+            [tr("{name}烧起来了。", name=label)] if lit else [], int(lit),
+            source=(x, y),
+            cells=((x, y),) if lit else (),
+            facts=(("anchor_key", str(effect.get("key", ""))),),
+            visual=_visual("ignite", visual_key="fx.spark", tier=0, theme="flame") if lit else None)
     if kind == "ignite_zone":
         # 激活只排入「预告」；真正点火在 resolve_pending——一个实际行动之后。
-        return _result([tr("术阵开始预热：下一个行动后成火场。")], 0)
+        # 这里只登记预告：source 取设施锚点（公开位置），不提前携带火场作用格。
+        return _result(
+            [tr("术阵开始预热：下一个行动后成火场。")], 0,
+            source=_anchor_cell(record),
+            facts=(("zone_key", str(effect.get("key", ""))),),
+            visual=_visual("pending", kind="facility.prepare", outcome="entry",
+                           visual_key="cast.flame_nova", tier=2, theme="flame"))
     if kind == "quench_anchor":
         x, y = record.cell(effect["key"])
         state._set_flame(x, y, 0)
         state._sync_material_position(x, y)
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
-        return _result([tr("{name}的火被踩灭了。", name=label)], 1)
+        return _result(
+            [tr("{name}的火被踩灭了。", name=label)], 1,
+            source=(x, y), cells=((x, y),),
+            facts=(("anchor_key", str(effect.get("key", ""))),),
+            visual=_visual("quench", visual_key="default", tier=1))
     if kind == "priming_zone":
         from ..core.scenes import set_floor_variant
 
         variant = effect.get("variant", "书页地")
         fuel = int(effect.get("fuel", 12))
-        count = sum(1 for x, y in record.area(effect["key"])
-                    if set_floor_variant(state, x, y, variant, fuel, persist=True))
-        return _result([tr("干纸重新铺满术阵（{n} 格）。", n=count)], count)
+        changed = [(x, y) for x, y in record.area(effect["key"])
+                   if set_floor_variant(state, x, y, variant, fuel, persist=True)]
+        count = len(changed)
+        return _result(
+            [tr("干纸重新铺满术阵（{n} 格）。", n=count)], count,
+            source=_anchor_cell(record), cells=tuple(changed),
+            facts=(("variant", str(variant)),),
+            visual=_visual("release", visual_key="plant.growth", tier=1,
+                           theme="paper") if count else None)
     if kind == "prime_end":
         from ..core.scenes import set_floor_variant
 
         x, y = record.cell(effect["key"])
-        set_floor_variant(state, x, y, effect.get("variant", "反光聚合物"), persist=True)
+        changed = set_floor_variant(state, x, y, effect.get("variant", "反光聚合物"),
+                                    persist=True)
         record.flags[effect["key"]] = True
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
-        return _result([tr("{name}被折稳了。", name=label)], 1)
+        return _result(
+            [tr("{name}被折稳了。", name=label)], 1,
+            source=(x, y), cells=((x, y),) if changed else (),
+            facts=(("anchor_key", str(effect.get("key", ""))),),
+            visual=_visual("prime", visual_key="fold.travel", tier=1,
+                           theme="fold") if changed else None)
     if kind == "mark_route":
         from ..core.scenes import set_floor_variant
 
         step = queued["steps"][0]
-        count = sum(1 for x, y in step["cells"]
-                    if set_floor_variant(state, x, y, step["variant"], persist=True))
-        return _result([tr("地上亮起一条路（{n} 格）。", n=count)], count)
+        changed = [(x, y) for x, y in step["cells"]
+                   if set_floor_variant(state, x, y, step["variant"], persist=True)]
+        count = len(changed)
+        return _result(
+            [tr("地上亮起一条路（{n} 格）。", n=count)], count,
+            source=_anchor_cell(record), cells=tuple(changed),
+            facts=(("variant", str(step["variant"])),),
+            visual=_visual("route", visual_key="tamper.rewrite", tier=1,
+                           theme="paper") if count else None)
     if kind == "fold_travel":
         from ..core.scenes import fold_player
 
         step = queued["steps"][0]
-        fold_player(state, step["cell"][0], step["cell"][1])
+        origin = (state.player.x, state.player.y)
+        destination = (int(step["cell"][0]), int(step["cell"][1]))
+        fold_player(state, destination[0], destination[1])
         label = tr(_ANCHOR_LABELS.get(step["key"], step["key"]))
-        return _result([tr("你被折到了{name}那一侧。", name=label)], 1)
+        # 两端是两份绝对布局；事件只带本次真实出发点/落点，不把远端端点画成穿行线。
+        return _result(
+            [tr("你被折到了{name}那一侧。", name=label)], 1,
+            source=origin, targets=(destination,),
+            cells=(origin, destination),
+            facts=(("anchor_key", str(step["key"])),),
+            visual=_visual("travel", visual_key="fold.travel", tier=1, theme="fold"))
     if kind == "release_liquid":
         step = queued["steps"][0]
         units = int(step["units"])
@@ -837,41 +893,79 @@ def _apply(state: Any, record: Any, command: dict[str, Any],
                         "阀门的水把盆里的{kind}顶走了。", kind=tr(basin.liquid_kind)))
                     basin.liquid, basin.liquid_kind = 0, ""
         per, extra = divmod(taken, len(targets))
+        given: list[tuple[int, int]] = []
         for index, (x, y) in enumerate(targets):
             give = per + (1 if index < extra else 0)
             if give:
                 state._add_liquid(state.cell(x, y), liquid, give)
+                given.append((x, y))
         facts.record(state, "material", actor_uid=player_uid(state),
                      target_uid=f"{record.scene_uid}#{effect['to_key']}",
                      position=targets[0], owner_uid=record.scene_uid,
                      cause_uid=effect["to_key"], source_kind="scene",
                      before=taken, after=0, amount=taken)
-        return _result([tr("放出了 {kind} ×{n}。", kind=tr(liquid), n=taken)], taken)
+        # 只登记真正分到非零液量的格；taken 是实际搬运量，不是阀门的标称单位。
+        source_cell = step["source"]
+        if source_cell is None:
+            source_cell = _anchor_cell(record)
+        return _result(
+            [tr("放出了 {kind} ×{n}。", kind=tr(liquid), n=taken)], taken,
+            source=source_cell, targets=tuple(given),
+            cells=tuple(dict.fromkeys((*given, source_cell))) if source_cell else tuple(given),
+            facts=(("liquid", str(liquid)), ("taken", int(taken)),
+                   ("to_key", str(effect["to_key"]))),
+            visual=_visual("release", visual_key="default", tier=1,
+                           theme="water") if given else None)
     if kind == "clear_blockage":
         step = queued["steps"][0]
         entry, spot = step["entry"], step["spot"]
+        origin = (int(entry.x), int(entry.y))
+        destination = (int(spot[0]), int(spot[1]))
         state.world_items.remove(entry)
         from ..core.entities import WorldItem
 
-        state.world_items.append(WorldItem(entry.item, spot[0], spot[1]))
-        return _result([tr("把 {name} 搬到了外面。", name=tr(entry.item.name))], 1)
+        state.world_items.append(WorldItem(entry.item, destination[0], destination[1]))
+        return _result(
+            [tr("把 {name} 搬到了外面。", name=tr(entry.item.name))], 1,
+            source=origin, targets=(destination,),
+            cells=(origin, destination),
+            facts=(("item_id", str(entry.item.definition_id)),),
+            visual=_visual("move", visual_key="default", tier=1))
     if kind == "sound_pulse":
         step = queued["steps"][0]
-        state._sound_pulse(step["cell"][0], step["cell"][1], step["radius"])
+        speaker = (int(step["cell"][0]), int(step["cell"][1]))
+        state._sound_pulse(speaker[0], speaker[1], step["radius"])
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
-        return _result([tr("喇叭把呼叫送向{name}。", name=label)], int(step["heard"]))
+        # 声源中心取本次所选喇叭；听者/远处目标一个都不进事件坐标。
+        return _result(
+            [tr("喇叭把呼叫送向{name}。", name=label)], int(step["heard"]),
+            source=speaker, cells=(speaker,),
+            facts=(("anchor_key", str(effect.get("key", ""))),
+                   ("heard", int(step["heard"])),
+                   ("radius", int(step["radius"]))),
+            visual=_visual("sound", kind="facility.announce",
+                           visual_key="boss.core_cry", tier=1, theme="sound"))
     if kind == "seal_opening":
         from ..core.scenes import seal_opening as _seal
 
         x, y = queued["steps"][0]["cell"]
         sealed = int(_seal(state, x, y))
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
-        return _result([tr("{name}的挡板落下了。", name=label)] if sealed else [], sealed)
+        return _result(
+            [tr("{name}的挡板落下了。", name=label)] if sealed else [], sealed,
+            source=(x, y), cells=((x, y),) if sealed else (),
+            facts=(("anchor_key", str(effect.get("key", ""))),),
+            visual=_visual("seal", visual_key="default", tier=1) if sealed else None)
     if kind == "transfer_stock":
         name = effect["name"]
-        record.stock[name] = int(record.stock.get(name, 0)) + int(effect["amount"])
-        return _result([tr("{name} +{n}。", name=tr(_STOCK_LABELS.get(name, name)),
-                                          n=effect["amount"])], int(effect["amount"]))
+        amount = int(effect["amount"])
+        record.stock[name] = int(record.stock.get(name, 0)) + amount
+        return _result(
+            [tr("{name} +{n}。", name=tr(_STOCK_LABELS.get(name, name)),
+                                n=effect["amount"])], amount,
+            source=_anchor_cell(record),
+            facts=(("stock", str(name)),),
+            visual=_visual("stock", visual_key="default", tier=0) if amount else None)
     if kind == "gain_item":
         count = int(effect.get("count", 1))
         for _ in range(count):
@@ -879,27 +973,43 @@ def _apply(state: Any, record: Any, command: dict[str, Any],
             state._add_inventory_item(item)
             from ..core.item_access import record_grant
             record_grant(state, item.definition_id, source='scene:' + record.definition_id)
-        return _result([tr("收进行囊：{name} ×{n}。", name=tr(_item_name(effect["item"])),
-                                           n=count)], count)
+        return _result(
+            [tr("收进行囊：{name} ×{n}。", name=tr(_item_name(effect["item"])),
+                                         n=count)], count,
+            source=_anchor_cell(record),
+            facts=(("item_id", str(effect["item"])),),
+            visual=_visual("item", visual_key="default", tier=0) if count else None)
     if kind == "enter_gate":
         # 真正走进位面：交给 GameState.enter_realm，不在这里另写一套进入规则。
         into = state.enter_realm(str(queued["steps"][0]["realm"]))
         if into:
             record.flags["entered"] = True
             record.state = "已进入"
-        return _result([tr("门在你身后合上了。")] if into else [], 1 if into else 0)
+        return _result(
+            [tr("门在你身后合上了。")] if into else [], 1 if into else 0,
+            source=_anchor_cell(record),
+            facts=(("realm", str(queued["steps"][0]["realm"])),),
+            visual=_visual("enter", kind="facility.gate_enter",
+                           visual_key="fold.travel", tier=1, theme="fold") if into else None)
     # ---- R03 留灯的避难圈 ----
     if kind == "light_lamp":
         from ..core.scenes import set_floor_variant
 
         variant = effect.get("variant", "反光聚合物")
-        count = sum(1 for x, y in record.area(effect["key"])
-                    if set_floor_variant(state, x, y, variant, persist=True))
+        changed = [(x, y) for x, y in record.area(effect["key"])
+                   if set_floor_variant(state, x, y, variant, persist=True)]
         lamp = record.cell("lamp")
         if lamp and set_floor_variant(state, lamp[0], lamp[1], variant, persist=True):
-            count += 1
+            changed.append(lamp)
         record.flags["lit"] = True
-        return _result([tr("留灯亮了起来，灯圈的地面反出光（{n} 格）。", n=count)], count)
+        changed = list(dict.fromkeys(changed))
+        count = len(changed)
+        return _result(
+            [tr("留灯亮了起来，灯圈的地面反出光（{n} 格）。", n=count)], count,
+            source=lamp or _anchor_cell(record), cells=tuple(changed),
+            facts=(("variant", str(variant)),),
+            visual=_visual("light", visual_key="plant.growth", tier=2,
+                           theme="light") if count else None)
     if kind == "grant_rest":
         step = queued["steps"][0]
         stat = str(step["stat"])
@@ -908,8 +1018,12 @@ def _apply(state: Any, record: Any, command: dict[str, Any],
         setattr(state, stat, min(cap, before + int(step["amount"])))
         record.flags["rested"] = True
         gained = int(getattr(state, stat, 0) - before)
-        return _result([tr("你靠着灯台坐了一会儿：{stat} +{n}。",
-                           stat=tr(_STAT_LABELS.get(stat, stat)), n=gained)], gained)
+        return _result(
+            [tr("你靠着灯台坐了一会儿：{stat} +{n}。",
+                stat=tr(_STAT_LABELS.get(stat, stat)), n=gained)], gained,
+            source=record.cell("lamp") or _anchor_cell(record),
+            facts=(("stat", stat),),
+            visual=_visual("rest", visual_key="plant.growth", tier=1) if gained else None)
     if kind == "repair_opening":
         from ..core.scenes import unseal_opening
 
@@ -917,14 +1031,97 @@ def _apply(state: Any, record: Any, command: dict[str, Any],
         repaired = int(unseal_opening(state, x, y))
         label = tr(_ANCHOR_LABELS.get(effect["key"], effect["key"]))
         record.flags["repaired"] = True
-        return _result([tr("{name}的挡板抬起来了。", name=label)] if repaired else [], repaired)
+        return _result(
+            [tr("{name}的挡板抬起来了。", name=label)] if repaired else [], repaired,
+            source=(x, y), cells=((x, y),) if repaired else (),
+            facts=(("anchor_key", str(effect.get("key", ""))),),
+            visual=_visual("repair", visual_key="default", tier=1) if repaired else None)
     if kind == "report_clue":
-        return _result([tr("你把这一条记在了心里。")], 1)
+        return _result(
+            [tr("你把这一条记在了心里。")], 1,
+            source=_anchor_cell(record),
+            facts=(("clue", str(effect.get("report", ""))),),
+            visual=_visual("clue", visual_key="tamper.rewrite", tier=1,
+                           theme="paper"))
     return _result([], 0)
 
 
-def _result(texts: list[str], amount: int) -> dict[str, Any]:
-    return {"texts": texts, "amount": amount}
+def _result(texts: list[str], amount: int, *, cells: tuple = (),
+            source: "tuple[int, int] | None" = None, targets: tuple = (),
+            facts: tuple = (), visual: "dict[str, Any] | None" = None) -> dict[str, Any]:
+    return {"texts": texts, "amount": amount, "cells": tuple(cells),
+            "source": source, "targets": tuple(targets), "facts": tuple(facts),
+            "visual": visual}
+
+
+def _visual(stage: str, *, kind: str = "facility.command", outcome: str = "release",
+            visual_key: str = "default", tier: int = 1,
+            theme: str = "") -> dict[str, Any]:
+    # 只描述演出的建议；真实作用格/落点由 done 里的结算事实决定。
+    return {"kind": kind, "outcome": outcome, "stage": stage,
+            "visual_key": visual_key, "tier": int(tier), "theme": theme}
+
+
+def _emit_visual(state: Any, *, kind: str, outcome: str, source=None, targets=(),
+                 paths=(), affected_cells=(), visual_key: str = "default",
+                 tier: int = 1, theme: str = "", facts=(), layer_key: str = "facility",
+                 source_id=None, root_id=None, parent_id=None,
+                 phase_offset_ms: int = 0, cells=None) -> Any:
+    # 只入旁路队列：不改世界、不消耗游戏 RNG、不写存档。
+    from ..core.visual_events import emit_visual
+
+    if cells is not None:
+        affected_cells = cells
+    return emit_visual(state, kind=kind, outcome=outcome, source=source,
+                       targets=targets, paths=paths, affected_cells=affected_cells,
+                       visual_key=visual_key, tier=tier, theme=theme, facts=facts,
+                       layer_key=layer_key, source_id=source_id, root_id=root_id,
+                       parent_id=parent_id, phase_offset_ms=phase_offset_ms)
+
+
+def _facility_facts(record: Any, definition: "dict[str, Any] | None", command: str,
+                    stage: str, extra=()) -> tuple:
+    # 设施事件的标准标量事实；extra 里的同名键覆盖默认值，避免重复键。
+    values: dict[str, Any] = {
+        "facility_uid": str(record.scene_uid),
+        "scene_id": str((definition or {}).get("definition_id", record.definition_id)),
+        "command": str(command),
+        "stage": str(stage),
+    }
+    for name, value in extra:
+        values[str(name)] = value
+    return tuple(values.items())
+
+
+def _emit_command_visual(state: Any, record: Any, definition: "dict[str, Any] | None",
+                         command: "dict[str, Any] | None", done: dict[str, Any],
+                         *, before_state: str = "") -> Any:
+    # 调用方必须已经完成真实改变与生命周期提交；只读 done 里的事后事实。
+    visual = done.get("visual")
+    if not visual:
+        return None
+    source = done.get("source")
+    if source is None:
+        source = _anchor_cell(record)
+    command_name = str((command or {}).get("command", ""))
+    return _emit_visual(
+        state,
+        kind=str(visual.get("kind", "facility.command")),
+        outcome=str(visual.get("outcome", "release")),
+        source=source,
+        targets=done.get("targets", ()),
+        paths=done.get("paths", ()),
+        affected_cells=done.get("cells", ()),
+        visual_key=str(visual.get("visual_key", "default")),
+        tier=int(visual.get("tier", 1)),
+        theme=str(visual.get("theme", "")),
+        facts=_facility_facts(record, definition, command_name,
+                              str(visual.get("stage", "")),
+                              extra=(("after_state", str(record.state)),
+                                     ("actual_amount", int(done.get("amount", 0))),
+                                     *done.get("facts", ()))),
+        source_id=str(record.scene_uid),
+    )
 
 
 def _advance_lifecycle(state: Any, record: Any, definition: dict[str, Any],
@@ -988,10 +1185,15 @@ def _advance_holds(state: Any) -> None:
 def _land(state: Any, record: Any, pending: dict[str, Any]) -> None:
     """真正点火：逐格走 ``_ignite_cell``，这里没有任何伤害公式。"""
     strength = int(pending.get("strength", 4))
+    key = pending.get("key", "")
     lit = 0
-    for x, y in record.area(pending.get("key", "")):
+    new_cells: list[tuple[int, int]] = []
+    for x, y in record.area(key):
+        was_unlit = state.cell(x, y).flame <= 0
         if state._ignite_cell(x, y, strength, by_player=True):
             lit += 1
+            if was_unlit:
+                new_cells.append((x, y))
     before = record.state
     record.pending = {}
     record.state = "生效"
@@ -1000,10 +1202,23 @@ def _land(state: Any, record: Any, pending: dict[str, Any]) -> None:
                  target_uid=record.scene_uid, position=_anchor_cell(record),
                  owner_uid=record.scene_uid, cause_uid="pending:ignite_zone",
                  source_kind="scene", before=before, after=record.state, amount=lit)
+    definition = definition_of(record)
+    if new_cells and definition is not None:
+        # 预告落地：只报这次真正新点燃的格；自然已有火焰/材料爆炸不重播。
+        _emit_visual(
+            state, kind="facility.land", outcome="release",
+            source=_anchor_cell(record), cells=tuple(new_cells),
+            visual_key="fx.explosion", tier=2, theme="flame",
+            source_id=str(record.scene_uid),
+            facts=_facility_facts(record, definition, "activate", "release",
+                                  extra=(("zone_key", str(key)),
+                                         ("actual_amount", len(new_cells)),
+                                         ("lit", int(lit)))))
     state.messages.append(tr("术阵的火场起来了（{n} 格）。", n=lit))
 
 
-def refresh(state: Any, record: Any | None = None) -> None:
+def refresh(state: Any, record: Any | None = None, *,
+            emit_visual: bool = True) -> None:
     """按世界时刻与当前地图重算显示态；火场到期后留一条 ``safety`` 事实。"""
     targets = [record] if record is not None else records(state)
     for entry in targets:
@@ -1034,10 +1249,39 @@ def refresh(state: Any, record: Any | None = None) -> None:
                          position=_anchor_cell(entry), owner_uid=entry.scene_uid,
                          cause_uid="facility:expired", source_kind="scene",
                          before=before, after=entry.state)
+            if emit_visual:
+                # 火场结束是真实状态转变：只在这一笔里报一次，重复 refresh 不再发。
+                _emit_visual(
+                    state, kind="facility.expire", outcome="release",
+                    source=_anchor_cell(entry), affected_cells=entry.area(zone),
+                    visual_key="default", tier=1, source_id=str(entry.scene_uid),
+                    facts=_facility_facts(entry, definition, "expire", "expire",
+                                          extra=(("zone", str(zone)),
+                                                 ("before_state", str(before)),
+                                                 ("after_state", str(entry.state)))))
             state.messages.append(tr("{name}的火场过去了，这条路重新打通。",
                                      name=tr(definition["name"])))
         elif entry.state == "冷却" and entry.ready(int(state.time)):
             entry.state = _idle_state(state, entry, definition)
+
+
+def _emit_hold(state: Any, record: Any, definition: dict[str, Any], zone: str,
+              action: str, *, amount: int = 0) -> Any:
+    # 只登记真实世界回合上的段变更；未看见的设施（休眠）不播，避免泄露位置。
+    if record.state == "休眠":
+        return None
+    cells = record.area(zone)
+    source = record.cell(zone) or (cells[0] if cells else _anchor_cell(record))
+    outcome = {"begin": "entry", "break": "release", "complete": "impact"}.get(
+        action, "release")
+    kind = {"begin": "facility.hold_begin", "break": "facility.hold_break",
+            "complete": "facility.hold_complete"}.get(action, "facility.hold_" + action)
+    return _emit_visual(
+        state, kind=kind, outcome=outcome, source=source, cells=cells,
+        visual_key="default", tier=1, source_id=str(record.scene_uid),
+        facts=_facility_facts(record, definition, "hold", "hold_" + action,
+                              extra=(("zone", str(zone)),
+                                     ("actual_amount", int(amount)))))
 
 
 def mark_invasions(state: Any) -> None:
@@ -1053,8 +1297,13 @@ def mark_invasions(state: Any) -> None:
             continue
         for zone in definition.get("safe_zones") or ():
             if _zone_hosts(state, record, zone):
-                record.safe_since.pop(zone, None)
-                record.flags.pop(f"safe:{zone}", None)
+                since = record.safe_since.pop(zone, None)
+                proven = bool(record.flags.pop(f"safe:{zone}", None))
+                # 只有真的有一段在计时/已达标的段被打断才报；空地反复检查不重播。
+                if since is not None or proven:
+                    _emit_hold(state, record, definition, zone, "break",
+                               amount=(int(state.time) - int(since)
+                                       if since is not None else 0))
 
 
 def _update_holds(state: Any, record: Any, definition: dict[str, Any]) -> None:
@@ -1078,15 +1327,19 @@ def _update_holds(state: Any, record: Any, definition: dict[str, Any]) -> None:
             record.safe_since.pop(zone, None)
             continue
         if not _zone_is_safe(state, record, zone):
-            record.safe_since.pop(zone, None)
+            since = record.safe_since.pop(zone, None)
             # 断了就把「这一段报过了」的闩放下来：下一段连续安全是新的一段。
             # 实玩里那位常常在玩家赶到之前就自己溜出院子，第一段安全早在接单之前
             # 就报过了；闩不放下，诱离封守这条解法在那张图上永远凑不成。
-            record.flags.pop(f"safe:{zone}", None)
+            proven = bool(record.flags.pop(f"safe:{zone}", None))
+            if since is not None or proven:
+                _emit_hold(state, record, definition, zone, "break",
+                           amount=(now - int(since) if since is not None else 0))
             continue
         since = record.safe_since.get(zone)
         if since is None:
             record.safe_since[zone] = now
+            _emit_hold(state, record, definition, zone, "begin")
             continue
         held = now - int(since)
         if held < need or record.flags.get(f"safe:{zone}"):
@@ -1096,6 +1349,7 @@ def _update_holds(state: Any, record: Any, definition: dict[str, Any]) -> None:
                      position=_anchor_cell(record), owner_uid=record.scene_uid,
                      cause_uid=f"hold:{zone}", source_kind="scene",
                      before="持续看住", after="连续安全", amount=held)
+        _emit_hold(state, record, definition, zone, "complete", amount=held)
         state.messages.append(tr("{name}连着 {n} 个世界回合没有失控意识踩进去——这一条记在你账上。",
                                  name=tr(definition["name"]), n=held))
         # R03：这一段连续安全兑现成一段抵抗窗口（数据声明目标征兆与时长）。闩的语义
@@ -1179,6 +1433,23 @@ def _gate_eligible(state: Any) -> list[list[Any]]:
     return [[index, entry.name, entry.category]
             for index, entry in enumerate(state.inventory)
             if entry.category in GATE_GIFT_CATEGORIES]
+
+
+def emit_gate_paid(state: Any, record: Any, *, gifts: int = 3) -> Any:
+    # 由 GameState.confirm_gate_offering 的真实成功分支调用：支付已扣、门态已转。
+    definition = definition_of(record)
+    if definition is None:
+        return None
+    source = _anchor_cell(record)
+    return _emit_visual(
+        state, kind="facility.gate_paid", outcome="release",
+        source=source, cells=(source,) if source else (),
+        visual_key="cast.rewrite_corner", tier=3, theme="paper",
+        source_id=str(record.scene_uid),
+        facts=_facility_facts(record, definition, "confirm_gate_offering", "paid",
+                              extra=(("before_state", "等待支付"),
+                                     ("after_state", str(record.state)),
+                                     ("actual_amount", int(gifts)))))
 
 
 def _seen(state: Any, record: Any) -> bool:

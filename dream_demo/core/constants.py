@@ -34,9 +34,24 @@ from enum import Enum
 # 几道 interval 刻度」，而不是 self.time % interval == 0。后者在一次行动推进
 # 多个回合（amount > 1）时会漏掉被跳过的刻度。
 # ---------------------------------------------------------------------------
+# 异象自然补刷（2026-10-25 重构）：
+# - 刷新间隔随「本层当前异象数量」反比：越少越快；最快 ANOMALY_REFRESH_MIN_INTERVAL（20）回合一只。
+# - 当前数量达到 ANOMALY_REFRESH_ACTIVE_CAP 后不再自然刷新。
+# - ANOMALY_REFRESH_INTERVAL 保留为「满员时的基准/最慢间隔」（40），供旧导入兼容。
 ANOMALY_REFRESH_INTERVAL = 40
-# 补生上限：每个梦层最多这样凭空补生 N 只（纸页犬只在它的登记层数内补生）。
+ANOMALY_REFRESH_MIN_INTERVAL = 20
+ANOMALY_REFRESH_ACTIVE_CAP = 10
+# 旧版「每层累计补生上限」已由「当前数量上限」取代；常量保留给旧调用方/存档诊断。
 ANOMALY_REFRESH_SPAWN_CAP = 3
+# 后续补刷异象的掉落衰减（2026-10-27 玩家需求）：随地图生成的第一波（spawn_wave=0）
+# 以及每层前 ANOMALY_REFRESH_FREE_DROP_WAVES 只自然补刷（wave 1..3）照常掉落；
+# 此后第 n 只补刷的掉落率 × ANOMALY_REFRESH_DROP_DECAY ** (n - FREE_WAVES)。
+ANOMALY_REFRESH_FREE_DROP_WAVES = 3
+ANOMALY_REFRESH_DROP_DECAY = 0.5
+# 噪音条（2026-10-25）：显示玩家**周围区域**最近的声场强度，而不只是自己下一动作的预计。
+# 记录每次真实脉冲在玩家周围该半径内的最大余量；保留最近数回合。
+NOISE_AMBIENT_RADIUS = 3
+NOISE_AMBIENT_TURNS = 3
 MIND_REGEN_INTERVAL = 5
 REMOTE_OVERWRITE_INTERVAL = 20
 ELEV_STEP = 25

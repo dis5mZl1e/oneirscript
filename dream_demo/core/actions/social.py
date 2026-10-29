@@ -25,6 +25,14 @@ from .. import Material  # noqa: F401  (ink_doodle/blink 的 SOLID_AGGREGATE 判
 from ..content import ITEM_DEFINITIONS, PROJECTILE_DEFINITIONS
 from ..entities import ActionResult, Entity, Item, WorldItem
 
+
+def _event_award_source(event) -> str:
+    # Repeated authored events may carry an ``@x,y`` runtime suffix. Award
+    # permissions belong to the authored event family, so keep the base ID.
+    event_id = str(getattr(event, "event_id", "") or "").split("@", 1)[0]
+    return "event:" + event_id
+
+
 class SocialActionsMixin:
     """社交动作族：NPC 对话/事件/尾声选项/交易支付/容器倾倒 + join_details。"""
 
@@ -107,7 +115,7 @@ class SocialActionsMixin:
         reward_count = max(1, int(getattr(event, "reward_count", 1) or 1))
         if reward_definition:
             from ..item_access import refusal as item_grant_refusal
-            reason = item_grant_refusal(self, event.reward_id, source='event:' + event.event_id, count=reward_count)
+            reason = item_grant_refusal(self, event.reward_id, source=_event_award_source(event), count=reward_count)
             if reason:
                 return ActionResult(False, reason)
         if reward_definition and not self._reward_fits(event.reward_id, reward_count):
@@ -143,7 +151,7 @@ class SocialActionsMixin:
                 else:
                     self._add_inventory_item(item)
                 from ..item_access import record_grant
-                record_grant(self, item.definition_id, source='event:' + event.event_id)
+                record_grant(self, item.definition_id, source=_event_award_source(event))
                 reward_texts.append(item.name)
             reward_text = tr("获得 {names}。", names="、".join(tr(entry) for entry in reward_texts))
         else:
@@ -174,7 +182,7 @@ class SocialActionsMixin:
     def close_event_dialog(self) -> None:
         """收起事件对话（不结算，事件保持未解）。"""
         self.events[:] = [event for event in self.events
-                          if event.catalog_id not in ('hospital.medicine_choice', 'hospital.lancet_choice',
+                          if event.catalog_id not in ('consumable.choice', 'hospital.medicine_choice', 'hospital.lancet_choice',
                                                       'book.learning_choice', 'event.realm.scavenge_choice')
                           and not hasattr(event, '_book_offer')]
         self.pending_event_id = None
@@ -207,6 +215,9 @@ class SocialActionsMixin:
         if not (0 <= index < len(options)):
             return ActionResult(False, tr("没有这个选项。"))
         option = options[index]
+        if option.get('expansion_reward'):
+            from ..expansion_rewards import resolve_event_choice
+            return resolve_event_choice(self, event, option['expansion_reward'])
         if option.get('realm_scavenge'):
             from ..realm_enrichment import scavenge
             return scavenge(self,event)
@@ -216,6 +227,16 @@ class SocialActionsMixin:
         if option.get('medicine_choice'):
             from ..hospital_medicines import confirm_selection
             return confirm_selection(self, event, option['medicine_choice'])
+        if option.get('consumable_choice'):
+            from ..expansion_consumables import use
+            choice=option['consumable_choice']
+            item_index=next((i for i,item in enumerate(self.inventory)
+                             if item.instance_id==choice.get('instance')),None)
+            if event.catalog_id!='consumable.choice' or item_index is None:
+                return ActionResult(False,tr('这份物品已经不在行囊中。'))
+            result=use(self,item_index,point=tuple(choice['point']),delay=choice['delay'])
+            if result.changed:self.close_event_dialog()
+            return result
         if option.get('hospital_load'):
             return self.confirm_hospital_lancet_selection(option['hospital_load'])
         if option.get('hospital_scene'):
@@ -289,7 +310,7 @@ class SocialActionsMixin:
         if option.get("reward_id") and reward_count:
             reward_definition = ITEM_DEFINITIONS.get(option["reward_id"])
             from ..item_access import refusal as item_grant_refusal
-            reason = item_grant_refusal(self, option['reward_id'], source='event:' + event.event_id, count=reward_count)
+            reason = item_grant_refusal(self, option['reward_id'], source=_event_award_source(event), count=reward_count)
             if reason:
                 return ActionResult(False, reason)
             if (
@@ -300,6 +321,8 @@ class SocialActionsMixin:
         self.close_event_dialog()
         # 触发次数（2026-09-18）：每结算一次减一，归零才算 resolved（地点消失）；
         # 还有余次就保持未解，玩家稍后可以再来回应（面板显示剩余次数）。
+        from ..expansion_rewards import mark_event_claimed
+        mark_event_claimed(self, event, option.get('reward_id', ''))
         event.uses_left = max(0, int(getattr(event, "uses_left", 1) or 1) - 1)
         if event.uses_left <= 0:
             event.resolved = True
@@ -343,7 +366,7 @@ class SocialActionsMixin:
                 else:
                     self._add_inventory_item(item)
                 from ..item_access import record_grant
-                record_grant(self, item.definition_id, source='event:' + event.event_id)
+                record_grant(self, item.definition_id, source=_event_award_source(event))
                 names.append(item.name)
             reward_text = tr("获得 {names}。", names=(", " if english else "、").join(tr(entry) for entry in names))
         exit_outcome = option.get("exit_realm")
@@ -397,6 +420,8 @@ class SocialActionsMixin:
         if not self._reward_fits(item_id):
             return ActionResult(False, tr("意识行囊已满，异常地点暂时无法交付显化物。"))
         item = self._make_item(item_id)
+        from ..expansion_rewards import mark_event_claimed
+        mark_event_claimed(self, event, item_id)
         event.uses_left = max(0, event.uses_left - 1)
         event.resolved = event.uses_left == 0
         self.close_event_dialog()
@@ -438,6 +463,32 @@ class SocialActionsMixin:
             return ActionResult(False,say('finished'))
         if event.resolved:
             return ActionResult(False,tr("这个选项什么也没发生。"))
+
+        if action == "archive_take":
+            # 出院与归档：28 层归档门的定向交付。这一句不推进层数、不结算事件，
+            # 玩家领完仍可继续选择「我看完了」推进——所以既不能 resolved，
+            # 也不关对话。合法性交给 item_access（深度/授权/每局上限）。
+            item_id = str(act.get("item") or "")
+            if not item_id:
+                return ActionResult(False, tr("归档处没有这一份。"))
+            from ..item_access import record_grant
+            from ..item_access import refusal as item_grant_refusal
+            reason = item_grant_refusal(self, item_id, source=_event_award_source(event), count=1)
+            if reason:
+                return ActionResult(False, reason)
+            if not self._reward_fits(item_id, 1):
+                return ActionResult(False, tr("意识行囊已满，归档处暂时无法交付。"))
+            item = self._make_item(item_id)
+            if item.category == "记忆碎片":
+                self._add_memory(item.definition_id)
+            else:
+                self._add_inventory_item(item)
+            record_grant(self, item_id, source=_event_award_source(event))
+            self._record_catalog_interaction(event.catalog_id, event.name, "site", event.description)
+            self._action_time(1, ActionKind.USE)
+            message = tr("归档员在册子上划掉一行，把{item}推过桌面。", item=tr(item.name))
+            self.messages.append(message)
+            return ActionResult(True, message, {"event": event.event_id, "reward": item_id})
 
         if action == "identify":
             claim = act.get("claim", "")
@@ -630,6 +681,9 @@ class SocialActionsMixin:
         """盛装：把本格子的液体/气体装入容器（受上限与种类约束）。"""
         if not (0 <= index < len(self.inventory)):
             return ActionResult(False, tr("意识行囊中没有这个承载位。"))
+        from ...equipment import gear_tools
+        if gear_tools.suit_sealed(self):
+            return ActionResult(False, tr("工作服的外层还封着——先解开再盛装。"))
         item = self.inventory[index]
         spec = self._container_spec(item)
         medium = spec.get("medium", "liquid")
@@ -668,6 +722,11 @@ class SocialActionsMixin:
             if cell.gas <= 0:
                 cell.gas_kind = ""
         contents[kind] = contents.get(kind, 0) + taken
+        if medium == "liquid" and self.insight_active("先让它沉下去"):
+            # 洞察「先让它沉下去」：刚相变完的这一格，第一次取液不沾表面附着。
+            from .. import phase_changes
+            if phase_changes.settled(self, cell):
+                phase_changes.arm_settled_grab(self, px, py)
         self._sync_material_position(px, py)
         self._action_time(self._dream_action_time(1, 'materials'), ActionKind.USE)
         message = tr("盛装了 {kind} ×{n}（{left}/{cap}）。", kind=tr(kind), n=taken, left=sum(contents.values()), cap=cap)
@@ -692,23 +751,56 @@ class SocialActionsMixin:
             return ActionResult(False, tr("{item}是空的。", item=tr(item.name)))
         px, py = self.player.x, self.player.y
         cell = self.cell(px, py)
+        # 先看落差（expansion.terrain.i01）：看得见相邻更低的一格时，一次倾倒只走一半，
+        # 剩下的留在容器里等下一次确认——描述里的「中途停止保留未倒材料」就是没倒的
+        # 那一半。**只分两段**：接着倒的那一次把剩下的倒完（凭据按实例记，用掉即删）。
+        stage = contents
+        split = False
+        split_memo = self.realm_features.setdefault("pour_split", {})
+        if len(split_memo) > 32:      # 旧存档里的实例 id 不会自己消失，顺手收一下
+            split_memo.clear()
+        pending = bool(split_memo.pop(item.instance_id, None))
+        if (medium == "liquid" and not pending and self.insight_active("先看落差")):
+            from ..expansion_insights import pour_drop_seen, pour_stage
+            if pour_drop_seen(self):
+                staged = pour_stage(contents)
+                total = sum(int(value) for value in contents.values())
+                if 0 < sum(staged.values()) < total:
+                    stage = staged
+                    split = True
+                    split_memo[item.instance_id] = True
         poured: list[str] = []
-        for kind, amount in list(contents.items()):
+        for kind, amount in list(stage.items()):
             if medium == "liquid":
                 self._add_liquid(cell, kind, amount)
             else:
                 self._add_gas(cell, kind, amount,
                               decay_mark=self.time-item.gas_decay_age.get(kind,0))
             poured.append(tr(kind))
-        contents.clear()
-        item.gas_decay_age.clear()
+        if split:
+            for kind, amount in stage.items():
+                left = int(contents.get(kind, 0)) - int(amount)
+                if left > 0:
+                    contents[kind] = left
+                else:
+                    contents.pop(kind, None)
+            for kind in list(item.gas_decay_age):
+                if kind not in contents:
+                    item.gas_decay_age.pop(kind, None)
+        else:
+            contents.clear()
+            item.gas_decay_age.clear()
         self._sync_material_position(px, py)
         if cell.flame > 0:
             self._ignite_cell(px, py, by_player=True)
         self._action_time(self._dream_action_time(1, 'materials'), ActionKind.USE)
         message = tr("倒出了 {kinds}。", kinds="、".join(poured))
+        if split:
+            message += tr("先看落差：这一手只走了一半，剩下的还在容器里——"
+                          "看过这一段的反应，再倒一次才倒完。")
         self.messages.append(message)
-        return ActionResult(True, message, {"container": index, "poured": poured})
+        return ActionResult(True, message, {"container": index, "poured": poured,
+                                            "split": split})
 
     # ---- 稳定意识（NPC）交易与对话（2026-09-18）----
 
@@ -1012,7 +1104,9 @@ class SocialActionsMixin:
             # 盲盒洞察（小魔鬼的便宜情报）：从**还没学到**的洞察里随机给一条，
             # 谈的时候不给名字——这正是它比「说清了的那条」便宜的原因。
             from ..content import INSIGHT_DEFINITIONS
-            pool = [name for name in INSIGHT_DEFINITIONS if name not in self.insights]
+            from ..item_access import insight_learnable
+            pool = [name for name in INSIGHT_DEFINITIONS
+                    if name not in self.insights and insight_learnable(self, name)]
             if pool:
                 texts.append(self._grant_insight(pool[rng.randrange(len(pool))]))
             else:

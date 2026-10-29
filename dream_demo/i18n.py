@@ -219,6 +219,12 @@ EN: dict[str, str] = {
     "没有选中任何显化物。": "Nothing selected.",
     "拾取：{items}。": "Picked up: {items}.",
     "拾取 {items}；背包已满，其余留在原地。": "Picked up {items}; bag is full, the rest stay on the ground.",
+    "（{n} 回合）": " ({n} rounds)",
+    "（{n}/{capacity}）": " ({n}/{capacity})",
+    "拾取 {items}；先决定新记忆的去留。":
+        "Picked up {items}; first decide what to do with the new memory.",
+    "先决定待收纳记忆碎片的去留。":
+        "First decide what to do with the pending memory fragment.",
     "已解决；主要创伤：": "Solved; main trauma: ",
     "。": ".",
     "你把它拾进了行囊。": "You picked it up into your bag.",
@@ -248,6 +254,7 @@ EN: dict[str, str] = {
     "背景音乐音量；0 为静音，不影响音效。": "Background music volume; 0 mutes music without affecting sound effects.",
     "播放主页、区域、梦中梦与结局音乐；与音效开关独立。": "Play menu, region, dream realm and ending music; independent of sound effects.",
     "背景音乐音量（音乐功能接入后生效）。": "Background music volume (effective once music is wired in).",
+    "世界直写失败，已回退 Textual 渲染。": "World painter failed; Textual rendering restored.",
     "扫描线效果": "Scanlines",
     "低清醒度时的隔行扫描线（CRT 暗线）。可独立于画面特效开关。": "Interlaced scanlines at low lucidity (CRT dark lines); independent of the FX switch.",
     "画面特效": "Visual FX",
@@ -256,6 +263,61 @@ EN: dict[str, str] = {
     "下潜/上浮时旧层崩解、新层在角色周围生成；关闭则直接切换。": "On descend/ascent, the old floor collapses and the new one forms around the character; disable for an instant switch.",
     "光照覆盖墙体": "Light Covers Walls",
     "动态光照作用于地板、墙体与一切格子；关闭则只照亮可通行的格。": "Dynamic lighting affects floors, walls and every cell; disable to light only walkable cells.",
+    "命中定格": "Hit Stop",
+    "命中后抖动与跳字短暂停在命中帧（40–70ms，0 关闭）；"
+    "输入、回合结算与音效照常推进。":
+        "Freeze the shake and the damage number on the impact frame for 40-70ms "
+        "(0 turns it off); input, turn resolution and sound effects never wait.",
+    "减少动态效果": "Reduce Motion",
+    "关闭命中抖动与跳字上冲，保留伤害数字与命中格强调。":
+        "Turn off screen shake and the rising damage number; the number itself and "
+        "the hit-cell highlight stay on.",
+    "平滑移动": "Smooth Movement",
+    "图像地图中对连续移动进行显示插值；不改变回合结算，字符模式与减少动态效果下不生效。":
+        "Interpolate continuous movement in image maps without changing turn resolution; "
+        "inactive in character mode and with Reduce Motion enabled.",
+    "Kitty 图像协议（实验）": "Kitty Graphics (Experimental)",
+    "实验性：终端支持 Kitty 图形协议时改用 APC 传图，可能提高图像刷新上限。"
+    "Windows 的 ConPTY 会丢弃该序列，将自动回退现有图像通道；开启后如画面异常请关闭。":
+        "Experimental: send images through the Kitty graphics APC when the terminal "
+        "supports it, which may raise the image refresh ceiling. Windows ConPTY drops "
+        "this sequence, so it falls back to the existing image channel; turn it off "
+        "if the map looks wrong.",
+    "字符高刷模式（实验）": "Character High-Refresh (Experimental)",
+    "实验性：强制字符地图并启用低开销文本帧，省掉图像编码与"
+    "逐格图像准备。字符地图按行动步进，30Hz 采样只服务动画与"
+    "特效，不做像素级插值；默认关闭。":
+        "Experimental: force the character map and use a low-cost text frame that "
+        "skips image encoding and per-cell image preparation. The character map "
+        "advances per action; 30Hz sampling only serves animation and effects, with "
+        "no pixel-level interpolation. Off by default.",
+    "左侧事件记录": "Left Event Log",
+    "在地图左下叠加透明事件记录；开启后右侧默认页改为行囊。":
+        "Overlay a transparent event log on the map's bottom left; "
+        "the right pane then opens on the bag by default.",
+    # 层植物总览 / 格子详情（core/plant_survey）
+    "本层植物 {total} 株（{body}）": "Layer flora: {total} ({body})",
+    "高 {n}": "{n} tall",
+    "{label} {n}": "{label} {n}",
+    "已耗尽 {n}": "{n} spent",
+    "全部完好": "all intact",
+    "可吸": "absorb", "可搬": "push", "可净": "purify", "可炸": "ignite",
+    "可电": "shock", "可削": "damage", "可放气": "release gas",
+    "可放液": "release liquid", "可缠": "snare",
+    "当前格": "Here",
+    "点击查看": "click for details",
+    "格": "tiles",
+    "遮蔽气/高丛": "obscuring gas/tall cover",
+    "通电": "powered",
+    "可燃液体": "flammable liquid",
+    "无（无对应弱点）": "None (no matching weakness)",
+    "视野内没有墙体固体。": "No wall solids in sight.",
+    "少字模式": "Terse Mode",
+    "右侧栏尽量用符号和英文缩写代替文字：状态、地形、页签、子菜单与"
+    "环境页都只留图标；左侧窗口和全屏窗口不受影响，可展开注释默认收起。":
+        "Use symbols and short English abbreviations in the right pane (status, terrain, "
+        "tabs, submenus and environment page); left overlay and full-screen windows keep "
+        "their text, and expandable notes start collapsed.",
     "异象切换提示": "Anomaly Intent Hints",
     "异象开始怀疑、追踪、逃离、蓄力、被打断或进入恢复时，"
     "在该格短暂亮起角标；关闭不影响技能危险区域与观察文字。":
@@ -358,6 +420,26 @@ EN: dict[str, str] = {
     "普通异象": "Ordinary Anomaly",
     "强烈异象": "Elite Anomaly",
     "核心执念": "Core Obsession",
+    # 稀有度档位（目录/物品/事件通用标签）。
+    "常见": "Common", "少见": "Uncommon", "稀有": "Rare", "非常稀有": "Very Rare",
+    # 关系与立场（world/relations、结算、日志通用）。
+    "中立": "Neutral", "和解中": "Reconciling", "敌对": "Hostile", "脱离": "Disengaged",
+    # NPC 行为类型（交易/结局通用）。
+    "囤积型": "Hoarder", "杀伐型": "Slayer", "直面型": "Confronter", "纵火型": "Arsonist",
+    # 读唇意图（悬停）。
+    "向你扑来": "lunging at you", "正在犹豫": "hesitating", "尚未察觉你": "unaware of you",
+    "徘徊": "prowling",
+    # 面板数值字段标签（ui/panel_fields LABEL_FIELDS 里此前漏翻的 12 个）。
+    "悬停": "Hover", "基础值": "Base", "容量": "Capacity", "次数": "Uses",
+    "持续": "Duration", "蓄势": "Windup", "费用": "Cost", "范围": "Area",
+    "面积": "Footprint", "半径": "Radius", "目标数": "Targets", "声径": "Sound reach",
+    # 图鉴字段标签（catalog_registry STAT_REGISTRY 里此前漏翻的 9 个）。
+    "主动技能": "Active Skill", "稀有度": "Rarity", "最早主梦层": "Earliest Main-dream Depth",
+    "每局最多获得": "Max per Run", "获取来源": "Obtained From",
+    "材料甲": "Material A", "材料乙": "Material B",
+    "产物": "Product", "产物形态": "Product Form",
+    # 侧栏管理页数值标签。
+    "推力": "Push", "爆炸半径": "Blast Radius",
     "心智创伤": "Mind Trauma",
     "清醒创伤": "Lucidity Trauma",
     "失控意识": "Stray Consciousness",
@@ -1086,7 +1168,24 @@ EN: dict[str, str] = {
     "移动": "Move",
     "打开": "Open",
     "第 {a}-{b}/{c} 行 · 滚轮或 ↑↓ 滚动": "Lines {a}-{b}/{c} · wheel or ↑↓",
+    "第 {a}-{b}/{c} 行 · 滚轮或 PgUp/PgDn 滚动": "Lines {a}-{b}/{c} · wheel or PgUp/PgDn",
     "第 {a}-{b}/{c} 条": "Rows {a}-{b}/{c}",
+    "就地篡改（右栏简版）": "Tamper in place (panel lite)",
+    "回到右栏继续改": "Back to the panel to keep editing",
+    "也可以按 C 用地图侧篡改面板。": "Press C to use the map-side tamper panel instead.",
+    "在地图里改：范围 / 落点 / 详情": "Edit on map: range / landing / details",
+    "范围、聚流落点与效果详情在地图侧篡改面板。":
+        "Range, gather landing and effect details are in the map-side tamper panel.",
+    "这一句也能在右栏改：Esc 先回右栏简版。":
+        "This line can also be edited in the panel: Esc returns to it first.",
+    "程度：{value}（- = 切换）": "Degree: {value} (- = to switch)",
+    "落点：{where}": "Landing: {where}",
+    "观察格 ({x},{y})": "Observed cell ({x},{y})",
+    "未选——用下面的入口转到地图侧": "Not chosen - use the entry below to switch to the map",
+    "↑↓ 选词 · Enter 进确认 · Esc 退出": "↑↓ picks a word · Enter confirms · Esc exits",
+    "↑↓ 选词 · ←→ 换目标 · Tab 切条件 · Space 勾选 · Enter 执行 · Esc 退出":
+        "↑↓ picks a word · ←→ switches the target · Tab cycles conditions · Space toggles"
+        " · Enter commits · Esc exits",
     "意识行囊": "Mind Inventory",
     "当前:": "Here:",
     "（空）": "(empty)",
@@ -1129,6 +1228,8 @@ EN: dict[str, str] = {
     "想象力不足（需要 {cost}）。": "Not enough imagination (needs {cost}).",
     "清醒度不足（需要 {cost}）。": "Not enough clarity (needs {cost}).",
     "、": ", ",
+    "；": "; ",
+    "＋": " + ",
     "资源不足（需要 {cost}）。": "Not enough resources (needs {cost}).",
     # ---- 环境条件场景（重构方案 §10／§12.1，R01 借火的小术阵／R02 引潮的低盆）----
     # 条件说明、拒绝原因与面板行都来自 world/scenes.py 的同一份条件结构，
@@ -1627,6 +1728,24 @@ from .i18n_vaults_en import EN_VAULTS  # noqa: E402
 EN.update(EN_VAULTS)
 from .i18n_enemy_skills_en import EN_ENEMY_SKILLS  # noqa: E402
 EN.update(EN_ENEMY_SKILLS)
+
+# Bilingual expansion copy is stored with the canonical item data. Only reviewed
+# non-empty English fields enter the language pack; unfinished rows stay visible
+# in Chinese until their translations are complete.
+from .data.expansion.catalog import ENTRIES as _ITEM_EXPANSION_ENTRIES  # noqa: E402
+for _entry in _ITEM_EXPANSION_ENTRIES:
+    for _zh_field, _en_field in (("name_zh", "name_en"),
+                                 ("description_zh", "description_en"),
+                                 ("intro_zh", "intro_en")):
+        if _entry.get(_zh_field) and _entry.get(_en_field):
+            EN[_entry[_zh_field]] = _entry[_en_field]
+    for _reading in (_entry.get("position_readings") or {}).values():
+        if _reading.get("zh") and _reading.get("en"):
+            EN[_reading["zh"]] = _reading["en"]
+    # 记忆碎片的一句效果（面板直接显示 short）也是目录里的双语内容。
+    _effect = _entry.get("effect") or {}
+    if isinstance(_effect, dict) and _effect.get("short_zh") and _effect.get("short_en"):
+        EN[_effect["short_zh"]] = _effect["short_en"]
 from .data.epilogue_upgrade import TEXT as EPILOGUE_UPGRADE_TEXT
 EN.update({pair[0]:pair[1] for pair in EPILOGUE_UPGRADE_TEXT.values()})
 from .i18n_epilogue_en import EN_EPILOGUE  # noqa: E402
@@ -1978,4 +2097,105 @@ EN.update(EN_REACTIONS)
 from .i18n_deployables_en import EN_DEPLOYABLES  # noqa: E402
 EN.update(EN_DEPLOYABLES)
 
+# 图鉴字段补漏（2026-10-25）：扩展包装备的「作用」行、疗养院主动技能名、
+# 弹体构想名与图书馆专属构想说明——这些值都走 tr，但英文包此前没有登记。
+from .i18n_codex_en import EN_CODEX  # noqa: E402
+EN.update(EN_CODEX)
+
+# 扩展包装备的运行期反馈与六主题奖励选项（2026-10-25）：六主题实现成批落地
+# 时只写了中文成品句，tr() 模板与事件选项标签都没登记英文。
+from .i18n_expansion_gaps_en import EN_EXPANSION_GAPS  # noqa: E402
+EN.update(EN_EXPANSION_GAPS)
+
+# 可穿行植物地形（2026-10-27）：植物释出/格子详情/拔除确认/催生枯萎的补齐英文。
+from .i18n_plant_en import EN_PLANT  # noqa: E402
+EN.update(EN_PLANT)
+
 # 书库散页构想的施放反馈模板由 i18n_realms.EN_REALMS 单独持有，不在这里重复一份。
+
+# ---- 混乱极高专属异象（2026-10-27 玩家需求）----
+# 三只异象（嗔影/空心者/伪光者）及其六个强力技能、召唤提示与结算文案。
+# 异象名/描述走 tr(变量)（不经过 AST 静态扫描），仍然必须在这里登记，
+# 否则英文渲染会直接露出中文（见 tests/test_i18n_coverage.py 的取值域枚举）。
+EN.update({
+    "嗔影": "Wrath Shade",
+    "空心者": "Hollow One",
+    "伪光者": "False Light",
+    "混乱意象": "Chaos Image",
+    "它从你没说出口的那句重话里立起来，轮廓边缘一直在发烫。":
+        "It stands up out of the harsh sentence you never said; the edge of its outline keeps smoldering.",
+    "胸口的位置是一个能看见后面的洞；它靠近时，先拿走你的一小块。":
+        "Where its chest should be there is a hole you can see through; when it comes close, it takes a small piece of you first.",
+    "它顶着一圈过亮的光，光照到的地方都变得不太可信。":
+        "It wears a ring of light that is too bright; wherever the light falls, things stop being trustworthy.",
+    "嗔线：它把没消下去的火拉成一条线，沿视线烧过来。":
+        "Wrath Line: it pulls the fire it never put out into a line and burns along its sightline.",
+    "掏空之吸：它隔空对你吸气，把自己缺的那一块补回去。":
+        "Hollowing Draw: it breathes in across the air and fills the part of itself that is missing.",
+    "伪光注视：它把光转到你身上，你看到的东西开始对不上号。":
+        "False Light Gaze: it turns its light on you and what you see stops matching up.",
+    # 技能名
+    "嗔线": "Wrath Line",
+    "嗔爆": "Wrath Burst",
+    "掏空之吸": "Hollowing Draw",
+    "空腹洞开": "Hollow Gorge",
+    "伪光注视": "False Light Gaze",
+    "伪光轮": "False Light Halo",
+    # 技能效果／条件／反制（图鉴详情与观测共用）
+    "沿视线拉出一条至多十三格的炽线，命中一次心智创伤；基础创伤 10，深层会顶到强烈异象的单次上限。":
+        "Pulls a burning line up to thirteen cells along its sightline for one mind trauma; base trauma 10, capped at the elite per-hit limit in deep layers.",
+    "目标在视线内，且两人之间有可以落线的直线。":
+        "Target in sight with a clear straight line between you.",
+    "横移出线，或用墙体、实体遮挡。":
+        "Step out of the line, or block it with a wall or a body.",
+    "以自身为中心炸开半径两格的嗔火（十三格），命中一次清醒创伤；基础创伤 11，命中后把你掀开一格。":
+        "Detonates wrath fire in a two-cell radius around itself (thirteen cells) for one lucidity trauma; base trauma 11, and knocks you back one cell on a hit.",
+    "目标在视线内且距离不超过三格（火要够得着才起手）。":
+        "Target in sight within three cells (it only ignites when the fire can reach).",
+    "拉开到三格以外；火起手后停两拍再靠近。":
+        "Open the distance past three cells; wait two beats after it ignites before closing in.",
+    "沿直线隔空吸气，命中一次心智创伤（基础 9），并把自己缺的完整度吸回两点。":
+        "Draws in along a straight line for one mind trauma (base 9) and pulls two integrity back into itself.",
+    "横移出线；它吸空的那一下不会补满上限。":
+        "Step out of the line; the draught will not take it back to full.",
+    "在目标周围开一个半径两格的空洞（十三格），命中一次心智创伤（基础 8）并额外抹去两点想象力。":
+        "Opens a hollow two cells wide around the target (thirteen cells) for one mind trauma (base 8) and wipes away two imagination.",
+    "目标在视线内。": "Target in sight.",
+    "走出空洞范围；空洞只开两拍。":
+        "Walk out of the hollow; it only stays open two beats.",
+    "把过亮的光转到目标身上：挂上「失焦」（视野 −1，两回合）并抹去三点想象力。":
+        "Turns its too-bright light on the target: applies Blurred (sight −1 for two rounds) and wipes away three imagination.",
+    "在它落光前离开原地；失焦最多把视野减到 3。":
+        "Leave the cell before the light lands; Blurred never drops sight below 3.",
+    "在最亮处铺下一圈半径两格的迟帧光场（五格）；踩进去的脚步会被光缠住（移动额外耗时 +0.2）。":
+        "Spreads a slow-frame light field in a two-cell radius around the brightest spot (five cells); stepping inside tangles your step (+0.2 move time).",
+    "目标若在视线内；不在视线内时按最后目击位置落地。":
+        "Lands on the target if in sight, otherwise on the last known position.",
+    "绕开光场，或等光自己灭掉（五回合）。":
+        "Walk around the field, or wait for the light to burn out (five rounds).",
+    # 召唤提示与技能结算文案
+    "混乱在你改过的句子边上站起一个剪影——{name}。":
+        "A silhouette rises beside the sentence you just rewrote — {name}.",
+    "混乱在一个空处聚拢成形——{name}已经站在你附近。":
+        "Chaos gathers into shape in an empty spot — {name} is already near you.",
+    "梦层深处的混乱挤成一个人形——{name}在你身边成形。":
+        "The chaos deep in the dream layer squeezes into a human shape — {name} forms beside you.",
+    "嗔爆在你身边炸开——你已经在火外。":
+        "The wrath burst detonates around you — you are already outside the fire.",
+    "嗔影自燃了一瞬——嗔爆把你卷进去（{channel} {power}）。":
+        "The wrath shade burns for an instant — the burst sweeps you in ({channel} {power}).",
+    "空心者隔空吸了一口——线已经偏了。":
+        "The Hollow One draws breath through the air — the line has already drifted.",
+    "空心者把你的力气吸了过去（心智 {power}；它补回 {healed} 点完整度）。":
+        "The Hollow One pulls your strength away (mind {power}; it regains {healed} integrity).",
+    "空洞在你刚才站着的地方张开，什么也没卷住。":
+        "A hollow opens where you just stood and closes on nothing.",
+    "空腹洞开：周围的想象被吸进去一点（心智 {power}；想象力 −{n}）。":
+        "Hollow gorge: the surrounding imagination is drawn in (mind {power}; imagination −{n}).",
+    "伪光落在你刚才站的地方——光没有认住你。":
+        "The false light falls where you just stood — it did not catch you.",
+    "伪光贴上来了，但你的轮廓没有接住它。":
+        "The false light clings to you, but your outline will not hold it.",
+    "伪光者盯住你：视野 −1（失焦），想象力 −{n}。":
+        "The False Light fixes on you: sight −1 (blurred), imagination −{n}.",
+})

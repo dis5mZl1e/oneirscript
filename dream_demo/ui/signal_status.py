@@ -10,8 +10,10 @@ from textual.widgets import Static
 
 from ..core import sound_preview
 from ..core.chaos import chaos_risk_tier, clamp_chaos
-from ..data.tamper_schema import CHAOS_MAX, CHAOS_DECAY_INTERVAL
-from ..i18n import tr
+from ..data.tamper_schema import CHAOS_MAX, CHAOS_DECAY_INTERVAL, RISK_TIERS
+from ..i18n import get_language, tr
+
+from . import terse as _terse
 
 # 第十九节 §3／§10.1：噪音／混乱／声径与次要文字全部取自面板字段注册表。
 from .panel_fields import FIELD_COLORS as _PANEL_FIELDS
@@ -22,6 +24,35 @@ MUTED = _PANEL_FIELDS['muted']
 RANGE_COLOR = _PANEL_FIELDS['range']
 TRACK_COLOR = _PANEL_FIELDS['track']
 NOISE_SCALE = 20
+# 噪音条最大格数：两行档（#signal-status）与宽屏合并行共用同一上限，
+# 口径一致才不会出现「缩窗后条突然变长」的错觉。
+NOISE_BAR_MAX = 12
+
+
+def ambient_noise(app):
+    """噪音条：玩家**周围区域**最近的声场强度（来源不必是自己）。
+
+    每条真实脉冲在 core 记录「玩家周围 NOISE_AMBIENT_RADIUS 格内的最大余量」；
+    这里取最近 NOISE_AMBIENT_TURNS 回合内的最大值，换算成同一 20 格显示量程。
+    没有近期声音时返回 0，而不是把下一动作的预计声径当成环境噪音。
+    """
+    from ..core.constants import NOISE_AMBIENT_TURNS
+
+    state = app.session.state
+    now = int(getattr(state, "time", 0))
+    best = -10 ** 9
+    events = getattr(state, "_ambient_noise_events", ()) or ()
+    for event in events:
+        try:
+            recorded, _x, _y, local, _player, _radius, _by_player, _category = event
+        except (TypeError, ValueError):
+            continue
+        if now - int(recorded) >= NOISE_AMBIENT_TURNS:
+            continue
+        best = max(best, int(local))
+    radius = 0 if best < 0 else max(0, int(round(best / 2)))
+    return {"radius": radius, "context": "周围区域噪音", "pulses": (),
+            "sources": (), "silent": radius <= 0}
 
 
 def noise_preview(app):
@@ -94,19 +125,95 @@ def noise_preview(app):
     return dict(context=context, radius=radius, pulses=pulses)
 
 
-def summary_text(preview, chaos, *, width=44):
+def merged_tail_text(base, state, radius, width, *, terse: bool = False):
+    """把状态第 5 行与信号行并成一行四项（2026-10-24 纸感分区·状态区合并）。
+
+    ``base`` 是已排好的第 5 行（崩解度／深层边界／可下潜 · 回合数，语义
+    原样保留），在其后接「 · 噪音 ┃┃┊ n/m · 混乱 c/m」凑成一行四项；用
+    cell_len 对 ``width``（#status 实测可用宽）判断放不放得下——放不下
+    （中窄档或数值变宽后）返回 ``(None, None)``，调用方保持两行并恢复
+    #signal-status 显示。命中表记录噪音/混乱两段各自在合并行上的列区，
+    供 ClickableStatus 平移 #signal-status 的点击（打开共用详情）。
+
+    2026-10-26：合并行自带迷你噪音条。宽屏（全屏最大化）时 #signal-status
+    整行被隐藏，那条 ``┃┊`` 噪音条原本也跟着消失，只剩一个数字——全屏反而
+    看不到噪音强度。条长按行内剩余列数自适应（最多 12 格、最少 3 格），
+    剩余列不够 3 格才退回纯文字，判据仍是「合并后总宽 <= width」。
+    """
+    hits = {}
+    tail = Text()
+    tail.append_text(base)
+    noise = f'{radius if radius is not None else "—"}/{NOISE_SCALE}'
+    chaos = f'{clamp_chaos(state.chaos)}/{CHAOS_MAX}'
+    overflow = radius is not None and radius > NOISE_SCALE
+    from ..data.semantic_icons import semantic_icon
+    markers = {'noise': semantic_icon('noise.pulse'), 'chaos': semantic_icon('stat.chaos')}
+    if terse:
+        # 少字模式：去掉「噪音」「混乱」中文标签，只留各自图标（语义图标缺失
+        # 时用 terse 的两列回退字形，绝不留空）；条与数值照旧。
+        markers = {key: (markers[key] or _terse.stat_glyph(key)) for key in markers}
+        labels = {'noise': '', 'chaos': ''}
+    else:
+        labels = {'noise': tr('噪音'), 'chaos': tr('混乱')}
+    values = {'noise': noise, 'chaos': chaos}
+
+    def separator(key):
+        # 合并行是图标终端里噪音／混乱唯一可见的地方（#signal-status 整行这时被
+        # 隐藏），所以把分隔点号的位置换成它们本来的图标：' · ' 三格，' ' + 双格
+        # 图标也三格。没有图标的终端退回点号。
+        icon = markers[key]
+        return (' ' + icon, True) if icon else (' · ', False)
+
+    def plain_width(key):
+        # 量程溢出标记 › 只在噪音段、只在超过 20 格时多占 1 格。
+        extra = 1 if key == 'noise' and overflow else 0
+        return cell_len(separator(key)[0]) + cell_len(labels[key] + ' ' + values[key]) + extra
+
+    # 条占「bars 格 + 1 个空格」；剩余列不够 4 格就不硬塞短条，退回纯文字。
+    spare = (width - cell_len(tail.plain) - plain_width('noise') - plain_width('chaos'))
+    bars = min(NOISE_BAR_MAX, spare - 1) if spare >= 4 else 0
+    for key, color in (('noise', NOISE_COLOR), ('chaos', CHAOS_COLOR)):
+        text, has_icon = separator(key)
+        tail.append(text, style=color if has_icon else '#ffffff')
+        start = cell_len(tail.plain)
+        tail.append(labels[key] + ' ', style=color)
+        if key == 'noise' and bars:
+            fill = min(bars, round(bars * max(0, radius or 0) / NOISE_SCALE))
+            tail.append('┃' * fill, style=NOISE_COLOR)
+            tail.append('┊' * (bars - fill), style=TRACK_COLOR)
+            tail.append(' ', style=NOISE_COLOR)
+        tail.append(values[key], style=MUTED if key == 'noise' and radius is None else color)
+        if key == 'noise' and overflow:
+            tail.append('›', style='#f2bd84')
+        hits[key] = (start, cell_len(tail.plain))
+    if cell_len(tail.plain) > width:
+        return None, None
+    hits['row'] = 4  # 合并行固定是 #status 的第 5 行
+    return tail, hits
+
+
+def summary_text(preview, chaos, *, width=44, terse: bool = False):
     radius = preview['radius']
     noise = f'{radius if radius is not None else "—"}/{NOISE_SCALE}'
     chaos = f'{clamp_chaos(chaos)}/{CHAOS_MAX}'
     from ..data.semantic_icons import semantic_icon
     noise_icon = semantic_icon('noise.pulse')
     chaos_icon = semantic_icon('stat.chaos')
-    fixed = ((noise_icon + ' ') if noise_icon else '') + f'{tr("噪音")}  {noise}  ' \
-        + ((chaos_icon + ' ') if chaos_icon else '') + f'{tr("混乱")} {chaos}'
-    bars = min(12, max(0, width - cell_len(fixed) - 1))
+    if terse:
+        # 少字模式：去掉「噪音」「混乱」中文标签，只留图标（语义图标缺失时
+        # 用 terse 的两列回退字形）+ 条 + 数值；宽窄判定仍按实际宽度算。
+        noise_lead = (noise_icon + ' ') if noise_icon else _terse.stat_glyph('noise')
+        chaos_lead = (chaos_icon + ' ') if chaos_icon else _terse.stat_glyph('chaos')
+        fixed = noise_lead + f'{noise}  ' + chaos_lead + f'{chaos}'
+    else:
+        noise_lead = (noise_icon + ' ') if noise_icon else ''
+        chaos_lead = (chaos_icon + ' ') if chaos_icon else ''
+        fixed = noise_lead + f'{tr("噪音")}  {noise}  ' + chaos_lead + f'{tr("混乱")} {chaos}'
+    bars = min(NOISE_BAR_MAX, max(0, width - cell_len(fixed) - 1))
     fill = min(bars, round(bars * max(0, radius or 0) / NOISE_SCALE))
-    text = Text((noise_icon + ' ') if noise_icon else '', style=NOISE_COLOR, no_wrap=True)
-    text.append(tr('噪音') + ' ', style=NOISE_COLOR)
+    text = Text(noise_lead, style=NOISE_COLOR, no_wrap=True)
+    if not terse:
+        text.append(tr('噪音') + ' ', style=NOISE_COLOR)
     if bars:
         text.append('┃' * fill, style=NOISE_COLOR)
         text.append('┊' * (bars-fill), style=TRACK_COLOR)
@@ -114,14 +221,68 @@ def summary_text(preview, chaos, *, width=44):
     text.append(noise, style=NOISE_COLOR if radius is not None else MUTED)
     if radius is not None and radius > NOISE_SCALE:
         text.append('›', style='#f2bd84')
-    text.append('  ' + ((chaos_icon + ' ') if chaos_icon else '')
-                + tr('混乱') + ' ' + chaos, style=CHAOS_COLOR)
+    if terse:
+        text.append('  ' + chaos_lead + chaos, style=CHAOS_COLOR)
+    else:
+        text.append('  ' + chaos_lead + tr('混乱') + ' ' + chaos, style=CHAOS_COLOR)
     return text
+
+
+def chaos_tier_effects_text(tier: str) -> str:
+    """该档可能副作用的摘要：事件与数值现读 TIER_POOLS／TIER_EFFECTS。
+
+    数值不写死在文案里，平衡调整后说明面板自动跟着变，避免玩家看到旧数字。
+    """
+    from ..core.tamper_risks import EVENT_LABELS, TIER_EFFECTS, TIER_POOLS
+
+    effects = TIER_EFFECTS.get(tier, {})
+    pieces: list[str] = []
+    for event_id, _weight in TIER_POOLS.get(tier, ()):
+        values = effects.get(event_id) or {}
+        label = tr(EVENT_LABELS.get(event_id, event_id))
+        if event_id == "ink_blur":
+            pieces.append(tr('{label}（清醒创伤 {n}）', label=label,
+                             n=int(values.get("lucidity", 0))))
+        elif event_id == "glyph_scar":
+            pieces.append(tr('{label}（心智创伤 {n}）', label=label,
+                             n=int(values.get("mind", 0))))
+        elif event_id == "tail_echo":
+            pieces.append(tr('{label}（清醒 {lucidity}／心智 {mind}）', label=label,
+                             lucidity=int(values.get("lucidity", 0)),
+                             mind=int(values.get("mind", 0))))
+        elif event_id == "margin_ember":
+            pieces.append(tr('{label}（{n} 处）', label=label,
+                             n=int(values.get("cells", 1))))
+        elif event_id == "omission_visitor":
+            pieces.append(tr('{label}（可能现身）', label=label))
+        else:
+            pieces.append(label)
+    # 分隔符随语言走：英文面板里不能残留中文顿号（i18n 覆盖率会查）。
+    separator = "、" if get_language() == "zh" else ", "
+    return separator.join(pieces)
+
+
+def chaos_tier_lines(value: int) -> list[tuple[str, bool]]:
+    """逐档说明行：(文本, 是否当前档)。范围读 RISK_TIERS，数值读 TIER_EFFECTS。"""
+    current = chaos_risk_tier(value)
+    rows: list[tuple[str, bool]] = []
+    for low, high, tier, _probability in RISK_TIERS:
+        line = tr('{tier} {low}–{high}：{effects}', tier=tr(tier), low=low, high=high,
+                  effects=chaos_tier_effects_text(tier))
+        rows.append((line, tier == current))
+    return rows
 
 
 def detail_text(app, preview):
     state = app.session.state
-    text = Text(tr('本次预计声音'), style='bold ' + NOISE_COLOR)
+    text = Text()
+    from ..core.constants import NOISE_AMBIENT_TURNS
+    ambient = ambient_noise(app)
+    text.append(tr('周围区域噪音：{n}/20（最近 {turns} 回合）',
+                   n=ambient['radius'], turns=NOISE_AMBIENT_TURNS),
+                style='bold ' + NOISE_COLOR)
+    text.append('\n' + tr('来自你周围区域的真实声音，来源不一定是自己。'), style=MUTED)
+    text.append('\n\n' + tr('本次预计声音'), style='bold ' + NOISE_COLOR)
     text.append('\n' + tr(preview['context']), style='#ffffff')
     radius = preview['radius']
     text.append('\n' + tr('最终声径：{n} 格', n=radius) if radius is not None
@@ -181,6 +342,18 @@ def detail_text(app, preview):
                 line += ' · ' + tr('强度：{strength}', strength=tr(clue['strength']))
             if clue.get('multiple'):
                 line += ' · ' + tr('多次响动')
+            # 一声两种来处（expansion.sound.i06）：转发来的那一声只注明入口；
+            # 入口没亲眼见过就只说「经传声筒转发」，不替玩家追另一头。
+            relay = clue.get('relay')
+            if relay and state.insight_active('一声两种来处'):
+                try:
+                    rx, ry = int(relay[0]), int(relay[1])
+                except (TypeError, ValueError, IndexError):
+                    rx = ry = None
+                if rx is not None and state.is_visible(rx, ry):
+                    line += ' · ' + tr('经传声筒转发，入口：({x},{y})', x=rx, y=ry)
+                else:
+                    line += ' · ' + tr('经传声筒转发（入口未见）')
             prefix = f'▶ {index + 1}. ' if index == selected else f'{index + 1}. '
             text.append('\n' + prefix + line,
                         style='bold bright_yellow' if index == selected else '#b6cae8')
@@ -228,6 +401,17 @@ def detail_text(app, preview):
     text.append('\n' + tr('连续篡改压力：{n}', n=max(0, min(3, state.tamper_pressure))), style='#f18e9b')
     text.append('\n' + tr('混乱度、连续压力和崩解度分别结算；心理状态也可能影响副作用。'), style=MUTED)
     text.append('\n' + tr('篡改预览只报价，不提前增加实际混乱；这里只显示风险档位。'), style=MUTED)
+    # 2026-10-27 玩家反馈「分档惩罚不明确」：逐档写出可能副作用与该档数值。
+    # 档位名与范围来自 RISK_TIERS，数值来自 TIER_EFFECTS；不写死、不公开概率，
+    # 当前混乱所在档用 ▶ 前缀高亮（中英文一致）。
+    text.append('\n\n' + tr('风险分档'), style='bold ' + CHAOS_COLOR)
+    text.append('\n' + tr('档位只描述副作用的强度，具体触发概率不公开；混乱越高，同一类副作用的数值越大。'),
+                style=MUTED)
+    for line, is_current in chaos_tier_lines(value):
+        text.append('\n' + ('▶ ' if is_current else '   ') + line,
+                    style='bold bright_yellow' if is_current else '#b6cae8')
+    text.append('\n' + tr('混乱极高时，篡改可能召来专属混乱异象，它们也可能自行靠近。'),
+                style='#f18e9b')
     quote = tamper_quote(app)
     if quote is not None:
         cost, delta, after = quote
@@ -279,7 +463,10 @@ def tamper_quote(app):
     return None
 
 
-class SignalStatusLink(Static, can_focus=True):
+from .world_renderer import WorldCanvas
+
+
+class SignalStatusLink(WorldCanvas, can_focus=True):
     def on_mouse_down(self, event):
         event.stop()
         if event.button in (1, 3):
@@ -309,6 +496,7 @@ class SignalDetailText(Static):
                 self.call_after_refresh(self.app._refresh_signal_status)
 
     def on_mouse_down(self, event):
+        self.app._select_input_region('overlay')
         event.stop()
         if event.button == 1:
             self.app.select_signal_clue_line(int(event.offset.y))
@@ -317,6 +505,7 @@ class SignalDetailText(Static):
 class InspectionPane(Vertical):
     """Screen-level host, positioned inside the left map region even in editors."""
     def on_mouse_down(self, event):
+        self.app._select_input_region('overlay')
         event.stop()
 
     def on_mouse_move(self, event):
@@ -356,7 +545,10 @@ class SignalStatusMixin:
     _signal_clue_lines: dict[int, int] = {}
 
     def _inspection_active(self):
-        return self.signal_detail_open or self._self_audit_visible()
+        # 层详情面板（2026-10-24 玩家优化 6）与自我察觉同属左侧检视层：
+        # 打开期间世界输入一律让位，Esc/点击入口关闭。
+        return self.signal_detail_open or self._self_audit_visible() or (
+            getattr(self, '_layer_info_visible', None) is not None and self._layer_info_visible())
 
     def _can_open_inspection(self):
         if getattr(self, 'world_tamper_editor', None) is not None:
@@ -376,7 +568,10 @@ class SignalStatusMixin:
         self._signal_kind='signals'
         if self._self_audit_visible():
             self._close_self_audit(refresh=False)
+        if getattr(self, '_layer_info_visible', None) and self._layer_info_visible():
+            self._close_layer_info(refresh=False)
         self.signal_detail_open = True
+        self._select_input_region('overlay')
         state = self.session.state
         self._signal_context = (id(state), state.depth, state.realm_id, state.realm_depth)
         self._signal_focus = self.focused
@@ -386,6 +581,7 @@ class SignalStatusMixin:
         self.query_one('#signal-detail').display = True
         self.query_one('#signal-detail-scroll').scroll_home(animate=False)
         self.query_one('#signal-detail-scroll').focus()
+        getattr(self, '_coach_record_view', lambda: None)()
         self.call_after_refresh(self._refresh_signal_status)
 
     def toggle_aim_detail(self):
@@ -435,10 +631,25 @@ class SignalStatusMixin:
             self.set_focus(None)
 
     def _refresh_signal_status(self):
-        preview = noise_preview(self)
-        self.query_one('#signal-status').update(summary_text(
-            preview, self.session.state.chaos,
-            width=max(1, self.query_one('#signal-status').content_size.width or 36)))
+        # 宽屏档 _refresh_world_view 刚算过同一份预计（供合并状态行用），
+        # 这里直接复用；其余路径（凝听、线索选择、详情面板重排）照常现算。
+        preview = getattr(self, '_status_noise_preview', None)
+        if preview is None or not getattr(self, '_status_noise_preview_fresh', False):
+            preview = noise_preview(self)
+        self._status_noise_preview_fresh = False
+        # 噪音条 = 玩家周围的实时环境噪音（可能来自任何来源），不是下一动作预计；
+        # 动作预计仍在详情面板中显示。
+        ambient = getattr(self, '_status_ambient_noise', None) or ambient_noise(self)
+        terse_mode = _terse.enabled(self.config)
+        summary = summary_text(
+            ambient, self.session.state.chaos,
+            width=max(1, self.query_one('#signal-status').content_size.width or 36),
+            terse=terse_mode)
+        if not terse_mode and get_language() == 'en':
+            # 英文普通模式：右栏长单词缩写（少字模式已只留图标）。
+            summary = _terse.compact_english(summary)
+        from .static_updates import update_static_if_changed
+        update_static_if_changed(self.query_one('#signal-status'), summary)
         region = self.query_one('#map-pane').region
         if self.query_one('#layout').display and region.width:
             self._signal_region = region

@@ -24,15 +24,45 @@ from ..constants import (
 from ..content import ITEM_DEFINITIONS, PROJECTILE_DEFINITIONS
 from ..entities import ActionResult, Entity, Item, WorldItem
 
+# 换弹两步各自的声音半径（金属／机括声）：完成装填更响，中途上膛较轻。
+# 洞察「听出填装间隙」报的就是这两个数——**唯一真源在这里**，别在别处再写一遍。
+RELOAD_SOUND_RADIUS_STEP = 4
+RELOAD_SOUND_RADIUS_DONE = 6
+
+
+def _pierce_loan(state) -> int:
+    """「压膛」借给下一发的穿透档数；没有借据就是 0。"""
+    from .. import expansion_consumables
+    try:
+        return int(expansion_consumables.pierce_loan(state) or 0)
+    except Exception:
+        return 0
+
+
 class CombatActionsMixin:
     """战斗动作族：能力激活与结算/喷洒/发射/解锁开火/修墙。"""
 
     def _ability_imagination_cost(self, ability_id: str, definition: dict) -> int:
         """主动构想的实付想象费用；「回响的储备」只减免诱引类构想（回响）。"""
-        cost = self._scaled_ability_cost(int(definition["cost"]))
+        from ...equipment.expansion_runtime import adjust_construct_cost
+        cost = adjust_construct_cost(
+            self, ability_id, self._scaled_ability_cost(int(definition["cost"])))
         if ability_id == "echo_pulse":
             cost = max(1, cost - self.memory_stat_bonus("lure_cost"))
         return cost
+
+    def _emit_construct_noise(self, ability_id: str, definition: dict) -> None:
+        """成功展开构想的世界噪音；战斗/高费构想更响，已有专属声音的不重复。"""
+        if ability_id in ("echo_pulse", "listen_realm"):
+            return
+        combat = definition.get("combat") or {}
+        radius = int(combat.get("sound") or 0)
+        if radius <= 0:
+            radius = 4 + min(4, max(0, int(definition.get("cost", 0) or 0)) // 5)
+        self._sound_pulse(self.player.x, self.player.y, max(3, min(12, radius)),
+                          by_player=True, category="ability",
+                          source=tr(definition["name"]), announce=False,
+                          triggers_rewards=False)
 
     @root_action
     @animate_ability
@@ -67,18 +97,33 @@ class CombatActionsMixin:
                 if resource == "lucidity":
                     return ActionResult(False, tr("清醒度不足（需要 {cost}）。", cost=int(amount)))
                 return ActionResult(False, tr("资源不足（需要 {cost}）。", cost=int(amount)))
-        effect = self._resolve_ability_effect(ability_id, target=target,
-                                              direction=direction, landing=landing)
+        from ...equipment.expansion_runtime import (
+            after_construct, begin_construct, end_construct,
+        )
+        from ...equipment.remaining_gear import cast_allowed
+        if not cast_allowed(self,ability_id):
+            return ActionResult(False,tr("装订钳还固定着同类残留，暂时不能另铺。"))
+        begin_construct(self, ability_id, target)
+        try:
+            effect = self._resolve_ability_effect(ability_id, target=target,
+                                                  direction=direction, landing=landing)
+            if effect is not None:
+                after_construct(self, effect)
+        finally:
+            end_construct(self)
         if effect is not None:
             if self.blank_pass_pending:
                 # 这条构想走了「不扣费」的早退分支（落点站不下等）：
                 # 免单没真正用上，把本层那一次退回去。
                 self.blank_pass_pending = False
                 self.blank_pass_depth = -1
+            if effect.changed:
+                self._emit_construct_noise(ability_id, definition)
             return effect
         self._pay_ability_cost(cost)
         self.ability_cooldowns[ability_id] = self._scaled_ability_cooldown(int(definition["cooldown"]))
         self._action_time(1, ActionKind.USE)
+        self._emit_construct_noise(ability_id, definition)
         message = tr("主动构想「{name}」展开了。", name=tr(definition["name"]))
         self.messages.append(message)
         return ActionResult(True, message, {"ability": ability_id})
@@ -96,6 +141,11 @@ class CombatActionsMixin:
         """
         if ability_id.startswith('library.') and ability_id != 'library.erase':
             from ..library_abilities import resolve
+            return resolve(self, ability_id, target=target, direction=direction)
+        if ability_id.startswith('expansion.'):
+            # 扩展包目录的构想：效果由 catalog.json 的 effect.runtime 指名既有原语，
+            # 结算门面在 core/expansion_abilities.py，不再往这条手写分支链里加 if。
+            from ..expansion_abilities import resolve
             return resolve(self, ability_id, target=target, direction=direction)
         from ..combat_constructs import is_combat, release
         if is_combat(ability_id):
@@ -291,7 +341,8 @@ class CombatActionsMixin:
             _spend()
             radius = 3 + self._effect_power("blast_radius")
             self._kill_full_reward = True
-            self._explode(self.player.x, self.player.y, radius, self._scaled_ability_power(3))
+            self._explode(self.player.x, self.player.y, radius,
+                          self._scaled_ability_power(3), from_player=True)
             return _done(tr("烈焰新星在你周围炸开。"))
 
         # ---- 内容扩展包 v1：8 新构想 ----
@@ -380,7 +431,8 @@ class CombatActionsMixin:
                     return _done(tr("接线失败：两个端口不在同一块电路板上。"))
                 self.link_logic_nodes([source, receiver])
             return _done(tr("你改接了一条电线：{source} 与 {receiver} 之间亮起了新的连线。",
-                            source=source, receiver=receiver))
+                            source=source, receiver=receiver)
+                         + self._verify_wire_and_shed_charge(source, receiver))
 
         # ---- 内容扩展包 v1：12 地形改造构想 ----
         if ability_id == "condense_dew":
@@ -705,6 +757,7 @@ class CombatActionsMixin:
                      position=record.cell(definition.get("anchor") or ""), owner_uid=record.scene_uid,
                      cause_uid=f"{record.definition_id}#offering", source_kind="scene",
                      before="等待支付", after="开启", amount=len(valid) + 1)
+        world_scenes.emit_gate_paid(self, record, gifts=len(valid) + 1)
         message = tr("青灯吞下透镜与三件祭品——石台中央裂开了一道门。")
         self.messages.append(message)
         self._action_time(1, ActionKind.USE)
@@ -716,8 +769,11 @@ class CombatActionsMixin:
         §13：残页把新战斗构想的总权重压到 20%（旧通用池 80%），组内按
         基础战斗/进阶战术/较稀有环境的 3／2／1 权重抽取；空组自动回退。
         """
+        from ..item_access import ability_learnable
         unlearned = [ability_id for ability_id, definition in ABILITY_DEFINITIONS.items()
-                     if ability_id not in self.abilities and definition.get('acquire_pool','general') == pool_id]
+                     if ability_id not in self.abilities and definition.get('acquire_pool','general') == pool_id
+                     # 扩展包条目带 min_depth：深层构想不会在浅层的残页里冒出来。
+                     and ability_learnable(self, ability_id)]
         if not unlearned:
             return None
         rng = random.Random(self.seed ^ (self.time * 613) ^ len(self.abilities))
@@ -784,6 +840,9 @@ class CombatActionsMixin:
 
         if max(abs(dx), abs(dy)) != 1:
             return ActionResult(False, tr("喷射方向无效。"))
+        from ...equipment import gear_tools
+        if gear_tools.suit_sealed(self):
+            return ActionResult(False, tr("工作服的外层还封着——先解开再喷射。"))
         cost = self._spray_cost_ok()
         if cost is not None:
             return cost
@@ -808,6 +867,9 @@ class CombatActionsMixin:
 
         if not self.inside_board(tx, ty) or (tx, ty) == (self.player.x, self.player.y):
             return ActionResult(False, tr("喷射方向无效。"))
+        from ...equipment import gear_tools
+        if gear_tools.suit_sealed(self):
+            return ActionResult(False, tr("工作服的外层还封着——先解开再喷射。"))
         cost = self._spray_cost_ok()
         if cost is not None:
             return cost
@@ -841,6 +903,9 @@ class CombatActionsMixin:
 
         path = list(trace_path(self.player.x, self.player.y, dx, dy))
         self._action_time(self._dream_action_time(1, 'shooting'), ActionKind.USE)
+        self._sound_pulse(self.player.x, self.player.y, 6, by_player=True,
+                          category="projectile", source=tr("发射"), announce=False,
+                          triggers_rewards=False)
         message, extra = weapons_mod.fire_once_resolve(self, item, path)
         self._capture_fire_once(item, path, extra, origin=origin)
         self.messages.append(message)
@@ -884,6 +949,9 @@ class CombatActionsMixin:
             (tx > self.player.x) - (tx < self.player.x),
             (ty > self.player.y) - (ty < self.player.y),
         )
+        self._sound_pulse(self.player.x, self.player.y, 6, by_player=True,
+                          category="projectile", source=tr("发射"), announce=False,
+                          triggers_rewards=False)
         origin = (self.player.x, self.player.y)
         from ..throwing import flight_path
 
@@ -917,6 +985,8 @@ class CombatActionsMixin:
             pending.append((item, shots))
         for item, shots in pending:
             item.magazine = max(0, item.magazine - shots)
+            if item.magazine <= 0:
+                self._note_emptied_by_fire(item.instance_id)
         return None
 
     def _consume_legacy_basic(self) -> bool:
@@ -926,6 +996,54 @@ class CombatActionsMixin:
             return False
         view.magazine -= 1
         write_legacy_basic(self, view)
+        if view.magazine <= 0:
+            from ..firing_sources import LEGACY_BASIC_ID
+            self._note_emptied_by_fire(LEGACY_BASIC_ID)
+        return True
+
+    def _verify_wire_and_shed_charge(self, source, receiver) -> str:
+        """不把亮灯当通电（``expansion.circuit.i03``）：近身断线验电后泄一层积电。
+
+        只认**近身**（贴着一个端口）与**已见**（``rewire`` 本来就要求两个端口都可见）：
+        隔空接线验不了电，不白给。泄的只是压电地板那本层数账（``shed_piezo_charge``），
+        地板下一回合照常继续充电——这就是描述里「仍须实际断电，不因灯灭就安全」。
+        返回追加的提示（没有生效时是空串）。
+        """
+        if not self.insight_active("不把亮灯当通电"):
+            return ""
+        px, py = self.player.x, self.player.y
+        if not any(max(abs(int(x) - px), abs(int(y) - py)) <= 1
+                   for x, y in (source, receiver)):
+            return ""
+        if self.shed_piezo_charge(self.player, 1) <= 0:
+            return ""
+        return tr("不把亮灯当通电：你就着这条线断了电、验了一下——身上泄掉一层积电，"
+                  "灯亮不亮都不算断电。")
+
+    def _note_emptied_by_fire(self, instance_id) -> None:
+        """记下「这一仓是自己打空的」（洞察「数清空响」的凭据）。
+
+        只在**开火**扣空时写，所以主动清仓／退弹不会触发——描述里写明了
+        「退弹清仓不触发」。凭据按实例记，换弹第一步用掉即删。
+        """
+        features = getattr(self, 'realm_features', None)
+        if isinstance(features, dict):
+            features.setdefault('emptied_by_fire', {})[str(instance_id)] = int(self.time)
+
+    def _take_fast_reload_step(self, instance_id) -> bool:
+        """数清空响：这一仓是自己打空的 → 本回换弹的**第一步**多走一格进度。
+
+        只改步进，不改费用：想象力照付（描述「原费用照付」）。
+        """
+        if not self.insight_active('数清空响'):
+            return False
+        features = getattr(self, 'realm_features', None)
+        if not isinstance(features, dict):
+            return False
+        marks = features.get('emptied_by_fire')
+        if not isinstance(marks, dict) or str(instance_id) not in marks:
+            return False
+        marks.pop(str(instance_id), None)
         return True
 
     def _reload_item(self, instance_id: str):
@@ -953,15 +1071,18 @@ class CombatActionsMixin:
         if quote.cost and not item.reload_paid:
             if self.imagination < quote.cost:
                 return ActionResult(False, tr('想象力不足，无法换弹。'))
+        # 数清空响：只有「自己打空的那一仓、换弹的第一步」多走一格，费用照付。
+        fast_step = self._take_fast_reload_step(instance_id)
         self._action_time(1, ActionKind.USE)
         if quote.cost and not item.reload_paid:
             from ..settlement import REASON_ABILITY_COST, settle_delta
             settle_delta(self, 'imagination', -quote.cost, reason=REASON_ABILITY_COST,
                          source='换弹')
             item.reload_paid = True
-        item.reload_steps += 1
+        item.reload_steps += 2 if fast_step else 1
         spec = magazine_spec(item.definition_id)
-        if item.reload_steps >= spec.reload_time:
+        completed = item.reload_steps >= spec.reload_time
+        if completed:
             item.magazine = item.magazine_capacity or spec.capacity
             item.reload_steps = 0
             item.reload_paid = False
@@ -969,6 +1090,12 @@ class CombatActionsMixin:
         else:
             message = tr('换弹中：{name} 还需 {n} 步。', name=tr(item.name),
                          n=spec.reload_time - item.reload_steps)
+        # 换弹是金属/机括声：完成装填更响，中途上膛较轻。
+        self._sound_pulse(self.player.x, self.player.y,
+                          RELOAD_SOUND_RADIUS_DONE if completed else RELOAD_SOUND_RADIUS_STEP,
+                          by_player=True, category="item",
+                          source=tr("换弹"),
+                          announce=False, triggers_rewards=False)
         if legacy:
             write_legacy_basic(self, item)
         self.messages.append(message)
@@ -990,6 +1117,7 @@ class CombatActionsMixin:
         if not action_plan.valid:
             return self._fire_choice_result(action_plan, target=self.entity_at(tx, ty), cell=(tx, ty))
         spec = dict(action_plan.projectile_profile)
+        self._emit_fire_noise(spec)
         if max(abs(tx-self.player.x), abs(ty-self.player.y)) > int(spec.get('range', 12)):
             return ActionResult(False, tr("发射方向无效。"))
         magazine_error = self._consume_equipment_magazine(action_plan)
@@ -1026,6 +1154,8 @@ class CombatActionsMixin:
         for x, y in path:
             cell = self.cell(x, y)
             if cell.solid:
+                from ..expansion_consumables import on_collision
+                on_collision(self)
                 if self.puzzle_projectile_blocked(x, y):
                     blocked = True
                     end_kind, end_cell = 'wall', (x, y)
@@ -1048,9 +1178,10 @@ class CombatActionsMixin:
                     break
                 resistance = max(1, cell.hardness * cell.thickness)
                 passes = penetration >= resistance
+                integrity_before = int(cell.integrity)
                 cell.integrity = max(0, cell.integrity - (35 if passes else max(10, penetration * 20)))
                 if cell.integrity == 0:
-                    self.destroy_wall(x, y, "projectile")
+                    self.destroy_wall(x, y, "projectile", integrity_before=integrity_before)
                     self.messages.append(tr("辅助弹体击碎了一处坚实聚合物。"))
                 if passes:
                     penetration -= resistance
@@ -1061,7 +1192,8 @@ class CombatActionsMixin:
                 break
             entity = self.entity_at(x, y)
             if entity is self.player and (x, y) != path[0]:
-                self._lose_mind(1)
+                from ..memory_buffers import spend
+                self._lose_mind(max(0, 1-spend(self,"mind:self_projectile")))
                 hit = self.player
                 end_kind, end_cell = 'entity', (x, y)
                 path = path[:path.index((x, y))+1]
@@ -1102,7 +1234,9 @@ class CombatActionsMixin:
         return (template['penetration'] + (item.penetration if item else 0)
                 + self.physics_modifiers()['penetration_bonus'] + int(spec.get('penetration', 0))
                 + int(self.insight_active('机械迷恋'))
-                + action_effect_power(self, 'pierce_up', action_plan.rows))
+                # 「压膛」借来的那一档穿透：读数挂在本层装置表里，开火时领走。
+                + action_effect_power(self, 'pierce_up', action_plan.rows)
+                + _pierce_loan(self))
 
     def _fire_choice_result(self, action_plan, *, target=None, cell=None) -> ActionResult:
         if action_plan.requires_target:
@@ -1117,6 +1251,13 @@ class CombatActionsMixin:
             "equipment_action_choices": [{"key": c.key, "kind": c.kind,
                 "definition_ids": list(c.definition_ids)} for c in choices],
         })
+
+    def _emit_fire_noise(self, spec) -> None:
+        """每次成功发射都有枪口/机括噪音；重武器（带 pulse）更响。"""
+        base = 5 + min(5, max(0, int(spec.get("pulse") or 0)) // 2)
+        self._sound_pulse(self.player.x, self.player.y, base, by_player=True,
+                          category="projectile", source=tr("发射"),
+                          announce=False, triggers_rewards=False)
 
     def _apply_fire_payload(self, target, spec, direction) -> None:
         portent_hit = spec.get("portent")
@@ -1141,6 +1282,7 @@ class CombatActionsMixin:
             return ActionResult(False, magazine_error)
         self.facing = (dx, dy)
         spec = dict(action_plan.projectile_profile)
+        self._emit_fire_noise(spec)
         consumed_charge = False
         if choice == 'legacy_basic_fire':
             if not self._consume_legacy_basic():
@@ -1151,6 +1293,9 @@ class CombatActionsMixin:
         hand_item = self.equipment._item(action_plan.primary_source_id)
         template = PROJECTILE_DEFINITIONS.get(hand_item.projectile_template if hand_item else "直线弹体", PROJECTILE_DEFINITIONS["直线弹体"])
         penetration = self._shot_penetration(action_plan, spec)
+        # 借来的穿透只够这一发：算进上面那个数之后立刻领走。
+        from ..expansion_consumables import spend_pierce_loan
+        spend_pierce_loan(self)
         push_power = template["push"] + (hand_item.push if hand_item else 0) + int(spec.get("push", 0))
         blocked_at: list[int] | None = None
         range_end: list[int] | None = None
@@ -1189,6 +1334,8 @@ class CombatActionsMixin:
                 continue
             if self.cell(x, y).solid:
                 cell = self.cell(x, y)
+                from ..expansion_consumables import on_collision
+                on_collision(self)
                 if self.puzzle_projectile_blocked(x, y):
                     blocked_at = [x, y]
                     end_kind, end_cell = 'wall', (x, y)
@@ -1241,22 +1388,25 @@ class CombatActionsMixin:
                             continue
                     blocked_at = [x, y]
                     end_kind, end_cell = "wall", (x, y)
+                    integrity_before = int(cell.integrity)
                     cell.integrity = max(0, cell.integrity - max(10, penetration * 20))
                     if cell.integrity == 0:
-                        self.destroy_wall(x, y, "projectile")
+                        self.destroy_wall(x, y, "projectile", integrity_before=integrity_before)
                         self.messages.append(tr("弹体击碎了一处坚实聚合物。"))
                     break
                 penetration -= resistance
                 pierced += 1
+                integrity_before = int(cell.integrity)
                 cell.integrity = max(0, cell.integrity - 35)
                 if cell.integrity == 0:
-                    self.destroy_wall(x, y, "projectile")
+                    self.destroy_wall(x, y, "projectile", integrity_before=integrity_before)
                 cx, cy = x, y
                 flight.append((x, y))
                 continue
             target = self.entity_at(x, y)
             if target is self.player and placed_mirror_bounce:
-                self._lose_mind(1)
+                from ..memory_buffers import spend
+                self._lose_mind(max(0, 1-spend(self,"mind:self_projectile")))
                 hit = self.player.id
                 flight.append((x, y))
                 end_kind, end_cell = 'entity', (x, y)

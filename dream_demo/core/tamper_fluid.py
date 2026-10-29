@@ -88,6 +88,55 @@ def _same_material_sources(state: Any, slot: Any, kind: str) -> tuple[tuple[int,
     return ((slot.x, slot.y),)
 
 
+def gather_destinations(state: Any, members: tuple[tuple[int, int], ...],
+                        kind: str, material: str) -> list[tuple[int, int]]:
+    """与来源区域四邻相接、可见、非成员、放得下该材料的落点。
+
+    与 :func:`build_fluid_plan` 的 gather 分支共用同一套约束（可见/非成员/
+    非实心/同材料或空格），只是不挑某一个；按距玩家的曼哈顿距离排序，
+    距离相同按坐标，保证「默认落点」在任何一次只读试算里都一致。
+    """
+    member_set = set(members)
+    px, py = state.player.x, state.player.y
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for x, y in members:
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if (nx, ny) in member_set or (nx, ny) in seen:
+                continue
+            seen.add((nx, ny))
+            if not (0 <= nx < state.width and 0 <= ny < state.height):
+                continue
+            if not state.is_visible(nx, ny):
+                continue
+            if state.cell(nx, ny).solid:
+                continue
+            if _headroom(state, nx, ny, kind, material) <= 0:
+                continue
+            out.append((nx, ny))
+    out.sort(key=lambda pos: (abs(pos[0] - px) + abs(pos[1] - py), pos))
+    return out
+
+
+def default_gather_destination(state: Any, slot: Any, word_id: str) -> tuple[int, int] | None:
+    """区域聚流的默认落点：距玩家最近的合法相邻格；没有返回 None。
+
+    面板显示、地图落点标记与提交执行都读这一个入口，玩家不选落点时
+    「看到的落点」就是「实际生效的落点」。
+    """
+    if word_id not in ("gather_liquid", "gather_gas"):
+        return None
+    members = tuple(getattr(slot, "region_members", ()) or ())
+    if not members:
+        return None
+    kind, _verb = FLUID_VERBS[word_id]
+    material = _material(state, members[0][0], members[0][1], kind)
+    if not material:
+        return None
+    destinations = gather_destinations(state, members, kind, material)
+    return destinations[0] if destinations else None
+
+
 def _distribute(requested: int, destinations: list[tuple[int, int, int]]) -> list[tuple[int, int, int]]:
     """按目的地容量均分请求量；返回 [(x,y,amount)]，不足时留 residual。"""
     remaining = requested
@@ -130,7 +179,14 @@ def build_fluid_plan(state: Any, word_id: str, slot: Any,
         if dest is None and not region_members:
             dest = (slot.x, slot.y)
         if dest is None:
-            return tr("聚流需要先选定一个明确落点。")
+            # 区域口径的默认落点：距玩家最近的合法相邻格（2026-10-24 触发
+            # 条件修复：旧口径必须先按 V 选点才肯执行，实际几乎无法触发；
+            # 面板与地图标记显示的就是这个默认落点，V 移动光标仍可改）。
+            material0 = _material(state, region_members[0][0], region_members[0][1], kind)
+            candidates = gather_destinations(state, region_members, kind, material0) if material0 else []
+            if not candidates:
+                return tr("周围没有可以安置的落点。")
+            dest = candidates[0]
         dx, dy = dest
         if not (0 <= dx < state.width and 0 <= dy < state.height):
             return tr("落点不在地图内。")
@@ -172,7 +228,9 @@ def build_fluid_plan(state: Any, word_id: str, slot: Any,
         if any(_material(state, x, y, kind) != material for x, y in sources):
             return tr("这个区域里有不同材料，不能一次搬运。")
         total = sum(_amount(state, x, y, kind) for x, y in sources)
-        if total < 2:
+        # 2026-10-28：旧口径 <2 就拒绝，「泼开/扬散」在一洼两单位液体上偶尔也
+        # 不可用；任何大于 0 的存量都允许摊开一半（最少挪 1 单位）。
+        if total < 1:
             return tr("这里的分量太少，搬不开。")
         requested = max(1, total // 2)
         seen: set[tuple[int, int]] = set(sources)

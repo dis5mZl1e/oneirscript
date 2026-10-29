@@ -38,7 +38,8 @@ def _reachable(state):
                 cell = state.cell(*p)
                 if p in blocked:
                     continue
-                if "enlarged" in state.portents and state._cell_too_narrow_for_enlarged(*p):
+                # 「放大」只排除仍进不去的门；1 格宽缝隙现在可以走（耗时翻倍）。
+                if "enlarged" in state.portents and cell.wall_kind in DOOR_KINDS:
                     continue
                 if not cell.solid or cell.wall_kind in DOOR_KINDS:
                     seen.add(p)

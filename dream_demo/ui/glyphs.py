@@ -148,6 +148,59 @@ def darken(color: str, factor: float = 0.4) -> str:
     )
 
 
+#: 字色与所在底面之间允许的最低 WCAG 对比度（设计文档 §4「逐色核对与地板可分」）。
+MIN_GLYPH_CONTRAST = 3.2
+
+
+def _truecolor(color: str) -> tuple[int, int, int] | None:
+    """hex 与 rich 颜色名（bright_yellow 之类）都解析成真彩；失败返回 None。"""
+    from rich.color import Color
+    try:
+        triplet = Color.parse(str(color)).get_truecolor()
+    except Exception:
+        return None
+    return triplet.red, triplet.green, triplet.blue
+
+
+def _luminance(rgb: tuple[int, int, int]) -> float:
+    def channel(value: int) -> float:
+        ratio = value / 255.0
+        return ratio / 12.92 if ratio <= 0.04045 else ((ratio + 0.055) / 1.055) ** 2.4
+    red, green, blue = (channel(value) for value in rgb)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    """两色的 WCAG 对比度（1:1 – 21:1）；解析不了按 21:1 处理（不失真地放过）。"""
+    one, two = _truecolor(first), _truecolor(second)
+    if one is None or two is None:
+        return 21.0
+    high, low = sorted((_luminance(one), _luminance(two)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def contrast_lift(color: str, background: str | None,
+                  minimum: float = MIN_GLYPH_CONTRAST) -> str:
+    """把字形色朝白色提亮，直到与底色达到 ``minimum``；浅底原样返回。
+
+    只在**深色可行走地板**上生效（藏书宫胡桃木横带 `#72563b` 是最坏的一处：
+    低明度的位面专属色落到 1.0–1.4:1，几乎与地板同色）。一个固定色不可能
+    同时在纸黄 `#e8d8a6` 与胡桃木上都达标——两条亮度约束的区间不相交——所以
+    提亮只发生在渲染时，登记色与色谱协议保持原值。
+    """
+    if not background or contrast_ratio(color, background) >= minimum:
+        return color
+    rgb = _truecolor(color)
+    if rgb is None:
+        return color
+    for step in (0.18, 0.32, 0.45, 0.58, 0.70, 0.82):
+        lifted = tuple(round(value + (255 - value) * step) for value in rgb)
+        candidate = "#{:02x}{:02x}{:02x}".format(*lifted)
+        if contrast_ratio(candidate, background) >= minimum:
+            return candidate
+    return "#{:02x}{:02x}{:02x}".format(*(255, 255, 255))
+
+
 def layered_background(cell, foreground: str = "auto") -> str | None:
     """计算格子的背景色：被前景符号压住的最高下层颜色。
 

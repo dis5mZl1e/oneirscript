@@ -21,13 +21,14 @@ from ..mapgen import layer_dimensions, layer_form_for, layer_modifier_for, norma
 from ..mapgen.origin import DOLL_INTEGRITY, DOLL_MOVE_TIME, DOLL_RESPAWN_TURNS, PROJECTILE_GRANTS, generate_origin_layer
 from .tutorial import tutorial_end
 from .main_difficulty import active_profile, current_anomaly_definition, current_skill_summaries
-from ..materials import floor_effect_for, portent_def, trampled_code
+from ..materials import floor_effect_for, plant_def_for, portent_def, trampled_code
 from ..symbols import entity_glyph
 from .actions import PlayerActionMixin
 from .epilogue import EpilogueMixin
 from .constants import (
+    ANOMALY_REFRESH_ACTIVE_CAP,
     ANOMALY_REFRESH_INTERVAL,
-    ANOMALY_REFRESH_SPAWN_CAP,
+    ANOMALY_REFRESH_MIN_INTERVAL,
     MIND_REGEN_INTERVAL,
     REMOTE_OVERWRITE_INTERVAL,
     Material,
@@ -71,7 +72,11 @@ from .generation import GenerationMixin
 from .identity_traits import IdentityMixin
 from .materials_sim import MaterialSimMixin
 from .pathing import PathMixin
-from .portents import PortentMixin
+from .portents import (
+    PortentMixin,
+    emit_plant_reaction_visual,
+    plant_visual_snapshot,
+)
 from .hospital_effects import HospitalEffectMixin
 from ..equipment.hospital import HospitalEquipmentMixin
 from .run_options import NEUTRAL_MODS, RunOptionsMixin
@@ -140,6 +145,9 @@ class GameState(
     paid_action_seq: int = 0
     tamper_sequence: int = 0
     memory_effect_awards: list[str] = field(default_factory=list)
+    # 扩展包记忆碎片的「缓冲」消耗登记：碎片 id → 作用域键（层/局/遭遇）。
+    # 换层、重装碎片即重新装满；见 core/memory_buffers.py。
+    memory_buffers: dict[str, str] = field(default_factory=dict)
     quiet_step_ready: bool = False
     # §11 §7（2026-10-20）：无声步改为等待后 2 次移动、4 回合内有效。
     quiet_step_charges: int = 0
@@ -193,6 +201,9 @@ class GameState(
     # 每项 {"x","y","due","radius","source"}，due 是绝对回合坐标；到点由
     # `_tick_delayed_sounds` 走真实声路重放，然后从表里摘掉。
     delayed_sounds: list[dict] = field(default_factory=list)
+    # 上一处**实际**诱引落点（扩展包构想「返场」要重放的就是它）：
+    # {"x","y","radius","full_alert","turn","depth"}。重放与齿轮转发不写这里。
+    last_lure: dict = field(default_factory=dict)
     # 分层燃油（2026-10-22 P3）：焦油弹的十字燃油总量 60，分三批各 20 达成。
     # 每项 {"cells": [[x,y,amount],...], "due": 绝对回合}，由 `_tick_delayed_fuel`
     # 到点泼下；只加燃油、不重复点燃（点火伤害只算落点那一次）。
@@ -366,9 +377,11 @@ class GameState(
     terrain_known: bool = False
     # 知识规则版本（旧档缺省 0 = 旧口径；新局写 1，供以后迁移）。
     map_knowledge_version: int = 0
-    # 三层信息显示开关（2026-10-18 docs 第 1 节第二批）。默认关闭：文档要求
-    # 全套配套与原生验收通过后才决定是否切换默认；打开后地图/悬停/详情按
-    # 未知黑幕 + 暗色记忆 + 当前视野渲染，未授权格不再读取真实地形。
+    # 三层信息显示（2026-10-18 docs 第 1 节第二批）。2026-10-25 玩家定稿：
+    # 这是默认能力、不是开局开关 —— 新局由 run_options.apply_run_options 一律
+    # 置 True；字段本身保留（渲染/寻路/详情都按它分支），旧档仍按存档原值。
+    # 打开后地图/悬停/详情按未知黑幕 + 暗色记忆 + 当前视野渲染，未授权格不再
+    # 读取真实地形。裸构造（测试直接 GameState.new）仍是 False = 全知口径。
     map_memory_enabled: bool = False
     # 逻辑固体（内容扩展包 v1）：当前层的陷阱场景（"x,y"→名字）与灌注阀储备。
     trap_scenarios: dict[str, str] = field(default_factory=dict)
@@ -403,6 +416,11 @@ class GameState(
     # 的带寿命演出记录（core/light_flash.note_light_flash）。UI 按 seq 差分拾取；
     # 纯装饰，不入档（persistence 的 runtime_caches 排除）。
     light_flashes: list[dict] = field(default_factory=list)
+    # 命中表现事件（2026-10-24，手感方案 §3.1）：有界队列，只服务 UI 的
+    # 定向抖动/伤害跳字/命中音；纯运行期事实，不入档（persistence
+    # runtime_caches 排除）。
+    presentation_hits: list[dict] = field(default_factory=list)
+    hit_event_seq: int = 0
     # 构筑桥接组件（2026-10-08，平衡方案 §6.1）的运行期瞬态，全部不入档：
     # 折射印记：enemy_id -> {"until": 到期客观时间, "dir": 命中时的飞行方向}。
     refract_marks: dict = field(default_factory=dict)
@@ -561,6 +579,9 @@ class GameState(
         if previous != code:
             cell.plant = code
             cell.plant_fuel = 0
+            # 换种即视为另一株：旧株的一次性标记与剩余预算不能跟着新株走，
+            # 否则「踩倒的蒲草」会继承挺立态的方向/预算。
+            cell.plant_state = {}
             self.plant_revision += 1
         return previous
 
@@ -568,7 +589,7 @@ class GameState(
         """踩踏某格的植物：高丛被踩折成低草，其余植物不变（无提示）。
 
         返回踩踏后的植物码；同一格反复踩踏不会反复触发（第二次起仍是低草），
-        也不会刷出任何事件记录——踩草是无声的。
+        没有真实变化时不登记视觉事件——踩草是无声的。
 
         例外：**柔软聚合物**地板（软垫）护住植物，踩过不折（地板效果，
         见 materials/floors.py）。
@@ -584,12 +605,58 @@ class GameState(
         if floor_effect_for(cell).protects_plants:
             return cell.plant
         previous = cell.plant
+        definition = plant_def_for(previous)
+        release = getattr(definition, "release", None)
+        # 踩踏快照必须在形变/销毁前保存旧植物码，供视觉事件按真实反应播一次。
+        visual_before = plant_visual_snapshot(self, holder, x, y) if holder is not None else None
+        if holder is not None and release is not None and release.allows("trample"):
+            # 释出型：统一管线自己负责「移除本株 → 液体 → 点火 → 放电 → …」，
+            # 踩与拔共享 `plant_state['released']`，不会拿两份。
+            from .plant_release import apply_plant_release
+            done = apply_plant_release(
+                self, holder, x, y, previous, "trample",
+                removal_code=trampled_code(previous),
+            ) or {}
+            code = cell.plant
+            emit_plant_reaction_visual(
+                self, holder, x, y, previous, code, done, {},
+                visual_before, kind="plant.trample", trigger="trample",
+                materials_are_external=True,
+            )
+            return code
         code = trampled_code(previous)
         if code != previous:
             self.set_plant(x, y, code)
+        reaction = {}
         if holder is not None:
-            self.apply_plant_trample(holder, x, y, previous)
+            reaction = self.apply_plant_trample(holder, x, y, previous) or {}
+            emit_plant_reaction_visual(
+                self, holder, x, y, previous, code, {}, reaction,
+                visual_before, kind="plant.trample", trigger="trample",
+            )
         return code
+
+    def plant_move_penalty_at(self, x: int, y: int) -> float:
+        """走进 ``(x, y)`` 时植物给出的额外耗时（世界回合）。
+
+        规则口径（docs 2026-10-26 §3.1.3）：同类取**最强值**，不叠加；半径 0
+        只作用于本格，半径 1 覆盖切比雪夫 ≤1 的一圈（不含本格的斜角夹死格）。
+        玩家与异象共用这一个查询，避免「玩家被拖慢、异象不受影响」的分叉。
+        """
+        from ..materials import plant_move_penalty
+        best = 0.0
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return best
+        penalty, _radius = plant_move_penalty(self.cells[y][x].plant)
+        best = max(best, penalty)
+        for ny in range(max(0, y - 1), min(self.height, y + 2)):
+            for nx in range(max(0, x - 1), min(self.width, x + 2)):
+                if (nx, ny) == (x, y):
+                    continue
+                penalty, radius = plant_move_penalty(self.cells[ny][nx].plant)
+                if penalty and radius >= 1:
+                    best = max(best, penalty)
+        return best
 
     def entity_at(self, x: int, y: int) -> Entity | None:
         if (self.player.x, self.player.y) == (x, y):
@@ -709,6 +776,21 @@ class GameState(
         self.messages.append(message)
         return message
 
+    def _add_wall_break_dissolution(self, wall_name: str) -> None:
+        """玩家用子弹/推动击碎高耐久墙体：崩解度固定 +1。
+
+        这条是「击碎大结构」的直接规则，不吃局外崩解倍率，也不被「深层耐性」
+        折半——规则写的是提升一点，就只提升一点。其他破坏方式与非玩家破坏
+        不调用这里。
+        """
+        if self.dissolution >= 100:
+            return
+        self.dissolution += 1
+        self.messages.append(tr("{name}的碎片落进梦里——崩解度 +1。",
+                                name=tr(wall_name)))
+        if self.dissolution >= 100:
+            self.messages.append(tr("崩解度已达 100：可以下潜了（按 N）。"))
+
     def _add_dissolution(self, amount: int) -> None:
         if amount <= 0:
             return
@@ -802,6 +884,10 @@ class GameState(
             self.last_projectile['origin'] = list(origin)
         if repeat_delay > 0:
             self.last_projectile['repeat_delay'] = min(.12,repeat_delay)
+        # 命中表现事件先于弹道登记（core 先结算伤害、后回放弹道），这里把
+        # 同一动作的命中事件挂到这一发上，UI 才能把命中时刻对齐飞行落点。
+        from .hit_events import attach_projectile
+        attach_projectile(self, self.projectile_seq)
 
     def _spawn_equipment(self, rng: random.Random) -> None:
         """房间低频刷新携带意象：稀有，占用本层刷新预算。
@@ -820,7 +906,8 @@ class GameState(
         # 区域分层池（2026-10-07 数值平衡改版）：T1 浅层 / T2 幻觉 / T3 无意识 /
         # T4 深层边界，混池规则见 content.equipment_pool_for_depth——此前 11–20 层
         # 一直沿用浅层池，21+ 层还有 2/3 概率掉 T1 破烂。
-        pool = list(equipment_pool_for_depth(self.depth))
+        pool = [key for key in equipment_pool_for_depth(self.depth)
+                if not ITEM_DEFINITIONS.get(key, {}).get('expansion_catalog_id')]
         # §7.1 统一资格入口：房间刷新也是「从池里抽实物」，同样要过闸——
         # 否则将来任何带 min_depth／grant_source／run_limit 的带槽件都会从
         # 这条旁路漏出来（当前 T1—T4 池里暂无这类件，但不能靠「暂时没有」）。
@@ -913,6 +1000,8 @@ class GameState(
             entry["details"].append(detail)
 
     def observe_visible_catalog(self) -> None:
+        from .expansion_insights import observe
+        observe(self)
         for enemy in self.enemies:
             if enemy.integrity <= 0 or enemy.catalog_observed or not self.is_visible(enemy.x, enemy.y):
                 continue
@@ -1078,18 +1167,19 @@ class GameState(
 
     def memory_portent_factor(self, portent_id: str) -> float:
         reduction = max((int(effect.get('accumulation_reduction', 0))
-                         for effect in self._memory_effect_defs()
+                         for entry_effect in self._memory_effect_defs()
+                         for effect in self._memory_entries(entry_effect)
                          if effect.get('kind') == 'resistance'
                          and portent_id in effect.get('portents', ())), default=0)
         return max(.4, 1 - reduction / 100)
 
     def memory_portent_duration(self, portent_id: str, duration: int) -> int:
         import math
-        reduction = 0
-        if any(effect.get('kind') == 'resistance'
-               and portent_id in effect.get('portents', ())
-               for effect in self._memory_effect_defs()):
-            reduction = 50
+        reduction = max((int(entry.get('duration_reduction', 50))
+                         for effect in self._memory_effect_defs()
+                         for entry in self._memory_entries(effect)
+                         if entry.get('kind') == 'resistance'
+                         and portent_id in entry.get('portents', ())), default=0)
         if portent_id == "echoing":
             # §11 §9：气泡的卸压只缩短自身「回声」的新附着时长，与耐受取较高减免。
             reduction = max(reduction, self.memory_stat_bonus("echo_duration_reduction"))
@@ -1197,6 +1287,8 @@ class GameState(
         新上限（不额外扣），否则玩家会因为换一条碎片而白白损失数值。
         """
         self.invalidate_sight_radius()
+        from . import memory_buffers
+        memory_buffers.forget(self, memory_id)
         effect_name = ITEM_DEFINITIONS.get(memory_id, {}).get("memory_effect")
         effect = MEMORY_FRAGMENT_EFFECTS.get(effect_name or "")
         if not effect:
@@ -1346,28 +1438,81 @@ class GameState(
                 self.epilogue_flags['scribe_max']=boss.integrity
         self.epilogue_flags['schema']=2
         self.epilogue_flags.setdefault('repaired_layers',[]).append(depth)
-        count = rng.randint(lo, hi)
-        spots = rng.sample(info["open_cells"], min(count + 4, len(info["open_cells"])))
-        placed = 0
+        # 收尾层内容向剧情内区倾斜：终局区域要「紧凑而有挑战」，不能只有
+        # 一栋空楼。剧情锚点/遗物位先登记为保留格，异象与补投遗物都避开它们。
+        reserved: set[tuple[int, int]] = {info["spawn"]}
+        reserved.update(info["events"].values())
+        reserved.update(info.get("accept", ()))
+        if info.get("npc"):
+            reserved.add(info["npc"])
+        reserved.update(info.get("loot_spots", ()))
+        reserved.update((entry["x"], entry["y"]) for entry in info.get("scene_events", ()))
+        reserved.update(pos for pos, _ in info.get("structure_npcs", ()))
+
+        inner_rect = info.get("inner")
+        inner_spots: list[tuple[int, int]] = []
+        outer_spots: list[tuple[int, int]] = []
+        if inner_rect:
+            ix, iy, iw, ih = inner_rect
+        else:
+            ix = iy = iw = ih = 0
+        for spot in info.get("open_cells", ()):
+            x, y = spot
+            if self.cell(x, y).solid or self.entity_at(x, y) or spot in reserved:
+                continue
+            if ix <= x < ix + iw and iy <= y < iy + ih:
+                inner_spots.append(spot)
+            else:
+                outer_spots.append(spot)
+        rng.shuffle(inner_spots)
+        rng.shuffle(outer_spots)
+
+        count = min(rng.randint(lo, hi), len(inner_spots) + len(outer_spots))
         profile = active_profile(self, depth)
         specs = []
         # 深层强度缩放（2026-09-19 平衡）：越深越强——血量 ×1.25/1.5/1.75，创伤 +1/2/3。
         depth_scale = {28: 1.25, 29: 1.5, 30: 1.75}.get(depth, 1.0)
         power_bonus = {28: 1, 29: 2, 30: 3}.get(depth, 0)
-        for x, y in spots:
-            if placed >= count:
-                break
-            if self.cell(x, y).solid or self.entity_at(x, y):
-                continue
-            pool_id = EPILOGUE_ANOMALY_POOL[rng.randrange(len(EPILOGUE_ANOMALY_POOL))]
-            base = ANOMALY_DEFINITIONS[pool_id]
-            specs.append((x, y, pool_id))
-            placed += 1
+        placed = 0
+        used_spots: set[tuple[int, int]] = set()
+
+        def _take_anomalies(spot_list, wanted: int) -> int:
+            """从候选里取至多 wanted 个有效落点；短列表/占用格安全跳过。"""
+            nonlocal placed
+            taken = 0
+            for x, y in spot_list:
+                if placed >= count or taken >= wanted:
+                    break
+                spot = (x, y)
+                if spot in used_spots:
+                    continue
+                if self.cell(x, y).solid or self.entity_at(x, y):
+                    continue
+                used_spots.add(spot)
+                pool_id = EPILOGUE_ANOMALY_POOL[rng.randrange(len(EPILOGUE_ANOMALY_POOL))]
+                specs.append((x, y, pool_id))
+                placed += 1
+                taken += 1
+            return taken
+
+        # 内区配额 ≥40%（向上取整）；内区候选不足时再回填外区，外区不足再补内区。
+        inner_quota = (count * 2 + 4) // 5 if count else 0
+        _take_anomalies(inner_spots, inner_quota)
+        _take_anomalies(outer_spots, count)
+        _take_anomalies(inner_spots, count)
         if profile:
             # 消费完原编成随机流，再用独立流选子集；后续实物与事件的随机序列保持。
+            # 子集同样保内区配额（否则随机抽稀会把内区占比压回 30% 上下）。
             roster_rng = random.Random(self.seed + depth * 7919 + 0xD1FF)
             wanted = min(len(specs), roster_rng.randint(*profile.roaming_range))
-            chosen = set(roster_rng.sample(range(len(specs)), wanted))
+            inner_index = [index for index, (x, y, _) in enumerate(specs)
+                           if ix <= x < ix + iw and iy <= y < iy + ih]
+            quota = min(len(inner_index), (wanted * 2 + 4) // 5 if wanted else 0)
+            chosen = set(roster_rng.sample(inner_index, quota)) if quota else set()
+            rest = [index for index in range(len(specs)) if index not in chosen]
+            need = wanted - len(chosen)
+            if need > 0 and rest:
+                chosen |= set(roster_rng.sample(rest, min(need, len(rest))))
             specs = [entry for index, entry in enumerate(specs) if index in chosen]
             ordinary_pool = [cid for cid in EPILOGUE_ANOMALY_POOL
                              if ANOMALY_DEFINITIONS[cid]["anomaly_kind"] == "普通异象"]
@@ -1390,9 +1535,9 @@ class GameState(
             if not profile:
                 # 旧局保留历史字段；新局不接通原本没有伤害消费端的加值。
                 enemy.power = min(13, base.get("power", 1) + power_bonus)
-        for loot_x, loot_y in info.get("loot_spots", []):
+        def _drop_loot(loot_x: int, loot_y: int) -> bool:
             if self.cell(loot_x, loot_y).solid:
-                continue
+                return False
             rarity = "非常稀有" if rng.random() < 0.35 else "稀有"
             # 回落池也排除交互道具：容器只能事件/NPC 交易获取（2026-09-19）。
             # §7.1 统一资格入口：收尾层的掉落槽同样过闸——它是「非常稀有」
@@ -1404,9 +1549,26 @@ class GameState(
             if not pool:
                 pool = self._award_eligible(items_of_rarity("稀有", ("易逝物",)), source="epilogue")
             if not pool:
-                continue
+                return False
             item_id = pool[rng.randrange(len(pool))]
             self.world_items.append(WorldItem(self._make_item(item_id), loot_x, loot_y))
+            return True
+
+        for loot_x, loot_y in info.get("loot_spots", []):
+            _drop_loot(loot_x, loot_y)
+        # 内区补投 4 处散落遗物：终局区域除了 vault 固定位，沿途也该有可拾取物。
+        # 只落在内区开放地面，避开剧情锚点/已有遗物格；候选不足时宁缺毋滥。
+        extra_loot = 0
+        if inner_rect:
+            for spot in inner_spots:
+                if extra_loot >= 4:
+                    break
+                if spot in reserved or spot in used_spots:
+                    continue
+                if self.entity_at(*spot):
+                    continue
+                if _drop_loot(*spot):
+                    extra_loot += 1
         self._spawn_epilogue_events(depth, rng, info)
         self._spawn_bound_events({"events": info.get("scene_events", ())})
         npc_id = {28: "npc.archivist", 29: "npc.guide"}.get(depth)
@@ -1524,6 +1686,38 @@ class GameState(
             self.messages.append(tr("散开的纸屑慢慢浮起——玩偶意识体重新叠好了自己。"))
         self.doll_respawns = remaining
 
+    def _archive_gate_options(self) -> list[dict]:
+        """「出院与归档」：28 层归档门可交付的条目。
+
+        28 层起由 :meth:`_generate_epilogue_layer` 整层接管，``event_candidates``
+        不再参与，因此**没有任何异常地点会落在这里**。目录里标「最低28」的条目
+        （R-X06、R-E15/E16 一类边界内容）若只挂普通事件，``item_access.refusal``
+        会按 ``min_depth`` 把它们永远拒掉——归档门是它们唯一合法的落点。
+
+        判定只看目录真源：``runtime`` ＋ ``D`` 授权 ＋ ``min_depth >= 28`` ＋
+        本局尚未发放过。不按名字或主题猜，因此后续再补「最低28」条目时
+        无需改这里。
+        """
+        from ..data.expansion.catalog import BY_ID
+        from ..data.items import ITEM_DEFINITIONS
+
+        options: list[dict] = []
+        for item_id, entry in BY_ID.items():
+            if entry.get("integration_status") != "runtime":
+                continue
+            if entry.get("source_permission") != "D":
+                continue
+            if int(entry.get("min_depth", 0) or 0) < 28:
+                continue
+            if int(self.item_grant_counts.get(item_id, 0) or 0) > 0:
+                continue
+            definition = ITEM_DEFINITIONS.get(item_id) or {}
+            options.append({
+                "label": tr("在归档处领走{name}", name=tr(definition.get("name", item_id))),
+                "epilogue": {"act": "archive_take", "item": item_id},
+            })
+        return options
+
     def _spawn_epilogue_events(self, depth: int, rng: "random.Random", info: dict) -> None:
         """深层边界剧情事件：展室/门/碑/承担点/回廊/终局桌 + 微事件。"""
         from .content import EPILOGUE_MICRO_EVENTS, EPILOGUE_PROFILE_RULES, EPILOGUE_ROOM_POOLS
@@ -1570,6 +1764,7 @@ class GameState(
                 options=[
                     {"label": "「我看完了。」（推门进入承担之野）", "epilogue": {"act": "gate_rooms", "advance": 29}},
                     {"label": "「全部烧掉。」（抹去线索，强行进入）", "epilogue": {"act": "gate_rooms", "advance": 29, "wipe": True}},
+                    *self._archive_gate_options(),
                 ],
             )
         elif depth == 29:
@@ -1681,15 +1876,17 @@ class GameState(
         return ActionResult(True, message, {"depth": depth})
 
     def _spawn_layer_npcs(self, layer_seed: int, vault_info: "dict | None") -> None:
-        """稳定意识（NPC）：结构自带豁免计数、随机零散每层最多 2 名。
+        """稳定意识（NPC）：结构自带先占座位、随机零散补剩下的位置。
 
         站位在地图生成期预留（vault_info["npc_spots"]，先于液体/气体/植物）；
         落地时清空该格的流体与植物，保证 NPC 脚下永远干净。
 
-        2026-10-12 配额规则：结构自带的 NPC（vault 的 npc_anchor，随结构
-        必定出现）**不参与计数**、全部落位且排在最前；随机零散 NPC 只在
-        其后补位，最多 NPC_MAX_PER_LAYER 名。这样「场景组」（一个 vault
-        自带的 NPC 是一组）不会被随机名额挤掉，随机名额也不被结构吃掉。
+        2026-10-27 配额规则：结构自带的 NPC（vault 的 npc 锚点，随结构必定
+        出现）与随机零散**共用** ``NPC_MAX_PER_LAYER``——名额在生成期就分好
+        （``_generate_cells`` 把 ``npc_spots`` 裁到余额内），这里只负责按
+        「结构在前、访客在后」的顺序落位，因此结构不会挤掉、总数也不会越限。
+        深层边界 28–30 走 ``_generate_epilogue_layer`` 的独立口径（剧情所需
+        的结构 NPC 全部落位，不受本名额约束）。
         """
         from .content import NPC_DEFINITIONS, NPC_MAX_PER_LAYER
         rng = random.Random(layer_seed ^ 0x9E4C0)
@@ -1815,8 +2012,10 @@ class GameState(
                 and self.depth == self.ember_npc_layer
                 and "ember_bridge" not in self.closed_realms):
             spots = list((vault_info or {}).get("npc_spots", ()))
-            x, y = spots[0] if spots else self._find_open_cell(
-                self.cells, self.width // 2, self.height // 2)
+            # 预留位可能已被随机零散 NPC 先占（_spawn_layer_npcs 先跑）：挑第一个
+            # 空位，否则两个实体同格叠加——那既看不见，也让每层 NPC 名额失真。
+            x, y = next((spot for spot in spots if self.entity_at(*spot) is None),
+                        self._find_open_cell(self.cells, self.width // 2, self.height // 2))
             cell = self.cell(x, y)
             if cell.solid and cell.wall_kind != "门":
                 self.destroy_wall(x, y, "carve")
@@ -1924,6 +2123,8 @@ class GameState(
         # 环境模拟的延迟源队列按层清空：上一层的坐标在新层没有意义。
         self._deferred_liquid_sources = []
         self._deferred_gas_sources = []
+        # 噪音条同样按层清空：上一层的响声不能带进新层的「周围区域噪音」。
+        self._ambient_noise_events = []
         # 联想盘：换层清掉指向旧世界目标的待释放脉冲与接触端去重记录，
         # 但**保留**玩家级共享冷却——不能借往返层刷新电路（设计方案 §9.3）。
         self.board_prune_on_descend()
@@ -2298,8 +2499,22 @@ class GameState(
             x = int(entry.get("x", 0) or 0)
             y = int(entry.get("y", 0) or 0)
             source = entry.get("source", "") or ""
+            if int(entry.get("depth", self.depth)) != self.depth:
+                pending.append(entry)
+                continue
+            if entry.get("pulse_parameters"):
+                self._sound_pulse(x, y, int(entry["radius"]), chain=True,
+                                  **entry["pulse_parameters"])
+                continue
+            if entry.get("wall") and (
+                    not self.cell(x, y).solid
+                    or int(entry.get("depth", self.depth) or 0) != int(self.depth)):
+                # 拍壁这类「敲墙」的延时声源：支撑墙碎了、或已经换层就停，不空敲。
+                self.messages.append(tr("{item}的敲击点已经不在了，节拍停了。", item=tr(source)))
+                continue
             self._sound_pulse(x, y, int(entry.get("radius", 8) or 8), by_player=True,
-                              full_alert=True, category="lure", source=source)
+                              full_alert=True, category="lure", source=source,
+                              chain=True)
             self.messages.append(tr("{item}又嗡了一声——声音还在原处。", item=tr(source)))
         self.delayed_sounds = pending
 
@@ -2338,7 +2553,7 @@ class GameState(
         relations.cool_down(self)
         self._tick_doll_respawns()
         self._tick_logic_triggers()
-        self._tick_magnetized()
+        self._tick_magnetized_visual()
         self._tick_pack_walls(amount)
         # 掉线拨号倒计时（§4.1）：随客观回合推进，归零即挂断。
         self._tick_dial_in(amount)
@@ -2444,6 +2659,9 @@ class GameState(
         # 以太悬浮不暂停它——地形本身的压迫不属于「身上的征兆」。
         self._tick_region_proximity(amount)
         self._tick_plant_proximity(amount)
+        # 植物的常驻周期效果（吸雾/吸墨/搬气/净化）：只按真实世界回合推进，
+        # 预算写进格子，暂停与菜单停留不积累；视觉只按真实消耗登记一次。
+        self._tick_periodic_plants_visual(amount)
         if self._cell_holds_material(current_cell, "以太"):
             pass  # 以太悬浮：有持续时间的征兆全部失效并停止倒计时与结算
         else:
@@ -2496,15 +2714,18 @@ class GameState(
         from .tactical_layouts import tick_tactical_layouts
         tick_tactical_layouts(self,amount)
         # 传送带（扩展包 v1）：本回合没有移动的生物沿传送带方向推行一格。
-        self._tick_conveyors(pre_belt)
+        self._tick_conveyors_visual(pre_belt)
         # Pressure and proximity inputs also reflect the creatures' final positions.
         self._tick_circuit_boards()
         # §12 F：设施的亮灭跟随真实状态（断电的弧光灯架、熄灭的余烬灯盏）。
         # 必须排在电路结算之后：本回合刚通电/断电的结果要立刻反映到灯具上。
         from .fixtures import sync_light_fixtures
         sync_light_fixtures(self)
-        for _ in range(self._rounds_crossed(previous, self.time, ANOMALY_REFRESH_INTERVAL)):
-            self._refresh_anomalies()
+        self._tick_anomaly_refresh(amount)
+        # 混乱/篡改召来的专属异象（2026-10-27）：每回合推进一次。实现见
+        # core/chaos_anomalies.py（task-C 接管该模块，这里只固定接线）。
+        from .chaos_anomalies import tick_chaos_anomalies
+        tick_chaos_anomalies(self, amount)
         if self.lucidity == 0 and self.depth < 28 and not self.realm_id:
             # 深层边界禁用远域覆写：模板与剧情结构神圣不可覆写。
             for _ in range(self._rounds_crossed(previous, self.time, REMOTE_OVERWRITE_INTERVAL)):
@@ -2570,24 +2791,563 @@ class GameState(
         if len(self.messages) > self.MAX_MESSAGES:
             del self.messages[: len(self.messages) - self.MAX_MESSAGES]
 
+    # ---- 异象自然补刷（2026-10-25）----
+    # 规则：
+    # - 本层当前自然异象越少，补刷间隔越短；最快 20 回合一只。
+    # - 当前数量达到 ANOMALY_REFRESH_ACTIVE_CAP 后不再自然刷新。
+    # - 落点从全图合法开放格中均匀抽取（视野外、离玩家至少 4 格、无生物/事件）。
+    # - 定义里写 spawn_terrain 的异象只在该地形上成形（如纸鱼只认液面）。
+    def _natural_anomaly_count(self) -> int:
+        """本层当前自然游荡的失控意识数（不含召唤物、核心执念、NPC/玩偶）。
+
+        定义带 spawn_only 的专属召唤异象（篡改风险召来的漏字者、混乱召来的
+        专属异象）不算自然游荡：它们是机制的产物，不应抬高本层自然补刷的上限
+        判断与补刷间隔（见 core.chaos_anomalies 的投放约定）。
+        """
+        return sum(
+            1 for enemy in self.enemies
+            if enemy.integrity > 0
+            and enemy.relation == "失控意识"
+            and not enemy.main_id
+            and enemy.anomaly_kind != "核心执念"
+            and enemy.catalog_id in ANOMALY_DEFINITIONS
+            and not ANOMALY_DEFINITIONS[enemy.catalog_id].get("spawn_only")
+        )
+
+    def _anomaly_refresh_interval(self, active: int | None = None) -> int:
+        """当前补刷间隔：数量越少越快，夹在 20–40 回合之间。"""
+        if active is None:
+            active = self._natural_anomaly_count()
+        cap = max(1, ANOMALY_REFRESH_ACTIVE_CAP)
+        ratio = min(1.0, max(0.0, active / cap))
+        span = max(0, ANOMALY_REFRESH_INTERVAL - ANOMALY_REFRESH_MIN_INTERVAL)
+        return max(ANOMALY_REFRESH_MIN_INTERVAL,
+                   round(ANOMALY_REFRESH_MIN_INTERVAL + span * ratio))
+
+    @staticmethod
+    def _anomaly_terrain_ok(definition: dict, cell: Cell) -> bool:
+        """异象定义的地形要求是否满足；未写要求则处处合法。"""
+        requirement = str(definition.get("spawn_terrain", "") or "")
+        if not requirement and definition.get("trait") == "liquid_swimmer":
+            # 旧定义没有字段时的兼容口径：亲液异象至少要在液面上。
+            requirement = "liquid"
+        if not requirement:
+            return True
+        if requirement == "liquid":
+            return cell.liquid > 0
+        if requirement == "gas":
+            return cell.gas > 0
+        if requirement == "plant":
+            return bool(cell.plant)
+        # 未登记的要求按「不合法」处理，避免静默忽略。
+        return False
+
+    def _tick_anomaly_refresh(self, amount: int) -> None:
+        """按世界回合推进补刷计时；间隔随当前异象数量动态变化。"""
+        if amount <= 0 or self.realm_id or self.depth <= 0 or self.depth >= 28:
+            return
+        key = f"{self.depth}:anomaly_clock"
+        clock = int(self.layer_drop_counts.get(key, 0)) + int(amount)
+        for _ in range(ANOMALY_REFRESH_ACTIVE_CAP + 4):
+            active = self._natural_anomaly_count()
+            if active >= ANOMALY_REFRESH_ACTIVE_CAP:
+                clock = 0
+                break
+            interval = self._anomaly_refresh_interval(active)
+            if clock < interval:
+                break
+            clock -= interval
+            self._refresh_anomalies()
+        # 允许负值：测试夹具用「极负时钟」暂停自然补刷；正常局从 0 开始只增不减。
+        self.layer_drop_counts[key] = int(clock)
+
     def _refresh_anomalies(self) -> None:
-        if self.realm_id:
-            return  # 梦中梦：异象随层生成，不走主梦的逐层刷新。
-        # 2026-09-19 收紧：补生只发生在纸页犬登记的层数区间（1–5）内，
-        # 0 层「梦的起始」与深层一律不再凭空刷犬；每层有补生上限，
-        # 否则玩家蹲着不动就能把同层刷满（此前无任何上限）。
-        if self.depth <= 0:
+        """补刷一只异象（一次尝试；计时与上限由 _tick_anomaly_refresh 管）。"""
+        if self.realm_id or self.depth <= 0 or self.depth >= 28:
             return
-        lo, hi = ANOMALY_DEFINITIONS["anomaly.page_hound"].get("layers", (1, 5))
-        if not (lo <= self.depth <= hi):
+        if self._natural_anomaly_count() >= ANOMALY_REFRESH_ACTIVE_CAP:
             return
-        budget_key = f"{self.depth}:refresh"
-        if self.layer_drop_counts.get(budget_key, 0) >= ANOMALY_REFRESH_SPAWN_CAP:
+        pool = anomaly_pool_for_depth(self.depth)
+        if not pool:
             return
-        active = sum(enemy.integrity > 0 for enemy in self.enemies)
-        if active >= 10 or self.time == 0:
+        visible = self.visible_cells()
+        event_cells = {(event.x, event.y) for event in self.events}
+        player_x, player_y = self.player.x, self.player.y
+        base_cells = []
+        for y in range(2, self.height - 2):
+            for x in range(2, self.width - 2):
+                cell = self.cell(x, y)
+                if cell.solid or cell.wall_kind:
+                    continue
+                if self.entity_at(x, y) is not None or (x, y) in event_cells:
+                    continue
+                if max(abs(x - player_x), abs(y - player_y)) < 4:
+                    continue
+                if (x, y) in visible:
+                    continue
+                base_cells.append((x, y))
+        # 全图合法开放格等概率抽取：不再偏向玩家附近或某个角落。
+        candidates = base_cells
+        if not candidates:
             return
-        x, y = self._find_open_cell(self.cells, 1 + (self.time * 3) % max(2, self.width - 2), 1 + (self.time * 5) % max(2, self.height - 2))
-        self.add_defined_enemy("anomaly.page_hound", x, y)
-        self.layer_drop_counts[budget_key] = self.layer_drop_counts.get(budget_key, 0) + 1
-        self.messages.append(tr("远处的结构里又生成了一只纸页犬。"))
+        ids = [catalog_id for catalog_id, _ in pool]
+        weights = [weight for _, weight in pool]
+        # 加入 next_enemy_id：同一回合反复补刷（测试/连续失败重试）也不会每次都抽同一点。
+        rng = random.Random(self.seed ^ (self.depth * 3571) ^ (self.time * 7919)
+                            ^ (self.next_enemy_id * 104729))
+        # 地形要求可能排除一部分池子；最多换 8 次候选再放弃。
+        for _ in range(min(8, len(ids))):
+            catalog_id = rng.choices(ids, weights=weights, k=1)[0]
+            definition = ANOMALY_DEFINITIONS[catalog_id]
+            legal = [pos for pos in candidates
+                     if self._anomaly_terrain_ok(definition, self.cell(*pos))]
+            if not legal:
+                continue
+            x, y = legal[rng.randrange(len(legal))]
+            # 本层补刷序号（2026-10-27）：第 1 只自然补刷 = 1，依此类推。掉落率
+            # 从第 ANOMALY_REFRESH_FREE_DROP_WAVES + 1 只起按该序号指数衰减；
+            # 记在 layer_drop_counts 里跟着本层存档走。
+            seq_key = f"{self.depth}:anomaly_refresh_seq"
+            seq = int(self.layer_drop_counts.get(seq_key, 0)) + 1
+            self.layer_drop_counts[seq_key] = seq
+            self.add_defined_enemy(catalog_id, x, y, spawn_wave=seq)
+            self.messages.append(tr("梦层的边角又渗出一道轮廓——{name}在远处成形。",
+                                    name=tr(definition["name"])))
+            return
+
+    # ---- 真实环境结算的视觉旁路（2026-10-26 Task 8）------------------------
+    def trigger_platform(self, x: int, y: int, *, safe_note: str = "") -> None:
+        """真实陷阱/机关触发后的视觉旁路；玩法完全复用 LogicMixin。"""
+        table = self.cell(x, y).wall_kind
+        if table not in ("陷阱石台", "机关石台") or self.circuit_node_at(x, y) is not None:
+            LogicMixin.trigger_platform(self, x, y, safe_note=safe_note)
+            return
+        if table == "陷阱石台":
+            from ..materials.logic import TRAP_SCENARIO_LIBRARY
+            name = self.trap_scenarios.get(f"{x},{y}")
+            scenario = TRAP_SCENARIO_LIBRARY.get(name or "", TRAP_SCENARIO_LIBRARY["dud"])
+        else:
+            from ..materials.logic import roll_mechanism_scenario
+            scenario = roll_mechanism_scenario(self.seed, self.depth, x, y)
+        safe = table == "陷阱石台" and (
+            bool(safe_note) or self._effect_power("wire_safe") > 0)
+        before = _environment_visual_snapshot(self, x, y, scenario)
+        self._visual_scenario_active = True
+        try:
+            LogicMixin.trigger_platform(self, x, y, safe_note=safe_note)
+        finally:
+            self._visual_scenario_active = False
+        _note_environment_trigger(
+            self, x, y, scenario, before, safe=safe, safe_note=safe_note)
+
+    def _execute_scenario(self, x: int, y: int, scenario: dict, label: str = "") -> None:
+        """场景结果统一入口：电路/石台触发的真实结果共用一次视觉登记。"""
+        if getattr(self, "_visual_scenario_active", False):
+            LogicMixin._execute_scenario(self, x, y, scenario, label=label)
+            return
+        before = _environment_visual_snapshot(self, x, y, scenario)
+        LogicMixin._execute_scenario(self, x, y, scenario, label=label)
+        _note_environment_trigger(
+            self, x, y, scenario, before, safe=False, safe_note="")
+
+    def _tick_periodic_plants_visual(self, amount: int) -> None:
+        """真实回合的常驻植物结算；只按预算真实消耗登记一次视觉事件。"""
+        from .plant_release import tick_periodic_plants
+        before = _periodic_plant_snapshot(self)
+        if not before:
+            tick_periodic_plants(self, amount)
+            return
+        actor_portents = {id(e): dict(e.portents) for e in _periodic_actors(self)}
+        from .visual_events import peek_visual_events
+        prior_ids = {id(event) for event in peek_visual_events(self)}
+        tick_periodic_plants(self, amount)
+        # 并发方 plant_release 已按真实结果显示常驻通道时，不再重复登记聚合事件。
+        external = [event for event in peek_visual_events(self)
+                    if id(event) not in prior_ids and event.layer_key == "plant.periodic"]
+        if not external:
+            _note_periodic_plant_results(self, before, actor_portents)
+
+    def _tick_magnetized_visual(self) -> None:
+        """磁化液态记忆的真实拉拽：只在玩家真的被拉动一格时登记。"""
+        before = (self.player.x, self.player.y)
+        self._tick_magnetized()
+        after = (self.player.x, self.player.y)
+        if after == before:
+            return
+        _emit_environment_move(self, "magnetized", before, after, "player")
+
+    def _tick_conveyors_visual(self, pre_positions: dict) -> None:
+        """传送带真实推行：只登记本回合真的被传送带走了一格的生物。"""
+        before = {id(e): (e.x, e.y) for e in (self.player, *self.enemies)
+                  if e.integrity > 0}
+        self._tick_conveyors(pre_positions)
+        for entity in (self.player, *self.enemies):
+            if entity.integrity <= 0:
+                continue
+            start = before.get(id(entity))
+            end = (entity.x, entity.y)
+            if start is None or end == start:
+                continue
+            _emit_environment_move(
+                self, "conveyor", start, end,
+                "player" if entity is self.player else "anomaly")
+
+
+# ---- 环境/陷阱视觉旁路（2026-10-26，ASCII 动画扩展 Task 8）-----------------
+# 全部只读真实结果：触发前后仅比对石台周边与玩家 R1，不做全图差分。
+_ENVIRONMENT_VISUALS = {
+    "summon": ("environment.summon_seam", 1, "release"),
+    "cage": ("environment.cage_lock", 1, "release"),
+    "projectile": ("environment.bolt_trap", 1, "hit"),
+    "gas": ("environment.gas_vent", 1, "hit"),
+    "terrain": ("environment.stone_lock", 2, "hit"),
+    "reveal": ("environment.reveal_scan", 1, "hit"),
+    "imagination": ("fx.memory", 1, "hit"),
+    "portent": ("fx.memory", 1, "hit"),
+}
+_PERIODIC_MAT_OFFSETS = ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
+
+
+def _plant_code(cell) -> int:
+    """格子植物编号（协议是 int，0 = 无植物）。
+
+    2026-10-28：旧夹具/旧存档可能把「无植物」写成空串。常驻植物结算是每回合
+    都会走的路径，这里把假值一律当 0，非数字按 0 处理——不让一个坏格子把整条
+    回合结算打死（有效整数原样返回，语义不变）。
+    """
+    value = getattr(cell, "plant", 0)
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _environment_cell_signature(cell) -> tuple:
+    return (
+        int(cell.gas), str(cell.gas_kind), int(cell.liquid), str(cell.liquid_kind),
+        int(cell.flame), int(cell.integrity), str(cell.wall_kind), bool(cell.solid),
+        _plant_code(cell),
+    )
+
+
+def _environment_projectile_path(state, x: int, y: int) -> tuple:
+    """弩箭的真实直线：从石台出发，撞墙即止，不借玩家 last_projectile。"""
+    px, py = int(state.player.x), int(state.player.y)
+    if (px, py) == (int(x), int(y)):
+        return ()
+    dx = (px > x) - (px < x)
+    dy = (py > y) - (py < y)
+    if dx and dy:
+        dy = 0
+    path = []
+    cx, cy = int(x) + dx, int(y) + dy
+    while 0 <= cx < state.width and 0 <= cy < state.height:
+        if state.cell(cx, cy).solid:
+            break
+        path.append((cx, cy))
+        if (cx, cy) == (px, py):
+            break
+        cx += dx
+        cy += dy
+    return tuple(path)
+
+
+def _environment_visual_watch_points(state, x: int, y: int, scenario: dict) -> tuple:
+    radius = max(3, int(scenario.get("radius", 0) or 0))
+    points: list = []
+    seen: set = set()
+    for ny in range(max(0, y - radius), min(state.height, y + radius + 1)):
+        for nx in range(max(0, x - radius), min(state.width, x + radius + 1)):
+            pos = (nx, ny)
+            if pos not in seen:
+                seen.add(pos)
+                points.append(pos)
+    px, py = int(state.player.x), int(state.player.y)
+    for ny in range(max(0, py - 1), min(state.height, py + 2)):
+        for nx in range(max(0, px - 1), min(state.width, px + 2)):
+            pos = (nx, ny)
+            if pos not in seen:
+                seen.add(pos)
+                points.append(pos)
+    return tuple(points)
+
+
+def _environment_visual_snapshot(state, x: int, y: int, scenario: dict) -> dict:
+    points = _environment_visual_watch_points(state, x, y, scenario)
+    # 只读已有显影集合：不用 developed_for_depth()，避免为未访问层 setdefault 新键。
+    developed = state.developed_cells.get(str(state.depth), set())
+    return {
+        "points": points,
+        "cells": {pos: _environment_cell_signature(state.cell(*pos)) for pos in points},
+        "developed": {pos: pos in developed for pos in points},
+        "player_pos": (int(state.player.x), int(state.player.y)),
+        "mind": int(state.mind),
+        "imagination": int(state.imagination),
+        "portents": dict(state.player.portents),
+        "enemies": {e.id: (int(e.x), int(e.y), int(e.integrity))
+                    for e in state.enemies if e.integrity > 0},
+        "projectile_path": (
+            _environment_projectile_path(state, x, y)
+            if str(scenario.get("type")) == "projectile" else ()
+        ),
+    }
+
+
+def _environment_visual_after(state, before: dict) -> dict:
+    developed = state.developed_cells.get(str(state.depth), set())
+    return {
+        "cells": {pos: _environment_cell_signature(state.cell(*pos))
+                  for pos in before["points"]},
+        "developed": {pos: pos in developed for pos in before["points"]},
+        "player_pos": (int(state.player.x), int(state.player.y)),
+        "mind": int(state.mind),
+        "imagination": int(state.imagination),
+        "portents": dict(state.player.portents),
+        "enemies": {e.id: (int(e.x), int(e.y), int(e.integrity))
+                    for e in state.enemies if e.integrity > 0},
+    }
+
+
+def _note_environment_trigger(state, x: int, y: int, scenario: dict,
+                              before: dict, *, safe: bool, safe_note: str) -> None:
+    """陷阱/机关一次真实触发只登记一个事件；失败分支只记空结果。"""
+    from .visual_events import emit_visual
+
+    after = _environment_visual_after(state, before)
+    scenario_type = str(scenario.get("type") or "")
+    if safe:
+        facts = (
+            ("scenario", scenario_type),
+            ("isolation", "safe_note" if safe_note else "insulated_gloves"),
+        )
+        emit_visual(
+            state, kind="environment.safe", outcome="hit", source=(x, y),
+            targets=(), paths=(), affected_cells=(),
+            visual_key="default", tier=0, theme="environment", facts=facts,
+            layer_key="environment",
+        )
+        return
+    if scenario_type in ("", "dud"):
+        emit_visual(
+            state, kind="environment.dud", outcome="hit", source=(x, y),
+            targets=(), paths=(), affected_cells=(),
+            visual_key="fx.spark", tier=0, theme="environment",
+            facts=(("scenario", scenario_type or "dud"),),
+            layer_key="environment",
+        )
+        return
+
+    changed = [pos for pos in before["points"]
+               if after["cells"][pos] != before["cells"][pos]]
+    revealed = [pos for pos in before["points"]
+                if after["developed"][pos] and not before["developed"][pos]]
+    new_enemies = [(xy[0], xy[1]) for eid, xy in after["enemies"].items()
+                   if eid not in before["enemies"]]
+    mind_delta = max(0, before["mind"] - after["mind"])
+    imagination_delta = max(0, after["imagination"] - before["imagination"])
+    portent_gain = sorted(
+        key for key, value in after["portents"].items()
+        if int(value) > int(before["portents"].get(key, 0))
+    )
+    gas_cells = []
+    gas_amount = 0
+    for pos in changed:
+        delta = int(after["cells"][pos][0]) - int(before["cells"][pos][0])
+        if delta > 0:
+            gas_cells.append(pos)
+            gas_amount += delta
+    fence_cells = [pos for pos in changed
+                   if after["cells"][pos][6] == "意识栅栏"
+                   and before["cells"][pos][6] != "意识栅栏"]
+    hardened = [pos for pos in changed
+                if after["cells"][pos][6] == "坚实聚合物"
+                and before["cells"][pos][6] != "坚实聚合物"]
+
+    facts: list = [("scenario", scenario_type)]
+    affected: tuple = ()
+    paths: tuple = ()
+    visual_key, tier, outcome = _ENVIRONMENT_VISUALS.get(
+        scenario_type, ("fx.impact", 1, "hit"))
+    result = "empty"
+    if scenario_type == "summon":
+        count = len(new_enemies)
+        result = "summoned" if count else "empty"
+        affected = tuple(new_enemies)
+        facts.append(("count", count))
+    elif scenario_type == "projectile":
+        hit = mind_delta > 0
+        result = "hit" if hit else "missed"
+        path = before["projectile_path"]
+        paths = (path,) if path else ()
+        affected = ((int(before["player_pos"][0]), int(before["player_pos"][1])),) if hit else ()
+        facts.append(("hit", bool(hit)))
+        facts.append(("damage", int(mind_delta)))
+    elif scenario_type == "gas":
+        result = "released" if gas_cells else "empty"
+        affected = tuple(gas_cells)
+        facts.append(("gas", str(scenario.get("gas", ""))))
+        facts.append(("amount", int(gas_amount)))
+        facts.append(("cells", len(gas_cells)))
+    elif scenario_type == "cage":
+        result = "caged" if fence_cells else "empty"
+        affected = tuple(fence_cells)
+        facts.append(("fences", len(fence_cells)))
+    elif scenario_type == "terrain":
+        result = "hardened" if hardened else "empty"
+        affected = tuple(hardened)
+        facts.append(("hardened", len(hardened)))
+    elif scenario_type == "reveal":
+        result = "revealed" if revealed else "empty"
+        affected = tuple(revealed)
+        facts.append(("revealed", len(revealed)))
+    elif scenario_type == "imagination":
+        result = "granted" if imagination_delta else "empty"
+        facts.append(("amount", int(imagination_delta)))
+    elif scenario_type == "portent":
+        result = "granted" if portent_gain else "empty"
+        affected = (after["player_pos"],) if portent_gain else ()
+        facts.append(("portent", str(portent_gain[0]) if portent_gain else ""))
+    else:
+        result = "fired" if changed else "empty"
+        affected = tuple(changed)
+    facts.append(("result", result))
+    emit_visual(
+        state, kind="environment.trigger", outcome=outcome, source=(x, y),
+        targets=affected, paths=paths, affected_cells=affected,
+        visual_key=visual_key, tier=tier, theme="environment",
+        facts=tuple(facts), layer_key="environment",
+    )
+
+
+def _periodic_actors(state) -> list:
+    actors = [state.player]
+    actors.extend(e for e in state.enemies if e.integrity > 0)
+    return actors
+
+
+def _periodic_plant_snapshot(state) -> dict:
+    """常驻效果结算前：只扫角色 R1 的植株与它们能吸入/推出的五格。"""
+    from .plant_release import ring_cells
+
+    positions: set = set()
+    for actor in _periodic_actors(state):
+        positions.update(ring_cells(state, actor.x, actor.y, radius=1))
+    data: dict = {}
+    for (x, y) in sorted(positions):
+        cell = state.cell(x, y)
+        code = _plant_code(cell)
+        if not code:
+            continue
+        definition = plant_def_for(code)
+        if not definition.has_periodic:
+            continue
+        budget_key = f"budget:{int(code)}"
+        state_of_cell = cell.plant_state if isinstance(cell.plant_state, dict) else {}
+        total = max(definition.absorb_gas_budget, definition.absorb_liquid_budget,
+                    definition.push_gas_budget, definition.purify_budget)
+        raw = state_of_cell.get(budget_key)
+        remaining = int(total if raw is None else raw)
+        mats: dict = {}
+        for dx, dy in _PERIODIC_MAT_OFFSETS:
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < state.width and 0 <= ny < state.height):
+                continue
+            target = state.cell(nx, ny)
+            mats[(nx, ny)] = (int(target.gas), str(target.gas_kind),
+                              int(target.liquid), str(target.liquid_kind))
+        data[(x, y)] = {
+            "code": code, "budget_key": budget_key,
+            "remaining": remaining, "mats": mats,
+        }
+    return data
+
+
+def _note_periodic_plant_results(state, before: dict, actor_portents: dict) -> None:
+    """真实回合结算后：每株只按实际消耗的预算登记一次。"""
+    from .visual_events import emit_visual
+
+    for (x, y), info in before.items():
+        cell = state.cell(x, y)
+        if _plant_code(cell) != int(info["code"]):
+            continue  # 本回合已被烧毁/淹死：不把旧预算算成新作用
+        state_of_cell = cell.plant_state if isinstance(cell.plant_state, dict) else {}
+        raw = state_of_cell.get(info["budget_key"])
+        remaining = int(info["remaining"] if raw is None else raw)
+        spent = int(info["remaining"]) - remaining
+        if spent <= 0:
+            continue
+        channels: list = []
+        points: list = []
+        push_target = None
+        for pos, old in info["mats"].items():
+            target = state.cell(*pos)
+            new = (int(target.gas), str(target.gas_kind),
+                   int(target.liquid), str(target.liquid_kind))
+            if new[0] < old[0]:
+                channels.append("absorb_gas")
+                points.append(pos)
+            if new[2] < old[2]:
+                channels.append("absorb_liquid")
+                points.append(pos)
+            if new[0] > old[0]:
+                channels.append("push_gas")
+                points.append(pos)
+                push_target = pos
+        purified = None
+        purified_pos = None
+        for actor in _periodic_actors(state):
+            old_portents = actor_portents.get(id(actor), {})
+            for portent_id, turns in old_portents.items():
+                if int(actor.portents.get(portent_id, 0)) < int(turns):
+                    purified = portent_id
+                    purified_pos = (int(actor.x), int(actor.y))
+                    break
+            if purified:
+                break
+        if purified:
+            channels.append("purify")
+        ordered: list = []
+        for channel in ("absorb_gas", "absorb_liquid", "push_gas", "purify"):
+            if channel in channels and channel not in ordered:
+                ordered.append(channel)
+        if not ordered:
+            continue
+        affected: list = []
+        for pos in points:
+            if pos not in affected:
+                affected.append(pos)
+        if purified_pos is not None and purified_pos not in affected:
+            affected.append(purified_pos)
+        paths: tuple = ()
+        if push_target is not None and push_target != (x, y):
+            paths = (((int(x), int(y)), push_target),)
+        facts: list = [
+            ("plant", int(info["code"])),
+            ("spent", int(spent)),
+            ("left", int(remaining)),
+            ("channels", "+".join(ordered)),
+        ]
+        if purified:
+            facts.append(("portent", str(purified)))
+        emit_visual(
+            state, kind="plant.periodic", outcome="hit", source=(x, y),
+            targets=tuple(affected), paths=paths, affected_cells=tuple(affected),
+            visual_key="plant.growth", tier=0, theme="plant",
+            facts=tuple(facts), layer_key="plant",
+        )
+
+
+def _emit_environment_move(state, motion: str, start, end, who: str) -> None:
+    """真实位移（传送带/磁化）登记一段实际路径。"""
+    from .visual_events import emit_visual
+
+    start_point = (int(start[0]), int(start[1]))
+    end_point = (int(end[0]), int(end[1]))
+    emit_visual(
+        state, kind="environment.move", outcome="release", source=start_point,
+        targets=(end_point,), paths=((start_point, end_point),),
+        affected_cells=(end_point,), visual_key="fold.travel", tier=1,
+        theme="environment",
+        facts=(("entity", str(who)), ("motion", str(motion))),
+        layer_key="environment",
+    )

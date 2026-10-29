@@ -249,7 +249,11 @@ class EnemySkillMixin:
         return 0 <= x < self.width and 0 <= y < self.height and not self.cell(x, y).solid
 
     def _sk_ray(self, x0: int, y0: int, x1: int, y1: int, max_len: int) -> list[tuple[int, int]]:
-        """从 (x0,y0) 朝 (x1,y1) 的细线预警（不含起点）；高墙/遮挡格截断。"""
+        """从 (x0,y0) 朝 (x1,y1) 的细线预警（不含起点）；高墙/遮挡格截断。
+
+        遮挡判据与 :meth:`SightMixin._sight_obstruction` 一致（高度 ≥3／门／
+        2 格高植物截断；高度 1/2 的固体与透明墙不截断）。
+        """
         dx, dy = abs(x1 - x0), abs(y1 - y0)
         sx = 1 if x0 < x1 else -1
         sy = 1 if y0 < y1 else -1
@@ -267,7 +271,10 @@ class EnemySkillMixin:
             if not (0 <= x < self.width and 0 <= y < self.height):
                 break
             cell = self.cell(x, y)
-            if cell.solid and cell.wall_kind not in self._transparent_wall_kinds():
+            # 与玩家视线 / _has_line_of_sight 同一条高度口径（2026-10-24）：高度
+            # ≥3 的墙、门与 2 格高植物挡死；高度 1/2 的固体不截断细线（高度 2
+            # 只削减玩家视距预算，布尔射线判它可透过），透明墙也不截断。
+            if self._sight_obstruction(cell)[0]:
                 break  # 不穿高墙、不跳弹
             cells.append((x, y))
         return cells
@@ -1097,7 +1104,10 @@ class EnemySkillMixin:
                 if field.get("damage_enemies"):
                     for enemy in self.enemies:
                         if enemy.integrity > 0 and (enemy.x, enemy.y) in cells:
+                            _damage_number_before = enemy.integrity
                             enemy.integrity = max(0, enemy.integrity - tick_damage)
+                            from .hit_events import note_integrity_loss
+                            note_integrity_loss(self, enemy, _damage_number_before)
                             if enemy.integrity <= 0:
                                 self._resolve_enemy(enemy)
             field["ticks_done"] = int(field.get("ticks_done", 0)) + max(0, ticks)
@@ -2362,3 +2372,8 @@ for _key, *_rest in LIBRARY_SKILLS:
 # 漏字者的「吞音」：Python 定义技能（规格 §7.3），解析器在 core/tamper_risks.py。
 from .tamper_risks import register_omission_skill as _register_omission_skill
 _register_omission_skill()
+
+# 混乱极高专属异象的六个技能（2026-10-27）：两个复用上面已注册的 handler，
+# 四个的专属施法/结算在 core/chaos_skills.py。
+from .chaos_skills import register_chaos_skills as _register_chaos_skills
+_register_chaos_skills()

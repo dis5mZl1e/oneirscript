@@ -35,6 +35,7 @@ class Ability:
     source: str  # hold | act
     sentence_id: str
     text: str
+    profile: tuple[tuple[str, object], ...] = ()
 
 
 @dataclass

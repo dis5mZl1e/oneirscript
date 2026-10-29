@@ -56,6 +56,12 @@ AIM_SPECS: dict[str, AimSpec] = {
     "detonate": AimSpec("point", 12, strict=True, kind="flammable"),
 }
 
+# 扩展包目录的构想落点（catalog.json 的 effect.aim）：与定义行同一批键，
+# 没登记的行也不会出现在 ABILITY_DEFINITIONS 里（见 growth_runtime）。
+from ..data.expansion.growth_runtime import ability_aim_rows as _expansion_aim_rows  # noqa: E402
+
+AIM_SPECS.update({key: AimSpec(**row) for key, row in _expansion_aim_rows().items()})
+
 
 def spec_for(ability_id: str) -> AimSpec | None:
     return AIM_SPECS.get(ability_id)

@@ -34,6 +34,7 @@ from ..materials.logic import (
 from .entities import Cell
 from .circuits import CircuitMixin
 from .light_flash import note_light_flash
+from .visual_events import emit_visual
 
 # 感应符文墙的感知半径与再触发冷却（回合）；冷却存内存即可（读档清零无害）。
 RUNE_SENSOR_RADIUS = 6
@@ -81,7 +82,13 @@ class LogicMixin(CircuitMixin):
 
     def emit_signal(self, x: int, y: int, strength: int = SIGNAL_STRENGTH_CAP,
                     source: str = "") -> int:
-        """从 (x, y) 发射信号：沿电线 BFS，返回触发了几台接收器。"""
+        """从 (x, y) 发射信号：沿电线 BFS，返回触发了几台接收器。
+
+        视觉事件只记录这次 BFS 真实走过的父边、真实到达的接收器与真实接收
+        结果：paths 按父边顺序给出去到每个分支末端的路径，分支保持为多条
+        path；_logic_energized 是稳态显示集合，不当作路径、也不每帧重播。
+        强度归零的末端接收器仍按原规则响应（「刚好够到」也算数）。
+        """
         strength = min(strength, SIGNAL_STRENGTH_CAP)
         if self.circuit_node_at(x, y) is not None:
             self._circuit_signal(x, y, by_player=source == 'player')
@@ -90,8 +97,12 @@ class LogicMixin(CircuitMixin):
         # (坐标, 剩余强度)；visited 去重保证有界、接收器幂等。
         queue: deque[tuple[int, int, int]] = deque([(x, y, strength)])
         visited: set[tuple[int, int]] = {(x, y)}
+        visit_order: list[tuple[int, int]] = [(x, y)]
+        parent: dict[tuple[int, int], tuple[int, int] | None] = {(x, y): None}
+        depth: dict[tuple[int, int], int] = {(x, y): 0}
         fired = 0
         seen_receivers: set[tuple[int, int]] = set()
+        receiver_results: list[tuple[tuple[int, int], int, str, tuple[tuple[int, int], ...]]] = []
         self._logic_energized.add((x, y))
         while queue:
             cx, cy, power = queue.popleft()
@@ -100,8 +111,10 @@ class LogicMixin(CircuitMixin):
             # 「刚好够到」也算数，这是布线距离的判断标准）。
             if cell.wall_kind in receivers and (cx, cy) not in seen_receivers:
                 seen_receivers.add((cx, cy))
-                if self._resolve_receiver(cx, cy, source_x=x, source_y=y):
+                resolved, affected = self._receiver_result(cx, cy, source_x=x, source_y=y)
+                if resolved:
                     fired += 1
+                    receiver_results.append(((cx, cy), power, cell.wall_kind, affected))
                     if source == 'player' and not (cell.wall_kind == '机关门' and cell.solid):
                         self._identity_receiver(cx, cy)
             # 门类节点（合辙/分流）：只登记本回合的一次输入，不继续传播——
@@ -128,6 +141,9 @@ class LogicMixin(CircuitMixin):
                 if (nx, ny) in visited:
                     continue
                 visited.add((nx, ny))
+                visit_order.append((nx, ny))
+                parent[(nx, ny)] = (cx, cy)
+                depth[(nx, ny)] = depth[(cx, cy)] + 1
                 self._logic_energized.add((nx, ny))
                 next_power = power - 1
                 if self.cell(nx, ny).wall_kind == AMPLIFIER_WALL:
@@ -137,7 +153,62 @@ class LogicMixin(CircuitMixin):
                     # 强度归零也要把「刚好够到」的门/接收器入队——
                     # 到达本身就是输入（门的裁决、接收器的幂等结算都在弹出处）。
                     queue.append((nx, ny, next_power))
+        self._emit_legacy_signal_events(x, y, source, strength, visit_order,
+                                        parent, depth, receiver_results)
         return fired
+
+    @staticmethod
+    def _legacy_parent_path(parent, point: tuple[int, int]) -> tuple[tuple[int, int], ...]:
+        path = [point]
+        while parent.get(path[-1]) is not None:
+            path.append(parent[path[-1]])
+        path.reverse()
+        return tuple(path)
+
+    def _legacy_branch_paths(self, parent, visit_order) -> tuple[tuple[tuple[int, int], ...], ...]:
+        """按真实父边重建 BFS 树的分支路径：每个末端一条，分支不合并。"""
+        children: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for point, par in parent.items():
+            if par is not None:
+                children.setdefault(par, []).append(point)
+        paths = []
+        for point in visit_order:
+            if point in children:
+                continue
+            paths.append(self._legacy_parent_path(parent, point))
+        return tuple(paths)
+
+    def _emit_legacy_signal_events(self, x, y, source, strength, visit_order,
+                                   parent, depth, receiver_results) -> None:
+        """只登记本次 BFS 真实发生的传播与接收；空 BFS / 只读读取不发事件。"""
+        root = self._circuit_visual_root(f"legacy:{x},{y}")
+        travel = None
+        if len(visit_order) > 1:
+            paths = self._legacy_branch_paths(parent, visit_order)
+            travel = emit_visual(
+                self, kind="circuit.travel", outcome="on", source=(x, y),
+                targets=tuple(point for point, _power, _kind, _cells in receiver_results),
+                paths=paths, affected_cells=tuple(visit_order),
+                visual_key="circuit.arc", tier=1, theme="electric",
+                root_id=root, source_id=f"legacy:{x},{y}", layer_key="circuit",
+                facts=(("origin", str(source or "")), ("signal_strength", int(strength)),
+                       ("visited", len(visit_order)), ("branches", len(paths)),
+                       ("fired", len(receiver_results))),
+            )
+        for (rx, ry), power, wall_kind, affected in receiver_results:
+            path = self._legacy_parent_path(parent, (rx, ry))
+            emit_visual(
+                self, kind="circuit.receiver", outcome="fired", source=(rx, ry),
+                targets=((rx, ry),),
+                paths=(path,) if len(path) > 1 else (),
+                affected_cells=tuple(affected),
+                visual_key="circuit.arc", tier=1, theme="electric",
+                root_id=travel.root_id if travel is not None else root,
+                parent_id=travel.event_id if travel is not None else None,
+                source_id=f"legacy-receiver:{rx},{ry}", layer_key="circuit",
+                facts=(("origin", str(source or "")), ("receiver", str(wall_kind)),
+                       ("power", int(power)), ("depth", int(depth.get((rx, ry), 0)))),
+            )
 
     def _logic_fences(self) -> dict[tuple[int, int], int]:
         """在场的意识栅栏及其剩余寿命（囚笼栅栏降下 / 到期消散用）。"""
@@ -153,15 +224,21 @@ class LogicMixin(CircuitMixin):
 
     def _resolve_receiver(self, x: int, y: int, source_x: int, source_y: int) -> bool:
         """接收器动作：返回是否有可见反馈（供消息聚合）。"""
+        resolved, _affected = self._receiver_result(x, y, source_x, source_y)
+        return resolved
+
+    def _receiver_result(self, x: int, y: int, source_x: int, source_y: int):
+        """执行接收器动作，返回 (是否有可见反馈, 本次实际改变格)。"""
         kind = self.cell(x, y).wall_kind
         if kind == "机关门":
             # 开/关切换：开 = 通行（solid 置 False），关 = 恢复坚实。
             cell = self.cell(x, y)
+            before = cell.solid
             cell.solid = not cell.solid
             self.messages.append(tr(
                 "机关门转动齿轮，{state}。", state="打开" if not cell.solid else "关上"
             ))
-            return True
+            return True, (() if cell.solid == before else ((x, y),))
         if kind == "显影方尖":
             # 一次性：点亮后永久显影半径 3。
             self._develop_terrain_radius(x, y, 3)
@@ -169,16 +246,13 @@ class LogicMixin(CircuitMixin):
             # 知识（developed_cells），不能顺手把它变成一盏常亮灯（§4.3 末行）。
             note_light_flash(self, "develop", x, y)
             self.messages.append(tr("显影方尖亮起——周围的地形从黑暗里显形。"))
-            return True
+            return True, ((x, y),)
         if kind == "囚笼栅栏":
-            self._toggle_cage(x, y)
-            return True
+            return True, tuple(self._toggle_cage(x, y))
         if kind == "弹射座":
-            self._fire_launcher(x, y, source_x, source_y)
-            return True
+            return True, tuple(self._fire_launcher(x, y, source_x, source_y))
         if kind == "灌注阀":
-            self._open_valve(x, y)
-            return True
+            return True, tuple(self._open_valve(x, y))
         if kind == "共鸣报警器":
             # 全图可闻：所有失控意识被召集到报警器位置。这是独立的召集／
             # 信息机制，不按普通听觉上限 H 削减（docs 261022 §13.1）。
@@ -193,15 +267,16 @@ class LogicMixin(CircuitMixin):
             self._sound_pulse(x, y, 10, category="alarm", source=tr("共鸣报警器"),
                               announce=False, affect_enemies=False)
             self.messages.append(tr("共鸣报警器发出刺耳的长鸣——整层的梦都被惊动了。"))
-            return True
-        return False
+            return True, ((x, y),)
+        return False, ()
 
     # ---------------------------------------------------------- 接收器动作
 
-    def _toggle_cage(self, x: int, y: int) -> None:
+    def _toggle_cage(self, x: int, y: int) -> tuple[tuple[int, int], ...]:
         """囚笼栅栏升降：8 邻格中「可站立的开放格」升起/清掉意识栅栏。"""
         fences = self._logic_fences()
         raised_any = False
+        changed: list[tuple[int, int]] = []
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
                 if dx == 0 and dy == 0:
@@ -215,6 +290,7 @@ class LogicMixin(CircuitMixin):
                     cell.wall_kind = ""
                     cell.solid = False
                     fences.pop((nx, ny), None)
+                    changed.append((nx, ny))
                     continue
                 if cell.solid or self.entity_at(nx, ny):
                     continue
@@ -222,14 +298,16 @@ class LogicMixin(CircuitMixin):
                 cell.wall_kind = "意识栅栏"
                 cell.solid = True
                 fences[(nx, ny)] = MIND_FENCE_LIFETIME
+                changed.append((nx, ny))
                 raised_any = True
         self._mind_fences = fences
         if raised_any:
             self.messages.append(tr("囚笼栅栏升起——四周竖起了半透明的栅影。"))
         else:
             self.messages.append(tr("囚笼栅栏降下——栅影散去。"))
+        return tuple(changed)
 
-    def _fire_launcher(self, x: int, y: int, source_x: int, source_y: int) -> None:
+    def _fire_launcher(self, x: int, y: int, source_x: int, source_y: int) -> tuple[tuple[int, int], ...]:
         """弹射座：把格上/相邻的生物沿「远离信号源」的方向推出最多 3 格。"""
         # 朝向 = 从信号源指向弹射座的单位方向（默认向上）。
         dx, dy = x - source_x, y - source_y
@@ -240,12 +318,15 @@ class LogicMixin(CircuitMixin):
         if dx == 0 and dy == 0:
             dx, dy = 0, -1
         moved_any = False
+        moved_cells: list[tuple[int, int]] = []
         for entity in [self.player, *self.enemies]:
             if entity.integrity <= 0:
                 continue
             if max(abs(entity.x - x), abs(entity.y - y)) > 1:
                 continue
             px, py = entity.x, entity.y
+            started = (px, py)
+            entity_moved = False
             for _ in range(3):
                 nx, ny = px + dx, py + dy
                 if not (0 <= nx < self.width and 0 <= ny < self.height):
@@ -255,17 +336,24 @@ class LogicMixin(CircuitMixin):
                     break
                 px, py = nx, ny
                 moved_any = True
+                entity_moved = True
             entity.x, entity.y = px, py
+            if entity_moved:
+                for point in (started, (px, py)):
+                    if point not in moved_cells:
+                        moved_cells.append(point)
         if moved_any:
             self.messages.append(tr("弹射座松开簧片——一股力量把人推了出去。"))
+        return tuple(moved_cells)
 
-    def _open_valve(self, x: int, y: int) -> None:
+    def _open_valve(self, x: int, y: int) -> tuple[tuple[int, int], ...]:
         """灌注阀：向 4 邻开放格释放储备材料（vault 可指定，默认水）。"""
         kind, amount = "水", 24
         stored = getattr(self, "valve_stored", {}).get(f"{x},{y}")
         if stored:
             kind, amount = stored
         poured = 0
+        poured_cells: list[tuple[int, int]] = []
         for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
             nx, ny = x + dx, y + dy
             if not (0 <= nx < self.width and 0 <= ny < self.height):
@@ -278,21 +366,29 @@ class LogicMixin(CircuitMixin):
             elif kind in GASES:
                 self._add_gas(cell, kind, amount)
             poured += 1
+            poured_cells.append((nx, ny))
         if poured:
             self.messages.append(tr("灌注阀开启——{material}涌了出来。", material=tr(kind)))
+        return tuple(poured_cells)
 
     # ---------------------------------------------------------------- 陷阱
 
-    def trigger_platform(self, x: int, y: int) -> None:
+    def trigger_platform(self, x: int, y: int, *, safe_note: str = "") -> None:
         """台面被取物/回应：陷阱石台执行随机选定的场景并发射信号；
-        机关石台执行良性场景并发射信号（自动门/显影等）。"""
+        机关石台执行良性场景并发射信号（自动门/显影等）。
+
+        ``safe_note`` 是第二条「隔开机关」的通路（第一条是绝缘手套）：只抑制
+        **陷阱**那一段场景，石台的信号照发、机关石台照旧执行——洞察「桌面不是
+        地面」靠多站一回合换来这一手，所以这里的口径必须与手套一致。
+        """
         kind = self.cell(x, y).wall_kind
         if self.circuit_node_at(x, y) is not None:
             self._circuit_signal(x, y, by_player=True)
             return
-        if kind == TRAP_PLATFORM and self._effect_power("wire_safe") > 0:
-            # 绝缘手套：徒手取物隔开了机关——陷阱不触发（石台仍发信号）。
-            self.messages.append(tr("绝缘手套隔开了机关——你安全地绕过了陷阱。"))
+        safe = bool(safe_note) or self._effect_power("wire_safe") > 0
+        if kind == TRAP_PLATFORM and safe:
+            # 绝缘手套／多站那一回合：徒手取物隔开了机关——陷阱不触发（石台仍发信号）。
+            self.messages.append(safe_note or tr("绝缘手套隔开了机关——你安全地绕过了陷阱。"))
         elif kind == TRAP_PLATFORM:
             from ..materials.logic import TRAP_SCENARIO_LIBRARY
 
@@ -590,7 +686,7 @@ class LogicMixin(CircuitMixin):
             self._cotton_tick = 0
             from .settlement import REASON_ENVIRONMENT, settle_delta
             settle_delta(self, 'imagination', -1,
-                         reason=REASON_ENVIRONMENT, source='疲倦棉垛')
+                         reason=REASON_ENVIRONMENT, source='倦怠棉垛')
             self.messages.append(tr("棉絮吸走了你的念头（想象力 -1）。"))
 
     def _pressure_step(self, origin: tuple[int, int], landing: tuple[int, int], *, by_player: bool = False) -> None:

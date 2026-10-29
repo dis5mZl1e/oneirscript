@@ -46,8 +46,7 @@ class TamperHostMixin:
             self.pickup_target = None
         self._panel_enter_mode = None
         self._close_self_audit(refresh=False)
-        if getattr(self, 'panel_locked', False):
-            self.release_cursor_lock()
+        # 2026-10-26：进入篡改不再解除 ~ 锁定——锁定只冻结右栏页面，不是模态。
         return True
 
     def _capture_tamper_view(self, editor):
@@ -62,9 +61,16 @@ class TamperHostMixin:
         state = self.session.state
         if editor.ui_context != (id(state), state.layer_key()):
             return
+        # 右栏简版编辑器是被「切换工作区」关闭的：页面已经由导航切走，
+        # 不能再把 panel_mode/滚动/选区还原成篡改页，否则目标工作区会丢。
+        navigated_away = (getattr(editor, 'host', 'map') == 'map'
+                          or not (self.panel_mode == 'actions'
+                                  and self._panel_subpage_id() == 'tamper'))
         for name, value in editor.return_context.items():
             if name == 'hover_target':
                 state.hover_target = value
+            elif navigated_away and name in ('panel_mode', 'panel_scroll', 'panel_selection'):
+                continue
             elif name != 'panel_mode' or not (self.home_mode or state.run_over):
                 setattr(self, name, value)
 
@@ -159,6 +165,17 @@ class TamperHostMixin:
                 self.close_world_tamper_editor()
             else:
                 self.close_tamper_editor()
+        elif key == 'tamper:open':
+            # 地图浮层编辑期间点右栏的「回到右栏继续改」：同一句搬回右栏。
+            if getattr(self, 'world_tamper_editor', None) is not None:
+                self._world_tamper_set_host('side')
+        elif getattr(self, 'world_tamper_editor', None) is not None:
+            # 右栏简版篡改页与地图浮层共用同一套行键（word:/wslot:/cond:/ctoggle:…）；
+            # mouse_routing 把面板点击一律交给这里，转给同一个解码器即可。
+            if key == 'tamper:map':
+                self._world_tamper_set_host('map')
+            elif key:
+                self._world_tamper_click(key)
 
     def _refresh_tamper_overlay(self):
         try:
@@ -188,7 +205,7 @@ class TamperHostMixin:
                 self.close_tamper_editor(refresh=False)
                 from ..core.tamper_views import current_tamper_target
                 if self.panel_mode=='event_dialog' and current_tamper_target(state) is None and not (self.home_mode or state.run_over):
-                    self.panel_mode='world'
+                    self.panel_mode=self._default_panel_mode()
             widget.styles.display = 'none'
             # The next refresh renders the restored dialogue normally.
             if self.panel_mode == 'event_dialog' and not self.home_mode and not state.run_over and hasattr(self,'_event_dialog_text'):
@@ -197,6 +214,14 @@ class TamperHostMixin:
                 self.call_after_refresh(self.refresh_view)
             return
         dialogue.styles.display = 'none'
+        if world_editor and getattr(editor, 'host', 'map') == 'side':
+            # 右栏简版篡改：编辑界面住在右栏里，地图区不再叠一层浮层。
+            widget.styles.display = 'none'
+            if not self._world_tamper_side_active():
+                # 篡改页被换成别的页时结束这次编辑：留着等于一只看不见、
+                # 却把所有按键都吃进状态机的编辑器。
+                self.close_world_tamper_editor(refresh=False)
+            return
         if editor.map_preview:
             widget.styles.display = 'none'
             return

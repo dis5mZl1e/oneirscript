@@ -30,6 +30,9 @@ class MovementActionsMixin:
     def move_player(self, dx: int, dy: int, *, choice: str | None = None) -> ActionResult:
         if max(abs(dx), abs(dy)) != 1:
             return ActionResult(False, tr("一次只能移动一格。"))
+        from ...equipment import remaining_gear
+        if not remaining_gear.before_move(self):
+            return ActionResult(False, tr("换弹尚未完成，当前不能移位。"))
         if self.realm_id == "toy_memories" and self.realm_depth == 4 and dx and dy:
             return ActionResult(False, tr("推箱子区域只能沿四个方向移动。"))
         if getattr(self, "stasis_turns", 0) > 0:
@@ -77,31 +80,12 @@ class MovementActionsMixin:
                 self.night_walk_count = 0
                 self.messages.append(tr("夜行的惯性带着你——这一步没有花时间。"))
         target_cell = self.cell(nx, ny)
-        if "enlarged" in self.portents:
-            # 「放大」：挤不进门，也挤不过 1 格宽的缝隙（开放格才谈进入）。
-            # 逃逸阀：若玩家已经身处窄缝内（例如走进去后才被脚下彩虹牛奶赋上
-            # 「放大」），离开窄缝不能再被同一条身体限制永久锁死。
-            already_inside_narrow = self._cell_too_narrow_for_enlarged(
-                self.player.x, self.player.y)
-            open_neighbours = [
-                (self.player.x + dx, self.player.y + dy)
-                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
-                if 0 <= self.player.x + dx < self.width
-                and 0 <= self.player.y + dy < self.height
-                and not self.cell(self.player.x + dx, self.player.y + dy).solid
-            ]
-            # 逃逸阀二：当前格本身是开阔的，但四个开放邻格都被判为窄缝/门
-            # （例如站在两段 1 格宽走廊之间的路口）。这同样是身体限制造成的
-            # 局部封闭，必须允许先挤进其中一格，否则彩虹牛奶会永久续上放大。
-            trapped_by_body = bool(open_neighbours) and all(
-                self._cell_too_narrow_for_enlarged(px, py)
-                for px, py in open_neighbours)
-            if not already_inside_narrow and not trapped_by_body                     and target_cell.wall_kind in DOOR_KINDS:
+        if "enlarged" in self.portents and target_cell.wall_kind in DOOR_KINDS:
+            # 「放大」（2026-10-27 改）：1 格宽的缝隙不再阻挡移动，只是这一步
+            # 的耗时翻倍（结算见下方 base_cost）；门仍然挤不过。
+            # 逃逸阀只对门生效，避免被门永久锁死（见 _enlarged_door_escape）。
+            if not self._enlarged_door_escape():
                 return ActionResult(False, tr("放大的身体挤不过这扇门。"))
-            if (not already_inside_narrow and not trapped_by_body
-                    and not target_cell.solid
-                    and self._cell_too_narrow_for_enlarged(nx, ny)):
-                return ActionResult(False, tr("放大的身体挤不过这道缝隙。"))
         if target_cell.solid:
             # 可推墙（石墨烯晶格）：撞上去把它推向同方向一格（推箱子，无法拉回）；
             # 下一格被墙/生物/边界挡住时推不动，回落为普通撞墙结算。
@@ -135,6 +119,11 @@ class MovementActionsMixin:
         if jumped is not None:
             self.player.x, self.player.y = jumped
             nx, ny = jumped
+        from ...equipment.expansion_runtime import note_player_move
+        note_player_move(self, origin, (nx, ny))
+        from ...equipment import gear_tools
+        gear_tools.note_player_step(self, origin, (nx, ny))
+        remaining_gear.after_move(self)
         # 地板足音（docs 261022 §6）：统一走真实落脚声径，空鼓地板只是 R=4 的一种。
         contacts.append((nx, ny))
         if self.insight_active('无声步') and self._quiet_step_charges_active():
@@ -188,6 +177,9 @@ class MovementActionsMixin:
         else:
             extra = self._portent_move_penalty()
             extra += self._region_move_penalty()  # 悔恨之锚贴近：+0.5
+            # 植物地形（2026-10-26）：磁带须/装订须/缝线丛 +0.5，千禧蒲草
+            # 挺立时本格与 R1 +0.25；同类取最强，不叠成「一格走三回合」。
+            extra += self.plant_move_penalty_at(nx, ny)
             # 2026-10-22：删除悬空的 weapon_weight 读取（全库无物品提供该效果，
             # 恒为 0；沉重的订书机描述早已改为只写伤害 +2，不再承诺移动惩罚）。
             extra += belt_extra  # 传送带逆行：耗时翻倍（+1 回合）
@@ -209,6 +201,15 @@ class MovementActionsMixin:
                 and self._cell_holds_material(self.cell(nx, ny), "蜂蜜", 6)
             ):
                 base_cost = 2  # 蜂蜜：上方生物移速减半（碎片「湿滑的经验」可免疫）
+            # 「放大」（2026-10-27 玩家需求）：这一步只要涉及 1 格宽的狭窄地形
+            # （起点格或终点格，含门——门格本身只可能经逃逸阀踏入），移动耗时
+            # 翻倍。与蜂蜜的 2 相乘最高到 4，属于预期叠加。
+            if "enlarged" in self.portents and (
+                self._cell_too_narrow_for_enlarged(origin[0], origin[1])
+                or self._cell_too_narrow_for_enlarged(nx, ny)
+            ):
+                base_cost *= 2
+                self.messages.append(tr("放大的身体挤过缝隙，多花了些时间。"))
             if self.viscous_debt >= 1.0:
                 self.viscous_debt -= 1.0
                 self.messages.append(tr("粘稠的梦拖住了你的脚步。"))
@@ -217,11 +218,35 @@ class MovementActionsMixin:
                 self._move_action_time(base_cost)
         return ActionResult(True, tr("你移动了一格。"), {"position": [nx, ny]})
 
+    def _enlarged_door_escape(self) -> bool:
+        """「放大」跨门的逃逸阀：站在门格上，或当前格的可通行邻格全是门。
+
+        门的关闭状态是实心格，因此这里把「门」也算作可通行邻格——否则
+        「四邻全是关着的门」永远凑不出来，玩家会被门永久锁死。只要满足其一，
+        就允许跨门一次（门本身仍挤不过，例外只此一条）。
+        """
+        if self.cell(self.player.x, self.player.y).wall_kind in DOOR_KINDS:
+            return True
+        neighbours = [
+            self.cell(self.player.x + dx, self.player.y + dy)
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+            if 0 <= self.player.x + dx < self.width
+            and 0 <= self.player.y + dy < self.height
+        ]
+        neighbours = [
+            cell for cell in neighbours
+            if not cell.solid or cell.wall_kind in DOOR_KINDS
+        ]
+        return bool(neighbours) and all(
+            cell.wall_kind in DOOR_KINDS for cell in neighbours)
+
     def _move_action_time(self, amount: float) -> None:
         """本次主动步行已经处理传送带；世界结算不能再推回玩家。"""
         previous = getattr(self, '_conveyor_player_walking', False)
         self._conveyor_player_walking = True
         try:
+            from ...equipment.remaining_gear import move_cost
+            amount = move_cost(self, amount)
             self._action_time(amount)
         finally:
             self._conveyor_player_walking = previous
@@ -284,14 +309,18 @@ class MovementActionsMixin:
         definition = wall_def(kind)
         if not definition.pushable:
             return None
+        from ..expansion_consumables import block_push
+        if block_push(self, x, y):
+            self._action_time(1, ActionKind.MOVE)
+            return ActionResult(True, tr('止退片挡住这次推动后碎裂了。'))
         if kind == "理念立方体" and dx and dy:
             return ActionResult(False, tr("立方体只能沿四个方向推动。"))
         tx, ty = x + dx, y + dy
         if not (0 <= tx < self.width and 0 <= ty < self.height):
-            return None
+            return self._push_wall_crush(x, y, definition)
         target = self.cell(tx, ty)
         if target.solid or self.entity_at(tx, ty) is not None:
-            return None
+            return self._push_wall_crush(x, y, definition)
         # 平移墙格：墙种、完整度、硬度/厚度/高度一并跟过去，原格还原为地面。
         target.wall_kind = kind
         target.solid = True
@@ -325,6 +354,23 @@ class MovementActionsMixin:
         self.messages.append(tr("立方体滑入下一格。" if kind == "理念立方体" else "晶格被你推着滑了一格。"))
         self._update_doors()
         return ActionResult(True, self.messages[-1], {"pushed_wall": [tx, ty]})
+
+    def _push_wall_crush(self, x: int, y: int, definition) -> ActionResult | None:
+        """把可推墙推向被挡死的方向：完整度 >150 时墙被挤碎（崩解度 +1）。
+
+        只有玩家亲手推动会走到这里；普通推开不做伤害。完整度 <=150 的可推墙
+        仍然只是「推不动」，不破坏。
+        """
+        cell = self.cell(x, y)
+        if int(cell.integrity) <= 150:
+            return None
+        if not self.destroy_wall(x, y, "push"):
+            return None
+        self._action_time(1, ActionKind.MOVE)
+        self.messages.append(tr("你把它推得嵌进阻碍里——{name}碎开了。",
+                                name=tr(definition.name)))
+        self._update_doors()
+        return ActionResult(True, self.messages[-1], {"pushed_wall_destroyed": [x, y]})
 
     def _slide_on_ice(self, dx: int, dy: int, contacts: list | None = None) -> int:
         """冰面滑行：沿 (dx,dy) 一直滑，直到撞上墙/固体/生物或脚下不再是冰面。
@@ -371,7 +417,8 @@ class MovementActionsMixin:
             self._action_time(1, ActionKind.USE)
             return ActionResult(True, tr("你操作了机关。"), {"circuit_input": component[1]})
         if cell.wall_kind in DOOR_KINDS:
-            if "enlarged" in self.portents:
+            # 门仍然挤不过；只有 _enlarged_door_escape 的逃逸阀允许跨门。
+            if "enlarged" in self.portents and not self._enlarged_door_escape():
                 return ActionResult(False, tr("放大的身体挤不过这扇门。"))
             # 门：撞/点都打开并踏入（与「撞墙即左键」统一；门上有生物时已在 move_player
             # 走攻击分支）。门是「高墙」，关闭时相当于墙；此处在玩家占位之前先打「开」，
@@ -448,6 +495,10 @@ class MovementActionsMixin:
         # 凝听：等待即进入（docs 261022 §16.3），覆盖当次等待及随后一个真实回合；
         # 先登记条件，再推进世界，敌人这一回合的足音才吃得到 −4 阈值。
         self.listen_until = max(self.listen_until, self.time + 2)
+        # 扩展包洞察的读取规则由目录 kind 分发，不再往这里堆手写 if。观察算在
+        # 推进世界之前，否则刚听到的两条线索会被这一回合的保留窗挤掉。
+        from ..expansion_insights import on_wait as _expansion_insights_on_wait
+        _expansion_insights_on_wait(self)
         self._action_time(1, ActionKind.MISC)
         # §11 §7：准备从这次真正推进世界的等待之后起算，查看面板不算。
         if self.insight_active('无声步'):
@@ -513,6 +564,12 @@ class MovementActionsMixin:
             if pid:
                 self._remember_portent_end(self.player, pid)
     def _push_entity(self, target: Entity, dx: int, dy: int, force: int) -> None:
+        if target is self.player and self.cell(target.x,target.y).liquid>0:
+            from ...equipment.remaining_gear import equipped
+            if equipped(self,'expansion.terrain.e05'):
+                force=max(0,force-1)
+        if target.relation == '玩偶意识体':
+            return  # Fixed tutorial targets also stay put when struck by knockback.
         if target.trait == "relentless":
             # 原初不息：不可被推动——撞击方向的动量转为 1 点完整度损伤。
             self._kill_full_reward = True

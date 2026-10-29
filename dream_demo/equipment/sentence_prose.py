@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
+from ..i18n import tr
 
 if TYPE_CHECKING:
     from rich.text import Text  # 仅注解用
@@ -65,7 +66,7 @@ def item_description(definition_id: str, fallback: str = "") -> str:
     definition = ITEM_DEFINITIONS.get(definition_id, {})
     text = definition.get("description") or ITEM_DESCRIPTIONS.get(definition_id, fallback)
     details = definition.get('effect_description', '')
-    return (tr(text) + '\n' + tr('作用：') + tr(details)) if details else tr(text)
+    return (tr(text) + '\n' + tr(details)) if details else tr(text)
 
 
 def condition_text(predicate) -> str:
@@ -459,7 +460,7 @@ def _row_details(row) -> tuple[str, ...]:
     details = []
     if row.kind in ("action", "reaction") and any(
             v.response.kind == "supplement" for v in row.voices):
-        details.append("补语只随持续契约生效；这一句是即时行为，补语暂不参与。")
+        details.append(tr("补语只随持续契约生效；这一句是即时行为，补语暂不参与。"))
     if row.kind == "contract":
         from .lexicon import contract_ending
         shown_supplements = set()
@@ -471,42 +472,45 @@ def _row_details(row) -> tuple[str, ...]:
             if key in shown_supplements:
                 continue
             shown_supplements.add(key)
-            details.append(
-                f"随句补足：{_item_name(row, contract.instance_id)}——"
-                + contract_ending(contract.effect, power=contract.power,
-                                  secondary=contract.secondary))
+            details.append(tr(
+                '随句补足：{item}——{ending}',
+                item=_item_name(row, contract.instance_id),
+                ending=tr(contract_ending(contract.effect, power=contract.power,
+                                          secondary=contract.secondary))))
     if any(contract.effect == 'blank_edge' for contract in row.contracts):
-        details.append('留白带来的额外回流合计最多 3 点；多件装备按各自的想象力门槛生效，并沿用递减。')
+        details.append(tr('留白带来的额外回流合计最多 3 点；多件装备按各自的想象力门槛生效，并沿用递减。'))
     if any(relation.operator == "repetition" for relation in row.relations):
-        details.append("两次出手共用一次行动的创伤上限，总创伤不会增加。")
+        details.append(tr("两次出手共用一次行动的创伤上限，总创伤不会增加。"))
     for iid, effect, power in dict.fromkeys(row.action_modifiers):
+        item_name = _item_name(row, iid)
         if effect == "swift_strike":
-            details.append(f"词义切换：{_item_name(row, iid)}的节拍只缩短关联攻击的耗时；"
-                           "同一装备已提供持续攻速时，不重复叠加。")
+            details.append(tr('词义切换：{item}的节拍只缩短关联攻击的耗时；'
+                              '同一装备已提供持续攻速时，不重复叠加。', item=item_name))
         elif effect == 'spray_boost':
-            details.append(f"{_item_name(row, iid)}让本句喷射多带出材料；仅从容器取材时生效，"
-                           "不超过容器余量。同一件装备的持续效果不重复计算。")
+            details.append(tr('{item}让本句喷射多带出材料；仅从容器取材时生效，'
+                              '不超过容器余量。同一件装备的持续效果不重复计算。', item=item_name))
         elif effect == 'repair_up':
-            details.append(f"{_item_name(row, iid)}让本句修缮补得更多；仍消耗原有工具，"
-                           "完整度不超过墙体上限。同一件装备的持续效果不重复计算。")
+            details.append(tr('{item}让本句修缮补得更多；仍消耗原有工具，'
+                              '完整度不超过墙体上限。同一件装备的持续效果不重复计算。', item=item_name))
         elif effect == 'pierce_up':
-            details.append(f"{_item_name(row, iid)}让本句弹体多一分穿透；遇墙仍会耗去穿透额度，"
-                           "免疫弹体的墙体不受影响。同一件装备的持续效果不重复计算。")
+            details.append(tr('{item}让本句弹体多一分穿透；遇墙仍会耗去穿透额度，'
+                              '免疫弹体的墙体不受影响。同一件装备的持续效果不重复计算。', item=item_name))
         elif effect == 'attach_hunt':
-            details.append(f"{_item_name(row, iid)}让本句攻击认出残留的附着；目标仍有附着时，"
-                           "创伤至多多 1 点。同一件装备的持续效果不重复计算。")
+            details.append(tr('{item}让本句攻击认出残留的附着；目标仍有附着时，'
+                              '创伤至多多 1 点。同一件装备的持续效果不重复计算。', item=item_name))
         elif effect == 'wet_conduct':
-            details.append(f"{_item_name(row, iid)}让本句命中或喷射落点借液体传导；"
-                           "落点和附近目标都须有导电液体，只多传 1 点创伤。成功消耗 1 点想象力，并受反馈冷却限制。")
+            details.append(tr('{item}让本句命中或喷射落点借液体传导；'
+                              '落点和附近目标都须有导电液体，只多传 1 点创伤。成功消耗 1 点想象力，并受反馈冷却限制。',
+                              item=item_name))
         elif effect == 'fire_affinity':
-            details.append(f"{_item_name(row, iid)}让本句命中带出余温；只在有可燃材料的位置点火。"
-                           "成功消耗 1 点想象力，并受反馈冷却限制；不凭空生成燃料。")
+            details.append(tr('{item}让本句命中带出余温；只在有可燃材料的位置点火。'
+                              '成功消耗 1 点想象力，并受反馈冷却限制；不凭空生成燃料。', item=item_name))
         elif effect == 'blast_radius':
-            details.append(f"{_item_name(row, iid)}让本句命中带出余爆，最多波及附近一个可见目标 1 点创伤；"
-                           "不穿墙。成功消耗 1 点想象力，并受反馈冷却限制。")
+            details.append(tr('{item}让本句命中带出余爆，最多波及附近一个可见目标 1 点创伤；'
+                              '不穿墙。成功消耗 1 点想象力，并受反馈冷却限制。', item=item_name))
         elif effect == 'throw_master':
-            details.append(f"{_item_name(row, iid)}借甩手的力道强化本句攻击，与武器创伤按原有规则共同计算；"
-                           "只修饰本句，不额外投出或消耗一件物品。")
+            details.append(tr('{item}借甩手的力道强化本句攻击，与武器创伤按原有规则共同计算；'
+                              '只修饰本句，不额外投出或消耗一件物品。', item=item_name))
     if any(relation.operator == "restriction" for relation in row.relations):
         seen = set()
         for voice in row.voices:
@@ -525,7 +529,8 @@ def _row_details(row) -> tuple[str, ...]:
             seen.add(key)
             item = _item_name(row, voice.instance_id)
             label = "效果" if effect in _EXCLUDED_EFFECT_TEXT else "修饰"
-            details.append(f"未采用：{item}提供的“{modifier}”{label}不生效。")
+            details.append(tr('未采用：{item}提供的“{modifier}”{label}不生效。',
+                              item=item, modifier=tr(modifier), label=tr(label)))
     if row.kind not in ("contract", "reaction"):
         return tuple(details)
     from ..data.items import ITEM_DEFINITIONS
@@ -607,10 +612,19 @@ _READABLE_REASONS = {
 
 
 def readable_reason(reason: str) -> str:
+    from ..i18n import get_language, tr
+
     if not reason:
-        return "这行还没有组成完整意思。"
-    return _READABLE_REASONS.get(
+        return tr("这行还没有组成完整意思。")
+    readable = _READABLE_REASONS.get(
         reason, "这组意象暂时无法组合，请调整相关装备或功能词的位置。")
+    if get_language() == "en":
+        # 英文模式下优先用**原因键**的既有译文（词表译者按内部键登记）；
+        # 只有该键还没有英文时才落回中文可读句，交给调用方 tr() 兜底。
+        translated = tr(reason)
+        if translated != reason:
+            return translated
+    return readable
 
 
 def _unformed(row) -> RenderedSentence:
@@ -664,6 +678,17 @@ def render_sentence(row) -> RenderedSentence:
         else:
             parts = [_token("这两个候选行为暂时没有可执行分支。", "filler")]
         return RenderedSentence(tuple(parts))
+
+    if row.kind == "proposal":
+        voice = _voice(row, row.source_id, ("verb",))
+        if voice is None:
+            return RenderedSentence((_token("这条装备读法尚未接入效果。"),))
+        return RenderedSentence((
+            _token(_item_name(row, voice.instance_id), "item", voice.instance_id),
+            _token("：", "filler"),
+            _token(voice.response.meaning, "item", voice.instance_id),
+            _token("。", "filler"),
+        ), _row_details(row))
 
     if row.kind == "contract":
         from .lexicon import continuous_word, contract_ending
@@ -1015,6 +1040,11 @@ def _english_body(row) -> str:
         if len(choices) >= 2:
             return f"You may choose {choices[0]} or {choices[1]}; only one takes effect."
         return "Neither candidate has an executable branch yet."
+    if row.kind == "proposal":
+        voice = _voice(row, row.source_id, ("verb",))
+        if voice is None:
+            return "This equipment reading is not connected to an effect yet."
+        return f"{_item_name(row, voice.instance_id)}: {tr(voice.response.meaning)}."
     if row.kind == "contract":
         voice = next((v for v in row.voices if v.response.role in ("verb", "source", "carrier")), None)
         item_id = voice.instance_id if voice is not None else ""

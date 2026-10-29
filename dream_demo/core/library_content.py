@@ -268,7 +268,8 @@ def on_defeat(state,enemy):
             event.options=ENDING_OPTIONS
             event.resolved=False
             event.dialogue=('未尽目录散成散页。你可以保存秩序，承认未定，或带走不完整版本。',
-               f"你读过 {len(state.realm_features.get('records',()))} 份彼此矛盾的记录。三个选择都能返回主梦。")
+               tr('你读过 {n} 份彼此矛盾的记录。三个选择都能返回主梦。',
+                  n=len(state.realm_features.get('records',()))))
     state.messages.append(tr('未尽目录不再替你定稿。中央誊本台等待你的选择。'))
 
 def ensure_library_gate(state):

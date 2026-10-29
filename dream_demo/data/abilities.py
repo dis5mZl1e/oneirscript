@@ -323,3 +323,10 @@ ABILITY_DEFINITIONS.update({
                    "sound": 0, "learn_group": "进阶战术", "weight": 2, "tier": 3},
     },
 })
+
+# ---- 扩展包目录（2026-10-25）：`integration_status == "runtime"` 的构想行 ----
+# 只有效果装配与八项语义口径都齐备的行会被物化（见 growth_runtime.ability_rows），
+# 配套的 ABILITY_FACTS／ABILITY_FX／AIM_SPECS 用同一批键，测试靠集合相等兜住。
+from .expansion.growth_runtime import ability_rows as _expansion_ability_rows  # noqa: E402
+
+ABILITY_DEFINITIONS.update(_expansion_ability_rows())

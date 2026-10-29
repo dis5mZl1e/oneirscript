@@ -2,6 +2,15 @@
 from dataclasses import dataclass
 
 
+def valid_alt_binding(candidate: str) -> bool:
+    """Syntax shared by the settings capture and external config parser."""
+    if not candidate.startswith('alt+'):
+        return False
+    suffix = candidate[4:]
+    return suffix in ('left', 'right', 'up', 'down') or (
+        len(suffix) == 1 and suffix.isascii() and suffix.isalnum())
+
+
 @dataclass(frozen=True)
 class Control:
     key: str
@@ -11,9 +20,11 @@ class Control:
 
 
 PANEL_CONTROLS = (
-    Control('tab', '意识行囊', 'inventory'), Control('t', '携带意象', 'equipment'),
+    Control('t', '携带意象', 'equipment'),
     Control('v', '征兆', 'portents'), Control('i', '现实洞察', 'insights'),
-    Control('k', '观测', 'catalog'), Control('j', '任务日志', 'tasks'),
+    # 2026-10-24 六工作区：观测直达键（k／alt+5）改开环境工作区的「周围」页；
+    # 旧观测面板（catalog）保留为兼容模式，不再有直达键。
+    Control('k', '环境', 'nearby'), Control('j', '任务日志', 'tasks'),
     Control('h', '操作与帮助', 'actions', ('?', '？', 'question', 'question_mark')),
 )
 WORLD_CONTROLS = (
@@ -24,6 +35,10 @@ WORLD_CONTROLS = (
     Control('~', '光标锁定', aliases=('`',)), Control('\\', '全部注释'),
     Control('[', '联想盘'), Control(']', '单条注释点击'),
     Control('r', '换弹'),
+    # 2026-10-24 玩家优化 4 补充：m 是联想盘的专属单键（此前全表未占用，
+    # 与 [、alt+b、页签行「盘」按钮同一入口）。单键会经 reserved_keys()
+    # 自动进保留表，防止其它绑定占走。
+    Control('m', '联想盘'),
 )
 
 
@@ -54,11 +69,12 @@ PANEL_SHORTCUTS = (
     PanelShortcut('portents', 'alt+2', '征兆'),
     PanelShortcut('equipment', 'alt+3', '携带意象'),
     PanelShortcut('insights', 'alt+4', '现实洞察'),
-    PanelShortcut('catalog', 'alt+5', '观测'),
+    PanelShortcut('nearby', 'alt+5', '环境'),
     PanelShortcut('actions', 'alt+6', '操作与帮助'),
     PanelShortcut('tasks', 'alt+7', '任务日志'),
     PanelShortcut('history', 'alt+8', '梦境历史'),
     PanelShortcut('item_detail', 'alt+i', '右栏详情与比较'),
+    PanelShortcut('display_toggle', 'alt+w', '固定构想／折叠总览'),
     PanelShortcut('workspace_prev', 'alt+left', '上一个右栏分区'),
     PanelShortcut('workspace_next', 'alt+right', '下一个右栏分区'),
 )
@@ -97,7 +113,7 @@ def help_lines():
         '鼠标左键：选择/行动；右键：详情；中键/Alt+左键：固定/快捷目标',
         'Alt+E：展开当前条目；Alt+F：行囊搜索；Alt+L：行囊筛选；Alt+R：行囊排序',
         'Alt+0：重置地图缩放；Alt+9：适合屏幕；F10：保存退出',
-        'Alt+↑/↓：地图缩放；Shift+D：丢下首件物品；Shift+W：装备首件物品',
+        'Alt+↑/↓：地图缩放；Shift+D：丢下当前选中物品；Shift+W：装备当前选中物品；U：使用当前选中物品',
         '瞄准时 O：切换合法敌人；Tab：自由落点；Enter：确认；Esc：取消',
         '自由落点：方向键/小键盘移动光标；Enter：确认落点',
         '观察时 P：固定/取消固定当前格；Alt+P：添加/移除快捷目标',

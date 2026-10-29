@@ -80,9 +80,12 @@ def render_preview_png(state: Any, output: str | Path, *,
     from .map_presentation import present_scene, render_observation
     scene = build_scene(state, viewport=viewport)
     left,top,width,height = scene.viewport
+    # 预览图始终走 M2-A 逐格视觉事实入口：字符高刷开关不会让预览变成空图。
+    recorded: dict = {}
     frame = render_map(state,viewport_width=width,viewport_height=height,
-                       origin=(left,top),cell_w=scene.cell_w,cell_h=scene.cell_h)
-    scene = observe_scene(present_scene(scene,frame), layer)
+                       origin=(left,top),cell_w=scene.cell_w,cell_h=scene.cell_h,
+                       visuals=recorded)
+    scene = observe_scene(present_scene(scene,frame,visuals=recorded), layer)
     if layer != 'composite':
         # 过滤后的层用自己的观察帧重新采字形，预览图与字符观察看到同一份数据。
         # 声音线索层与观察界面同口径：只叠加显式标记，不照亮未知格。
@@ -90,7 +93,10 @@ def render_preview_png(state: Any, output: str | Path, *,
         if layer == 'sound':
             from ..core.sound_markers import sound_markers
             markers = sound_markers(state) or None
-        scene = present_scene(scene, render_observation(scene, layer, markers=markers))
+        recorded = {}
+        observed_frame = render_observation(scene, layer, markers=markers,
+                                           visuals=recorded)
+        scene = present_scene(scene, observed_frame, visuals=recorded)
     image = render_scene_image(scene, cell_px=PREVIEW_SIZE)
     path = Path(output)
     path.parent.mkdir(parents=True, exist_ok=True)

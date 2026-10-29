@@ -67,6 +67,10 @@ PROFILES: dict[str, PerceptionProfile] = {
     "anomaly.sleepwalking_tailor": PerceptionProfile(7, 7, 0, "贴身处剪口袋，短距视听"),
     "anomaly.potted_keeper": PerceptionProfile(7, 7, 0, "躲在长高草里，不靠远听"),
     "anomaly.tamper_omission": PerceptionProfile(8, 7, 0, "脚步缺一拍的近身者"),
+    # 混乱极高专属异象：成形即锁定玩家，感知按「追猎者」给，不做全图锁定。
+    "chaos.wrath": PerceptionProfile(10, 6, 1, "嗔怒追猎，视线明确"),
+    "chaos.hollow": PerceptionProfile(7, 7, 0, "靠空洞感知，普通视听"),
+    "chaos.false_light": PerceptionProfile(12, 6, 1, "伪光远眺，听觉普通"),
     "anomaly.thought_worm": PerceptionProfile(6, 7, 0, "近身咬念，听觉普通"),
     "anomaly.dream_accountant": PerceptionProfile(7, 7, 0, "记账型，视野普通"),
     "anomaly.ticket_inspector": PerceptionProfile(6, 7, 0, "只看票面，不追声音"),

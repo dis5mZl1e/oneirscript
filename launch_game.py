@@ -235,4 +235,8 @@ def main() -> bool | None:
 
 
 if __name__ == "__main__":
-    sys.exit(_run_guarded())
+    if '--native-map-worker' in sys.argv:
+        from dream_demo.ui._native_plane_worker import main as native_map_worker
+        native_map_worker(sys.argv[sys.argv.index('--native-map-worker')+1:])
+    else:
+        sys.exit(_run_guarded())

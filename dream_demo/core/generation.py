@@ -14,6 +14,8 @@ import time
 from .main_difficulty import CURRENT_DIFFICULTY_REVISION
 
 from ..i18n import tr
+from ..data.events import EVENT_MAX_PER_LAYER as _EVENT_MAX_PER_LAYER
+from ..data.npcs import NPC_MAX_PER_LAYER
 from ..mapgen import (
     generate_elevation,
     generate_solid_mask,
@@ -41,9 +43,12 @@ from ..materials import (
     PATCH_MIN_SIZE,
     SINGLE_PLANT_CHANCE,
     WALKABLE_FEATURE_WALLS,
+    REALM_LOCAL_PLANTS,
     floor_effect_for,
+    plant_def_for,
     plant_kind,
     plant_profile,
+    realm_plant_kind,
     wall_def,
     wall_pool_for_depth,
     wall_spawn_budget,
@@ -67,6 +72,64 @@ from .entities import Cell, Entity, WorldEvent, WorldItem
 from .treasure_offers import build_options as build_treasure_options
 from .treasure_offers import stage_for_depth as treasure_stage_for_depth
 
+
+
+# 释出通道 -> 每层自然生成的株数上限（docs 2026-10-26 §9.2）。
+_RELEASE_CHANNEL_CAPS: dict[str, int] = {
+    "sound": 1,      # T2 巨响
+    "fire": 1,       # 火
+    "electric": 2,   # 电
+    "integrity": 2,  # 耐久削减
+    "snared": 2,     # 缚住
+    "liquid": 2,     # 液体
+    "push": 2,       # 搬气（不产生新材料）
+    "gas": 2,        # 气体
+}
+
+
+# 错帧片/散页脊的 H1 收拢态（催生目标，docs §10.1）：有形态转换的那几种
+# 里，生成时按这个比例落成「还没立起来」的矮态。
+_YOUNG_FORM_FOR: dict[int, int] = {30: 42, 32: 43}
+YOUNG_FORM_CHANCE = 0.3
+
+
+def _release_channel(definition) -> str:
+    """这株的释出通道（用于每层封顶）；不是释出型返回空串。"""
+    release = getattr(definition, "release", None)
+    if release is None:
+        return ""
+    if release.sound >= 6:
+        return "sound"
+    if release.ignite:
+        return "fire"
+    if release.electric:
+        return "electric"
+    if release.integrity:
+        return "integrity"
+    if release.portent:
+        return "snared"
+    if release.liquid:
+        return "liquid"
+    if release.push_gas:
+        return "push"
+    if release.gas:
+        return "gas"
+    return ""
+
+
+def _stamp_plant_state(cell, definition, x: int, y: int) -> None:
+    """给需要朝向的植物登记朝向（压差囊的嘴、风向标苔的风向）。
+
+    只用坐标推导，不掷骰子：同一株在读档、上下层重建后必须还是同一个朝向，
+    否则「把气推向哪一格」会跟着刷新跳。
+    """
+    needs_direction = bool(
+        getattr(definition, "push_gas_budget", 0)
+        or (definition.release is not None and definition.release.push_gas)
+    )
+    if not needs_direction:
+        return
+    cell.plant_state["direction"] = [(0, -1), (1, 0), (0, 1), (-1, 0)][(x * 7 + y * 13) % 4]
 
 
 class GenerationMixin:
@@ -140,8 +203,10 @@ class GenerationMixin:
                                            if p.vault.circuit or p.vault.npc_anchor
                                            or (p.vault.width >= 10 and p.vault.height >= 10)]
             # 结构绑定事件（2026-09-18）：中大型结构生成时附带固定异常地点。
-            # 位置优先落在 loot 石台上，否则取结构中心；不占每层随机事件配额。
-            # 结构附属 NPC（2026-09-18）：随结构生成、计入每层 NPC 名额。
+            # 位置优先落在 loot 石台上，否则取结构中心。2026-10-27 起与随机
+            # 零散事件**共用**每层名额：盖章期由 forms 的余额先占额（同层最多
+            # EVENT_MAX_PER_LAYER 栋带事件的结构），随机投放只在余额内补位。
+            # 结构附属 NPC（2026-09-18）：随结构生成，同样占每层 NPC 名额。
             vault_sink["structure_npcs"] = [
                 ((placement.left + anchor[1], placement.top + anchor[0]), npc_id)
                 for placement in vault_placements
@@ -262,6 +327,13 @@ class GenerationMixin:
             # 所以只降频、不删结构剧情 NPC（结构锚点走 vault_info，不经此处）。
             npc_roll = npc_rng.random()
             npc_quota = 2 if npc_roll < 0.03 else (1 if npc_roll < 0.25 else 0)
+            # 2026-10-27：结构自带的 NPC 同样占每层名额（盖章期已按余额封顶
+            # 结构侧），随机预留位只在余额内补位——总量不会超过
+            # NPC_MAX_PER_LAYER。
+            npc_quota = min(
+                npc_quota,
+                max(0, NPC_MAX_PER_LAYER - len(vault_sink.get("structure_npcs", ()))),
+            )
             seat = 0
             if npc_quota:
                 for x, y in npc_candidates:
@@ -579,10 +651,13 @@ class GenerationMixin:
     #: 「每个候选独立掷 0.6」后，在十几个候选的池里又必然掷满，实际等于
     #: 固定 2 个。2026-10-22（E5后续 P1）改为**先抽数量再选种类**：
     #: 0／1／2 个 = 40%／50%／10%（期望 0.7），从主题池无放回选。
-    #: 结构绑定事件（vault_info["events"]）与位面入口不经此随机数。
+    #: 结构绑定事件（vault_info["events"]）先占额，随机投放只用**余额**
+    #: （2026-10-27）；位面入口与珍品机会不在此口径内。
     EVENT_QUOTA_WEIGHTS = (0.40, 0.90, 1.00)
     EVENT_SPAWN_CHANCE = 0.6          # 已由 EVENT_QUOTA_WEIGHTS 取代，保留兼容
-    EVENT_MAX_PER_LAYER = 2
+    #: 每层异常地点上限（与结构自带事件**共用**，见 ``data.events``）。
+    #: 结构事件在盖章期先占额，本层的随机零散事件只在余额内补位。
+    EVENT_MAX_PER_LAYER = _EVENT_MAX_PER_LAYER
     EVENT_MIN_PER_LAYER = 0           # 允许整层没有零散异常地点（40%）
     # 记忆碎片每层投放概率（2026-10-15 收紧）：旧版每层必出 2 件可拾取碎片
     # （出生远点固定一件 rain_machine_memory + 记忆池保底抽取一件）；现在每层
@@ -707,13 +782,21 @@ class GenerationMixin:
         ]
         target = int(len(open_cells) * coverage)
         planted = 0
+        # 一次性释出株按通道封顶（docs 2026-10-26 §9.2）：按株计，不按格数分摊。
+        # 超出时退回主梦白名单，不削减教学用的第 1 子层样板。
+        release_used: dict[str, int] = {}
+        release_total = 0
+        release_limit = max(1, int(target * 0.2))
         while planted < target and open_cells:
             x, y = open_cells.pop(rng.randrange(len(open_cells)))
             if not plantable(x, y):
                 continue
             # 稀有魔法植物门：逐 patch 先掷 0.8%，命中且该植物层数衰减权重 > 0
             # 才生成稀有植物——单株为主（85%），极少连成 2 格。
-            rare = rare_plant_kind(rng.random(), depth, region_falloff, realm_id=realm_id)
+            # 长位面不掷稀有门：主梦那批功能植物（曼德拉草/缚魂藤…）不得
+            # 跨支线混进图书馆与疗所，位面专属才是主视觉。
+            rare = (None if realm_id in REALM_LOCAL_PLANTS else
+                    rare_plant_kind(rng.random(), depth, region_falloff, realm_id=realm_id))
             # 2026-09-19 修复：区域衰减已经由 rare_plant_kind 的「种类筛选」
             # 承担（衰减到 0 的种类根本不会被抽中），不再二次乘到概率上——
             # 旧写法把 0.8% 的门再压到 0.2%~0.9%，多数整层颗粒无收。
@@ -738,7 +821,29 @@ class GenerationMixin:
                 cx, cy = frontier.pop(rng.randrange(len(frontier)))
                 if not plantable(cx, cy):
                     continue
-                cells[cy][cx].plant = plant_kind(rng.random(), realm_id=realm_id).code
+                # 长位面（千禧园/藏书宫/疗所）走本位面池：默认 90% 专属、
+                # 10% 主梦白名单，跨支线专属一律为 0（docs §9.1）。
+                if realm_id in REALM_LOCAL_PLANTS:
+                    kind = realm_plant_kind(rng.random(), realm_id)
+                    channel = _release_channel(kind)
+                    if channel:
+                        cap = _RELEASE_CHANNEL_CAPS.get(channel, 0)
+                        if (release_total >= release_limit
+                                or release_used.get(channel, 0) >= cap):
+                            # 本层这一通道已经够了：换回主梦白名单的普通株。
+                            kind = plant_kind(rng.random(), realm_id=realm_id)
+                        else:
+                            release_used[channel] = release_used.get(channel, 0) + 1
+                            release_total += 1
+                else:
+                    kind = plant_kind(rng.random(), realm_id=realm_id)
+                # 错帧片/散页脊有三成是还没立起来的 H1 收拢态（docs §10.1）：
+                # 催生因此有真实用途，而立起态仍是这一层的主视觉。
+                young = _YOUNG_FORM_FOR.get(kind.code)
+                if young and rng.random() < YOUNG_FORM_CHANCE:
+                    kind = plant_def_for(young)
+                cells[cy][cx].plant = kind.code
+                _stamp_plant_state(cells[cy][cx], kind, cx, cy)
                 patch += 1
                 planted += 1
                 for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
@@ -1185,6 +1290,7 @@ class GenerationMixin:
         starting_memory: str | None = None, tutorial: bool = False,
         run_options: dict | None = None, dream_type: dict | None = None,
         difficulty_revision: int = CURRENT_DIFFICULTY_REVISION,
+        run_uid: str | None = None,
     ) -> "GameState":
         # tutorial=True：新开局进入 0 层「梦的起始」（固定教学图 + 引导步骤表），
         # 下面的梦层 1 常规生成照常跑完（保证与旧档同构的初始化），随后整体被教学图替换。
@@ -1241,7 +1347,11 @@ class GenerationMixin:
                 state._prime_material_clocks(cell)
         # 本局稳定身份前缀（§13.2）：actor_uid／task_uid／fact_uid 全部以它开头。
         # 后缀取生成时刻，同一种子开两局也不会互相认成同一局；它不参与任何数值。
-        state.run_uid = f"r{seed}-{int(time.time_ns()) % 10_000_000_000:x}"
+        # run_uid 可显式传入（网页端无头黄金测试需要同种子完全可复现，
+        # 见 dream_web/shell.py）；默认取生成时刻——同种子开两局不互相认成
+        # 同一局，它不参与任何数值（run_uid 派生流的消费方见
+        # library_abilities / main_learning / main_difficulty / tactical_layouts）。
+        state.run_uid = run_uid or f"r{seed}-{int(time.time_ns()) % 10_000_000_000:x}"
         state.world_ledger.run_uid = state.run_uid
         # 开局选项（2026-10-09）必须在敌人生成**之前**落地：异象完整度缩放读
         # run_mods，选项还没生效时生成的异象永远是中性强度。
@@ -1644,7 +1754,12 @@ class GenerationMixin:
 
     def _seed_layer_contents(self, vault_info: "dict | None" = None) -> None:
         self._seed_region_weapon()
+        # 结构自带事件先落地：它们占本层事件名额，随机零散只在余额内补位
+        # （2026-10-27）。``scene`` 型条目交给场景安装器、不落成 WorldEvent，
+        # 因此按「实际追加了几个事件」计数，而不是按 vault_info 的条目数。
+        events_before = len(self.events)
         self._spawn_bound_events(vault_info)
+        bound_events = len(self.events) - events_before
         # 珍品机会（2026-10-22 A2 P5，方案 §6.1）：22／24／26 层各一次高成本
         # 机会，**替换**本层一个高价值奖励槽——中央石台（位面中央石台同义）
         # 的稀有物槽；没有石台就顶掉一个普通散投槽（保底档不动）。两种做法
@@ -1747,12 +1862,16 @@ class GenerationMixin:
         # 概率制，且每层至多 1 件可拾取碎片。碎片池仍覆盖全部记忆碎片
         # （test_generation_coverage 的静态渠道检查沿用）；NPC 交易与事件
         # 奖励的碎片是另行授予，不计入这个上限。
-        memory_ids = sorted(MEMORY_RARITY.keys())
+        memory_ids = sorted(key for key in MEMORY_RARITY
+                            if not ITEM_DEFINITIONS.get(key, {}).get('expansion_catalog_id'))
         memory_ids = self._award_eligible(memory_ids, source="floor_scatter")
         if memory_ids:
             mem_rng = random.Random(self.seed * 13 + self.depth * 104729)
             if mem_rng.random() < GenerationMixin.MEMORY_FLOOR_CHANCE:
-                rolled_ids.append(memory_ids[mem_rng.randrange(len(memory_ids))])
+                from .expansion_rewards import optional_slot
+                memory_id = optional_slot(self, memory_ids[mem_rng.randrange(len(memory_ids))], mem_rng)
+                if memory_id is not None:
+                    rolled_ids.append(memory_id)
         far_points = self._distributed_open_cells(len(fixed_far) + len(rolled_ids), self.seed * 7 + self.depth * 7717)
         for definition_id, (x, y) in zip(list(fixed_far) + rolled_ids, far_points):
             if (x, y) == (self.player.x, self.player.y):
@@ -1770,11 +1889,13 @@ class GenerationMixin:
         # = 40%／50%／10%，期望 0.7），再从主题池**无放回**选种类。
         #
         # 2026-10-12 配额口径：这里只约束「零散随机事件」，且按组计数
-        # （一次投放落一个点位 = 一组）。结构绑定事件（vault_info["events"]，
-        # 见 _spawn_bound_events）与位面入口（realm gate / 青灯场景，均
-        # bound=True 或走 install_bound_scene）是场景/剧情推进所需，必定
-        # 出现、不参与计数；本层的结构锚点在 vault 生成期优先落位，随机
-        # 投放再用 protected 避开结构区补零散的。
+        # （一次投放落一个点位 = 一组）。2026-10-27 收紧：结构绑定事件
+        # （vault_info["events"]，见 _spawn_bound_events）**占同一份名额**，
+        # 本层随机只补余额（见 bound_events）——否则一层两三栋带台子的结构
+        # 再叠两个随机点，总量会翻倍。位面入口（realm gate / 青灯场景，均
+        # bound=True 或走 install_bound_scene）是剧情推进所需、另行落位；
+        # 本层的结构锚点在 vault 生成期优先落位，随机投放再用 protected
+        # 避开结构区补零散的。
         candidates = list(event_candidates(self.depth))
         event_rng = random.Random(self.seed * 23 + self.depth * 5171)
         quota = 0
@@ -1785,7 +1906,8 @@ class GenerationMixin:
                 break
         else:
             quota = len(GenerationMixin.EVENT_QUOTA_WEIGHTS) - 1
-        quota = min(quota, len(candidates), GenerationMixin.EVENT_MAX_PER_LAYER)
+        remaining = max(0, GenerationMixin.EVENT_MAX_PER_LAYER - bound_events)
+        quota = min(quota, len(candidates), remaining)
         chosen: list[str] = []
         pool = list(candidates)
         for _ in range(quota):
@@ -1830,7 +1952,8 @@ class GenerationMixin:
         loot_cells = (vault_info or {}).get("loot_cells", [])
         if loot_cells:
             loot_rng = random.Random(self.seed * 13 + self.depth * 6263)
-            loot_pool = list(equipment_pool_for_depth(self.depth)) + list(
+            loot_pool = [key for key in equipment_pool_for_depth(self.depth)
+                         if not ITEM_DEFINITIONS.get(key, {}).get('expansion_catalog_id')] + list(
                 GenerationMixin.VAULT_LOOT_SPECIAL_IDS
             )
             # §7.1 统一资格入口：中央石台是最高价值的高价值奖励槽，同样
@@ -1843,7 +1966,10 @@ class GenerationMixin:
                     # 这一格让给珍品机会了：不撒物，机会本身顶替这个高价值槽。
                     continue
                 loot_id = loot_pool[loot_rng.randrange(len(loot_pool))]
-                self.world_items.append(WorldItem(self._make_item(loot_id), x, y))
+                from .expansion_rewards import optional_slot
+                loot_id = optional_slot(self, loot_id, loot_rng)
+                if loot_id is not None:
+                    self.world_items.append(WorldItem(self._make_item(loot_id), x, y))
         # 携带意象：低频稀有的房间刷新。
         self._spawn_equipment(random.Random(self.seed * 31 + self.depth * 9176))
         # 书卷/残页：更稀有，使用后习得主动构想。

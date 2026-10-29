@@ -75,12 +75,14 @@ def _cells_key(cells) -> tuple[int, int]:
 
 
 def occlusion_signature(opaque, smoke=(), blockers=()) -> tuple:
-    """遮挡内容签名：实心墙与高植物 / 挡视线的气体 / 临时视线阻断场。
+    """遮挡内容签名：完全挡视线的地形 / 挡视线的气体 / 临时视线阻断场。
 
-    ``_has_line_of_sight`` 的判定口径就是这三类（`sight.py:363`）：实心且
-    非透明墙与高度至少2的植物、遮蔽强度足够的类墙体气体（黑烟/灰尘）、异象技能的薄雾与
-    折面场。任一变化都会改变来源掩码，因此都要进缓存键——**这是把
-    ``state.time`` 从键里拿掉的前提**。
+    ``_has_line_of_sight`` 的判定口径就是这三类（`sight.py` 的
+    `_sight_obstruction`）：高度 ≥3 的墙、门、高度至少 2 的植物，遮蔽强度
+    足够的类墙体气体（黑烟/灰尘），异象技能的薄雾与折面场。任一变化都会改变
+    来源掩码，因此都要进缓存键——**这是把 ``state.time`` 从键里拿掉的前提**。
+    高度 ≤2 的固体（2026-10-24：1 完全透光、2 只削减玩家视距预算）不改变
+    掩码，故不进签名。
     """
     return (_cells_key(opaque), _cells_key(smoke), _cells_key(blockers))
 
@@ -341,15 +343,16 @@ def ensure_block_signatures(state, store: dict, complete, blocks, *, bounds=None
     返回 ``None``（不缓存），这条来源每帧重算掩码。60×30 视口下边缘一圈约占
     来源的三成，正好是「静止时传播重算 0」最常破功的地方。
 
-    做法是把「包围区盖到、但本次没扫完」的区块按需补扫一遍：读的判据与渲染
-    侧完全一致（实心非透明墙/高植物 / 挡视线的气体），**不猜**。补扫只发生在场景键
-    miss 时（玩家或视口真的动了），而且只补外圈那一环区块。
+    做法是把「包围区盖到、但本次没扫完」的区块按需补扫一遍：读的判据与
+    `_sight_obstruction` 完全一致（高度 ≥3 的墙／门／高度 ≥2 的植物／挡视线的
+    气体；高度 ≤2 的固体与透明墙不算），**不猜**。补扫只发生在场景键 miss 时
+    （玩家或视口真的动了），而且只补外圈那一环区块。
 
     ``blockers``（异象技能薄雾场）不用补：:func:`block_signatures` 收到的是
     全量列表，已经全部计入。
     """
-    from ...materials.walls import TRANSPARENT_WALLS
-    from ...materials import plant_height
+    from ...materials.walls import DOOR_KINDS, TRANSPARENT_WALLS
+    from ...materials import plant_height, wall_def
 
     map_w, map_h = bounds if bounds is not None else (
         int(getattr(state, "width", 0) or 0), int(getattr(state, "height", 0) or 0))
@@ -372,9 +375,24 @@ def ensure_block_signatures(state, store: dict, complete, blocks, *, bounds=None
                     cell = state.cell(x, y)
                 except Exception:      # 层快照比 bounds 短时不去猜，跳过这一格
                     continue
-                # 与渲染侧逐句对应（两处判据必须同口径，否则签名会漏格）。
-                if cell.solid and cell.wall_kind and cell.wall_kind not in TRANSPARENT_WALLS:
+                # 与 _sight_obstruction / _has_line_of_sight 同口径（2026-10-24
+                # 高度裁定）：只有**完全挡死**视线的格才进遮挡签名——高度 >=3
+                # 的墙、门（恒阻，含开着而 solid=False 的）、高度 >=2 的植物、
+                # 挡视线的类墙体气体。高度 1/2 的固体不再进签名：高度 1 完全
+                # 透光，高度 2 只削减玩家视距预算而 _has_line_of_sight 判它通过，
+                # 掩码不受影响，算进去只会白作废缓存。透明墙无论多高都不算。
+                kind = cell.wall_kind
+                transparent = bool(kind) and kind in TRANSPARENT_WALLS
+                if kind in DOOR_KINDS:
                     occupy_block(store, x, y)
+                elif kind and not transparent and bool(getattr(cell, "solid", False)):
+                    # 高度只对固体生效（与 _sight_obstruction 一致）。
+                    height = int(getattr(cell, "height", 0) or 0)
+                    if height <= 0:
+                        # 兜底：旧档／直改格子没写 height 的实心墙按目录高度算。
+                        height = int(getattr(wall_def(kind), "height", 0) or 0)
+                    if height >= 3:
+                        occupy_block(store, x, y)
                 plant = getattr(cell, "plant", 0)
                 if plant and plant_height(plant) >= 2:
                     occupy_block(store, x, y)

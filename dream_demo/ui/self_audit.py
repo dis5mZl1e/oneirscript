@@ -17,9 +17,11 @@ from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 from ..core.self_audit import self_audit
-from ..i18n import tr
+from ..i18n import get_language, tr
 from .styles import BAR_IMAGINATION_STYLES, BAR_LUCIDITY_STYLES, BAR_MIND_STYLES
 from .panel_fields import FIELD_COLORS, rich_lines, stat_color
+from .home_scene import FixedFrameStatic
+from .world_renderer import WorldCanvas
 
 PANEL_MUTED = FIELD_COLORS['muted']
 BAR_STYLE_SETS = (BAR_MIND_STYLES, BAR_LUCIDITY_STYLES, BAR_IMAGINATION_STYLES)
@@ -37,11 +39,67 @@ SA_CATEGORIES = (
 _CATEGORY_IDS = tuple(key for key, _ in SA_CATEGORIES)
 _CATEGORY_LABELS = dict(SA_CATEGORIES)
 
+# 分类页签逐类取色：只从第十九节 §10.1 的注册表键取，面板里不留 hex 字面量。
+# 八色两两按纸感分区的可分判据成立（色相差 ≥20° 或 亮度比 ≥1.25 或 饱和度比 ≥1.6），
+# 对自我察觉面板底 #292930 与四套区域主题底都 ≥4.5。激活/焦点仍由「〔〕＋粗体」
+# 承担，识别不只靠颜色（tests/test_panel_field_colors.py 的既有口径）。
+SA_CATEGORY_STYLES = {
+    "overview": FIELD_COLORS['heading'],      # 总览：最亮的中性色，落在默认页
+    "action": FIELD_COLORS['time'],           # 行动：与行动耗时/动作时间同族
+    "offense": FIELD_COLORS['damage'],        # 攻防
+    "perception": FIELD_COLORS['lucidity'],   # 感知
+    "recovery": FIELD_COLORS['effect'],       # 恢复
+    "ability": FIELD_COLORS['puppet'],        # 构想/篡改：紫色系，与构想页一致
+    "environment": FIELD_COLORS['condition'], # 环境
+    "sources": FIELD_COLORS['identity'],      # 来源
+}
 
-class ClickableStatus(Static):
-    """顶部状态区：点整块区域（三行属性条）开合自我察觉面板。"""
+
+class ClickableStatus(WorldCanvas, FixedFrameStatic):
+    """顶部状态区：点整块区域（三行属性条）开合自我察觉面板。
+
+    2026-10-24 纸感分区·状态区合并：宽屏档第 5 行并进了「噪音 / 混乱」
+    两项（#signal-status 整行隐藏），行上这两段的列区由 _refresh_world_view
+    记在 app 的 ``_status_signal_hits``——命中时走 #signal-status 的现有
+    链路（toggle_signal_detail），点其余区域维持整块开合自我察觉。
+    窄屏两行档（_status_signal_hits 为 None）点击行为与旧版完全一致。
+
+    2026-10-24 玩家优化 6：**第 1 行是层信息入口**——点击打开左侧层详情
+    面板（层名/修饰符/层型含义），与下方属性条（个人信息页入口）行为分离。
+    """
+
+    DEFAULT_CSS = "ClickableStatus { width: 100%; height: 5; }"
 
     def on_mouse_down(self, event) -> None:
+        row = int(getattr(event, 'y', -1))
+        if row == 0:
+            # 2026-10-27 玩家需求：第 1 行最右 2 列是本帧画出的锁图标
+            # （列区由 _refresh_world_view 记在 _status_lock_hits）。命中时
+            # 复用 ~ 键的开关（toggle_cursor_lock），其余列仍是层详情入口。
+            lock_hits = getattr(self.app, '_status_lock_hits', None)
+            column = int(getattr(event, 'x', -1))
+            if lock_hits and lock_hits[0] <= column < lock_hits[1]:
+                toggle = getattr(self.app, 'toggle_cursor_lock', None)
+                if toggle is not None:
+                    toggle()
+                event.stop()
+                return
+            handler = getattr(self.app, "_toggle_layer_info", None)
+            if handler is not None:
+                handler()
+            event.stop()
+            return
+        hits = getattr(self.app, '_status_signal_hits', None)
+        if hits and row == hits.get('row', 4):
+            column = int(getattr(event, 'x', -1))
+            for key in ('noise', 'chaos'):
+                start, end = hits[key]
+                if start <= column < end:
+                    opener = getattr(self.app, 'toggle_signal_detail', None)
+                    if opener is not None:
+                        opener()
+                    event.stop()
+                    return
         handler = getattr(self.app, "_toggle_self_audit", None)
         if handler is not None:
             handler()
@@ -55,6 +113,7 @@ class SelfAuditPane(VerticalScroll):
         self.display = False
 
     def on_mouse_down(self, event) -> None:
+        self.app._select_input_region('overlay')
         handler = getattr(self.app, "_self_audit_click", None)
         if handler is not None and self.display:
             try:
@@ -114,12 +173,16 @@ class SelfAuditMixin:
             return
         if self.signal_detail_open:
             self.close_signal_detail()
+        # 层详情面板与自我察觉互斥（2026-10-24 玩家优化 6）：同是左侧悬浮层。
+        if getattr(self, '_layer_info_visible', None) and self._layer_info_visible():
+            self._close_layer_info(refresh=False)
         self._self_audit_ensure_state()
         self._self_audit_focus=self.focused
         state = self.session.state
         self._self_context = (id(state), state.depth, state.realm_id, state.realm_depth)
         pane = self.query_one('#self-pane')
         pane.display = True
+        self._select_input_region('overlay')
         self._sa_cursor = 0
         self._clear_held()
         pane.scroll_home(animate=False)
@@ -280,7 +343,9 @@ class SelfAuditMixin:
         bar_icons = ("stat.mind", "stat.lucidity", "stat.imagination")
         icons = [semantic_icon(key) for key in bar_icons]
         icon_pad = 2 if any(icons) else 0
-        label_width = max(6, *(cell_len(tr(key)) for key in ("心智", "清醒度", "想象力"))) + icon_pad
+        # 标签取实际的（可能已英译）显示文字量宽：英文 Mind/Lucidity/Imagination
+        # 比中文标签宽得多，用中文键量宽会让三条的条起点各走各的。
+        label_width = max(6, *(cell_len(str(row[0])) for row in data["bars"])) + icon_pad
         value_width = max(cell_len(f"{maximum}/{maximum}") for _, _, maximum, _ in data["bars"])
         suffix_width = max([cell_len(tr(label)) for _, _, _, label in data["bars"] if label] or [0])
         bar_width = max(4, min(20, width - label_width - value_width - suffix_width - 2))
@@ -301,7 +366,10 @@ class SelfAuditMixin:
         col = 0
         for category, label in SA_CATEGORIES:
             active = category == self._sa_category
-            token = ("〔" + tr(label) + "〕") if active else (" " + tr(label) + " ")
+            # EN 用 ASCII 方括号；中文保留〔〕（2026-10-28 全界面审计）。
+            bracket = ("[", "]") if get_language().startswith("en") else ("〔", "〕")
+            token = ((bracket[0] + tr(label) + bracket[1]) if active
+                     else (" " + tr(label) + " "))
             token_width = cell_len(token)
             if col and col + token_width > width:
                 actions[len(lines)] = ("tabs", tab_hits)
@@ -310,7 +378,8 @@ class SelfAuditMixin:
                 tab_hits = []
                 col = 0
             start = col
-            tab_line.append(token, style="bold bright_cyan" if active else "#aab0c2")
+            tab_line.append(token, style=("bold " if active else "")
+                            + SA_CATEGORY_STYLES.get(category, FIELD_COLORS['muted']))
             col += token_width
             tab_hits.append((start, col, category))
         add(tab_line, ("tabs", tab_hits))
@@ -447,11 +516,13 @@ def _recent_rich(entry):
     amount=float(entry.get('applied',0))
     text=Text('  '+tr(_RESOURCE_LABELS.get(resource,resource)),style=color)
     text.append(f' {amount:+g}' if amount else ' 0',style=color)
-    text.append('（',style=FIELD_COLORS['muted'])
+    opening, closing = (('(', ')') if get_language().startswith('en')
+                        else ('（', '）'))
+    text.append(opening,style=FIELD_COLORS['muted'])
     text.append(_recent_source(entry),style=FIELD_COLORS['grammar'])
     if entry.get('blocked'):
         text.append(' · '+tr(_SETTLEMENT_BLOCKS.get(entry['blocked'],entry['blocked'])),style=FIELD_COLORS['risk'])
-    text.append('）',style=FIELD_COLORS['muted'])
+    text.append(closing,style=FIELD_COLORS['muted'])
     return text
 
 

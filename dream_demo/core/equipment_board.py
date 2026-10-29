@@ -221,6 +221,21 @@ class EquipmentBoardMixin:
             self.messages.append(message)
             if not unchanged:
                 self.messages.append(sentence)
+        if self.tutorial.get('active') and self.tutorial.get('coach_version') and not unchanged:
+            from .origin_course import note
+            definitions = {item.instance_id: item.definition_id for item in self.inventory}
+            for row in self.equipment.formation().rows:
+                if row.status != 'ready':
+                    continue
+                for relation in row.relations:
+                    donor = definitions.get(relation.donor_id)
+                    head = definitions.get(relation.head_id)
+                    if head != 'rusty_boxcutter':
+                        continue
+                    if relation.operator == 'attribution' and donor == 'ignite_gloves':
+                        note(self, 'attribution_committed')
+                    elif relation.operator == 'manner' and donor == 'swift_thought_ring':
+                        note(self, 'manner_committed')
         return ActionResult(True, message, data)
 
     def board_place_instance(self, instance_id: str, *, focus: bool = False,
@@ -386,6 +401,12 @@ class EquipmentBoardMixin:
         """命中端：玩家一次实际攻击或射击成功命中。"""
         if target is None or (amount is not None and amount <= 0):
             return
+        from ..equipment import gear_tools
+        gear_tools.note_hit_mark(self, target)
+        # 漏光的拆信刀（2026-10-25 批次二）：真实命中沿出手方向短闪一段，那几格
+        # 这一回合算被照亮，同时自己也更好认（见 gear_light.seen_delta）。
+        from ..equipment import gear_light
+        gear_light.note_strike_flash(self, target)
         self.emit_board_event(
             "hit", cell=(target.x, target.y), target=target,
             previous_cell=self.board_previous_cell, action_id=self.action_seq,
@@ -398,6 +419,8 @@ class EquipmentBoardMixin:
         """受击端：玩家本次遭受结算后仍大于 0 的创伤；受击链默认玩家脚下。"""
         if amount <= 0:
             return
+        from ..equipment import gear_tools
+        gear_tools.on_player_hurt(self, kind, amount, source_id=source_id)
         self.emit_board_event(
             "hurt", cell=(self.player.x, self.player.y), damage_kind=kind,
             previous_cell=self.board_previous_cell, action_id=self.time,

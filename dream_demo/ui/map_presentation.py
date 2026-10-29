@@ -34,8 +34,41 @@ def foreground(style):
     return '#{:02x}{:02x}{:02x}'.format(*style.color.get_truecolor())
 
 
-def present_scene(scene, frame: Text, *, priority=(), source_cell_w=None, ranges=None):
+# 字符高刷模式（2026-10-25，设置 map_character_fast）：默认关闭。字符后端只画
+# 文本，不读 SceneSnapshot.visuals（只有图像后端消费逐格视觉事实）；开启后
+# 跳过这份逐格反解。需要 visual 的调用方（F2 预览）显式传 ``visuals``，
+# 走 M2-A 快路径，不受此开关影响。
+_character_fast = False
+
+
+def set_character_fast(enabled: bool) -> None:
+    global _character_fast
+    _character_fast = bool(enabled)
+
+
+def character_fast_enabled() -> bool:
+    return _character_fast
+
+
+
+def present_scene(scene, frame: Text, *, priority=(), source_cell_w=None, ranges=None,
+                  visuals=None):
+    """把一帧文本转换成图像后端消费的逐格视觉事实。
+
+    ``visuals`` 是 2026-10-24（M2-A）的快速入口：render_map / render_observation
+    在绘制同一帧时就把每格的（字形、样式、底色）记进这个字典，这里只需转成
+    SceneGlyph。旧路径（从 Text 反解）保留给字符后端与等价测试做对照。
+    键是世界坐标，与 SceneSnapshot.visuals 一致。
+    """
     left, top, width, height = scene.viewport
+    if visuals is not None:
+        glyphs = {}
+        for pos, (text, style, background) in visuals.items():
+            glyphs[pos] = SceneGlyph(text, foreground(style) or '#aab3bd',
+                                     background or '', pos in priority)
+        return replace(scene, visuals=MappingProxyType(glyphs))
+    if _character_fast:
+        return scene
     # ``ranges`` 允许调用方把已经算过的切片表递进来（2026-10-21 任务3）：
     # 同一帧的 cell_ranges 以前在 present_scene 与 map 控件里各算一次。
     if ranges is None:
@@ -131,11 +164,13 @@ def spatial_glyph(cell, mode='themed', wide=True):
     return terrain_glyph(cell, mode, wide)
 
 
-def render_observation(scene, layer, mode='themed', markers=None):
+def render_observation(scene, layer, mode='themed', markers=None, visuals=None):
     """Only the filtered scene is read: hiding gas never recalculates vision.
 
     ``markers`` 是观察层允许叠加的显式标记（声音线索，docs §16.7）：只盖
     发声格字形，不改变该格状态、不照亮周围，未知格仍保持黑幕。
+    ``visuals`` 给出时同步记录每格（字形、样式、底色），供 present_scene 的
+    图像快速路径直接消费，免去从文本反解（M2-A，2026-10-24）。
     """
     from .observation_marks import marks_for
     result = Text()
@@ -169,7 +204,12 @@ def render_observation(scene, layer, mode='themed', markers=None):
                 glyph = SceneGlyph(str(markers[(x, y)])[:1], '#e1bd74', glyph.background)
             value = (compact_tile_glyph(glyph.text) if scene.cell_w == 1 else
                      normalize_tile_glyph(glyph.text, mode).center(scene.cell_w))
-            cells.append((value, glyph.color, glyph.background or '#07070b', bool(marks_for(cell))))
+            background = glyph.background or '#07070b'
+            if visuals is not None:
+                text = value.strip()
+                if text:
+                    visuals[(x, y)] = (text, f'{glyph.color} on {background}', background)
+            cells.append((value, glyph.color, background, bool(marks_for(cell))))
         for row in range(scene.cell_h):
             for value, color, background, marked in cells:
                 result.append(value if row == (scene.cell_h-1)//2 else ' '*scene.cell_w,
@@ -196,7 +236,10 @@ def _font_sources(path):
                       path.parent/'DreamStrataMillenniumEmoji.ttf',
                       path.parent/'DreamStrataInterfaceIcons.ttf',
                       path.parent/'DreamStrataMaterialIcons.ttf',
-                      path.parent/'DreamStrataDreamIcons.ttf'):
+                      path.parent/'DreamStrataDreamIcons.ttf',
+                      # 混乱专属异象 👿🖤😇 的单色线框子集（2026-10-27）：
+                      # 非彩色字体，glyph_mask 走描边填充。
+                      path.parent/'DreamStrataChaosOutline.ttf'):
         if font_path.exists():
             with TTFont(font_path, lazy=True) as face:
                 sources.append((str(font_path), frozenset(face.getBestCmap())))

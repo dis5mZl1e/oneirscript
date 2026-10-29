@@ -1,15 +1,15 @@
 # 音频资产版权说明
 
-`assets/music/` 与 `assets/sfx/` 中的全部音频均为
+`assets/music/`（36 首）与 `assets/sfx/`（82 条）中的全部音频均为
 **本项目原创、本地作曲与合成**，继续以独立的
 [MIT 许可证](licenses/Original-Audio-MIT.txt)分发。源码已改用 GPL-3.0-only，
 不改变本目录音频的许可；音频制作工具本身按项目代码许可处理。
 
 ## 制作方式
 
-- 作曲、音色与母带由原开发仓库 `tools/audio_production/` 的合成工具离线生成，
+- 作曲、音色与母带由仓库内 `tools/audio_production/` 的合成工具离线生成，
   乐谱与分轨可复现（制作过程记录见
-  [docs/音频制作实施记录-2026-10-10.md](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/docs/音频制作实施记录-2026-10-10.md)）。
+  [docs/音频制作实施记录-2026-10-10.md](../docs/音频制作实施记录-2026-10-10.md)）。
 - **不引用商业歌曲旋律，不使用任何来源不明的采样**；钢琴、拨弦、木管等
   为合成近似音色，不作为真实录音乐器宣传。
 - 发行格式为 44100 Hz 双声道 OGG；WAV 原始素材与无损母带仅保留在

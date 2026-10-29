@@ -1,0 +1,2566 @@
+{
+  "desktop_source_commit": "fcc3349a3a8557441a6167ed0d091d230459d264",
+  "version": "0.1.0",
+  "source_files": [
+    {
+      "file": "LICENSE",
+      "sha256": "cde3a5c4c116f8cde7ba83ee7a4a885bc591164195b6123bfcbcdc3a52f9a88c"
+    },
+    {
+      "file": "LICENSING.md",
+      "sha256": "af9752d5dc59e3a8dffbbb70c2a78dee479b5acd07b122ee9adc0dfc6a71f6e2"
+    },
+    {
+      "file": "THIRD-PARTY-NOTICES.md",
+      "sha256": "697c1c687021ae1bd9225c76d49f80bb97c20a4d993677816821f62585d7d692"
+    },
+    {
+      "file": "assets/CREDITS.md",
+      "sha256": "2743657f7e00c801e0ee4165aaddd818a3e9a1f9593bc8f028ead5e3cae29e09"
+    },
+    {
+      "file": "assets/fonts/ATTRIBUTION-GameIcons.md",
+      "sha256": "b89f1b6cfe768eee08a4c73f0de9265bf9baba1c91ed40cae339bd8a89539798"
+    },
+    {
+      "file": "assets/fonts/DreamStrataChaosOutline.ttf",
+      "sha256": "f9b52c2afe97b40f64aae05659f55d934c074e0d83f9976623ee69abb780c3e6"
+    },
+    {
+      "file": "assets/fonts/DreamStrataDreamIcons.ttf",
+      "sha256": "8487174f5a3e0151189b28456bca0e248155190576881c3fe94c69cd6b45cfba"
+    },
+    {
+      "file": "assets/fonts/DreamStrataIcons.ttf",
+      "sha256": "66aef4176b5fb40e9b69ae23d3881f9b12b32e4f311cd3bec867c38cb7a353c0"
+    },
+    {
+      "file": "assets/fonts/DreamStrataInterfaceIcons.ttf",
+      "sha256": "0f49095e6b6b68d820156bd684d43ce2178cf99346f5b73faecf1bc866ad95e8"
+    },
+    {
+      "file": "assets/fonts/DreamStrataInterfaceSans-Regular.ttf",
+      "sha256": "55962b75dbebc04e44990f539d6471811e9e986a81cf9a0f8a9d5d4337a36716"
+    },
+    {
+      "file": "assets/fonts/DreamStrataLockOutline.ttf",
+      "sha256": "7749b1c8c35211b09ffe9da8b2822585e895c56067d75968eee86e4ececf0c08"
+    },
+    {
+      "file": "assets/fonts/DreamStrataMaterialIcons.ttf",
+      "sha256": "9fc8ddfa0b6a29a3e7c4d9e5489e1acece190d9219599b13c304f428586ae53d"
+    },
+    {
+      "file": "assets/fonts/DreamStrataMillenniumEmoji.ttf",
+      "sha256": "b9774b93a53e64f978bb626e9aa1026ee38e5adfb2120387fce47cd0cbeef9b0"
+    },
+    {
+      "file": "assets/fonts/DreamStrataSerifMono-Regular.ttf",
+      "sha256": "1302cc97ee59c2eeb15d6a74d1f118619555339238b1c6d9141e8d4ea4ccd7fd"
+    },
+    {
+      "file": "assets/fonts/DreamStrataSongReading-Regular.ttf",
+      "sha256": "5d3ac0f2f54370bf209e4507a13ced229e3c737536cd3a7fb9b1389a6bf7528a"
+    },
+    {
+      "file": "assets/fonts/DreamStrataUnified-Regular.ttf",
+      "sha256": "f80913884614b9403411cf81f20761d6c61b767e60edf874f85c8a9ee59df90d"
+    },
+    {
+      "file": "assets/fonts/ICONS-LICENSE.txt",
+      "sha256": "911026711e099dde78af7eb8704dbb3ae68b97d1b663a7ccd33bfa6ae0147f0e"
+    },
+    {
+      "file": "assets/fonts/InterfaceSans-OFL.txt",
+      "sha256": "e35ffdebb2225b49814c31889cbb3ce69cb3509e6a9f431edaba5e1a6de8cd15"
+    },
+    {
+      "file": "assets/fonts/LICENSE-GameIcons-CC-BY-3.0.txt",
+      "sha256": "1257d59336eb747e40523d74d7658d4d7885c30577d0310bbd282797e95b0773"
+    },
+    {
+      "file": "assets/fonts/LICENSE-MDI-Apache-2.0.txt",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    },
+    {
+      "file": "assets/fonts/LICENSE-Phosphor-MIT.txt",
+      "sha256": "bd618db104d07526fe78a9c28dbc2cc4c4286d756aa8b428e51b82de0f8d6aeb"
+    },
+    {
+      "file": "assets/fonts/LICENSES.md",
+      "sha256": "946dc081091752f3cac4827ec25d827cb4ae36042bc370b4d7d9d75579428ca7"
+    },
+    {
+      "file": "assets/fonts/NOTICE-MDI.txt",
+      "sha256": "6123a98949b07fc10ad1facc2eaeff0c340a5d375f132ac547df5edaab1d9a24"
+    },
+    {
+      "file": "assets/fonts/NotoColorEmoji-OFL.txt",
+      "sha256": "88f117575237307bdd86a17ef15e21790fc9a662fe4dfb103ca1ca077f0d9982"
+    },
+    {
+      "file": "assets/fonts/NotoEmoji-OFL.txt",
+      "sha256": "5b604079234bcdb49401d290e3002797bf6c8a6b95f9e4ae392eb7956ae6460b"
+    },
+    {
+      "file": "assets/fonts/OFL.txt",
+      "sha256": "e3a3c1879d2d6887dafcb786f39bcbc53b611146a09893ef86a01f89b317f22d"
+    },
+    {
+      "file": "assets/fonts/SEMANTIC-ICON-LICENSES.md",
+      "sha256": "e1448b69a3e79d7955b8a5f50e39aeb5d1687bfe5ab469c087975f8efe82c185"
+    },
+    {
+      "file": "assets/fonts/UNIFIED-LICENSE-NOTICE.md",
+      "sha256": "f30f6a2dcbdfaccc8afdac375c1902e1b50941b67ca025a2a0bc78580f24db65"
+    },
+    {
+      "file": "assets/fonts/UPSTREAM-COPYRIGHTS.txt",
+      "sha256": "9d77fc0cd17b87c15ee5bd355717ef88bc84279850bad1417bd25da6584cb7b4"
+    },
+    {
+      "file": "assets/fonts/emoji-package.json",
+      "sha256": "9a10bf7338f90271c971296039f35ed38ce04210fbcbace655787ebff915cff4"
+    },
+    {
+      "file": "assets/fonts/glyph-manifest.json",
+      "sha256": "547c93e3e5d42da44a6cba2fb6fd8823c43cab258a5de5d77f5440a08328f819"
+    },
+    {
+      "file": "assets/fonts/interface-sans.json",
+      "sha256": "c9db3283ae4bc6efeda299150aa37c2bdf9c7bc97aaa57c5a2ce516c98a93ab1"
+    },
+    {
+      "file": "assets/fonts/semantic-icon-aliases.json",
+      "sha256": "63065aa18366bf352264541d97dc535c3a5d729eafd95d926760e5481c9ee329"
+    },
+    {
+      "file": "assets/fonts/semantic-icons.json",
+      "sha256": "6470bdfbf26417f72dea4db88117490122ab29e4aa308ad612342d441cdd5747"
+    },
+    {
+      "file": "assets/fonts/song-reading.json",
+      "sha256": "489cc0409c72a8f7492394dd4126198edceb3cf6f4c29305b9436fb05ca75e25"
+    },
+    {
+      "file": "assets/fonts/unified-font.json",
+      "sha256": "01f4d72450e997ecbc02345385cc587718cb5b2fdc9b5548662844e517d5edc2"
+    },
+    {
+      "file": "assets/icon.ico",
+      "sha256": "594f2b1729a1a485e1a644f5a35583d0971041159ed6749d1525b0553bf2d64c"
+    },
+    {
+      "file": "assets/icon_src.jpg",
+      "sha256": "e8b5e65f9b6d6e0fc934bbfa2ad09ad0be5a1d1b793985f67543b7b1cef0f7cf"
+    },
+    {
+      "file": "assets/licenses/Original-Audio-MIT.txt",
+      "sha256": "911026711e099dde78af7eb8704dbb3ae68b97d1b663a7ccd33bfa6ae0147f0e"
+    },
+    {
+      "file": "assets/licenses/WezTerm-LICENSE.md",
+      "sha256": "631d5f2d6e8e3e88d079792d40c94f380ec1cc4e5ca2a1d4c853cfac5e38390d"
+    },
+    {
+      "file": "assets/music/ending_a_awake.ogg",
+      "sha256": "e66a062fad24d41888ae7b5ed3ef56cde05185d8960747dc0243723590daf01a"
+    },
+    {
+      "file": "assets/music/ending_b_rewrite.ogg",
+      "sha256": "9cf05f71cb51029c6f9840c5116640b6bfa71f9098c09cfcec8bcb179c754894"
+    },
+    {
+      "file": "assets/music/ending_c_release.ogg",
+      "sha256": "9f1fe86ba5c85583621a318610f85a423465c5db2cd3fa92afb755ff879da82d"
+    },
+    {
+      "file": "assets/music/ending_d_cowrite.ogg",
+      "sha256": "eafbed3415828cc96822bd1e859e4f57f1648d605aaa4540099cd12889f20d51"
+    },
+    {
+      "file": "assets/music/ending_e_sink.ogg",
+      "sha256": "b40f9b0e5dc5da97c3bda8e24c47dd963f5eeb0d1bac1efbf76f8f9febc5adde"
+    },
+    {
+      "file": "assets/music/ending_f_dreamless.ogg",
+      "sha256": "a915384227081a946e63a8898cc7643727d9802c2eefe7f8baae3ece4798aede"
+    },
+    {
+      "file": "assets/music/epilogue_28_recognize.ogg",
+      "sha256": "67129e2e30baacafcaffa7623b8bd9c7c2d6741fa599779a5cb4b23e11e54c4c"
+    },
+    {
+      "file": "assets/music/epilogue_29_accept.ogg",
+      "sha256": "bfa56abc2a968d2229b8480638e9197d0080df93978d6b5153f42774c4277e02"
+    },
+    {
+      "file": "assets/music/epilogue_30_desk.ogg",
+      "sha256": "4832f35673b1935592c32926caaf9c7f00b4a0a25abbfd3c2075ebd1e9c979c0"
+    },
+    {
+      "file": "assets/music/first_dream.ogg",
+      "sha256": "0176707661901c7eafd59515044da9df9345397e1e197c095474970ee3dfb75f"
+    },
+    {
+      "file": "assets/music/home_gate.ogg",
+      "sha256": "7c83e2b32f3cc884dee1dffcf81af3fac826b06443fec2aded5c02fc9672f4a4"
+    },
+    {
+      "file": "assets/music/hospital_final.ogg",
+      "sha256": "8b01a5d93471a4540907b08ee875b815207de4e094ca7c7c59d082051d6404aa"
+    },
+    {
+      "file": "assets/music/library_final.ogg",
+      "sha256": "045899210e935a24c1aaa05709b135f74e4919fd35ee15979f140f9d9fe116f9"
+    },
+    {
+      "file": "assets/music/main_deep.ogg",
+      "sha256": "20704a0ca77e362354eec13ff8460148a867ab0708ac17bc704db940e6afc8c6"
+    },
+    {
+      "file": "assets/music/main_deep_fragments.ogg",
+      "sha256": "28bca000fce0f1c3fb55d77afee7f0d6316ece1e2b1888d57b5373c5b87dd66e"
+    },
+    {
+      "file": "assets/music/main_deep_repeat.ogg",
+      "sha256": "76fc0984a46c83caff0ea1e955d5a42c8b1928e93ecb1f954fbf9bec40fb6160"
+    },
+    {
+      "file": "assets/music/main_deep_space.ogg",
+      "sha256": "18e49d93a74d93d588dba7a7e07bca0e8f8c3910943365c0c5f02f39c641ab30"
+    },
+    {
+      "file": "assets/music/main_middle.ogg",
+      "sha256": "5ae82436b8f331dfd2d91cf11a51be72879dc24e34194166eb007bc906896e89"
+    },
+    {
+      "file": "assets/music/main_middle_fragments.ogg",
+      "sha256": "a16a4821d32b677893b51e25fff4fa211c386bbae8dd411a7c5105953dcd1ecd"
+    },
+    {
+      "file": "assets/music/main_middle_repeat.ogg",
+      "sha256": "8886ca8e701d746005e62421f937276befce3ca38d36fa4fcc0b174570722aa6"
+    },
+    {
+      "file": "assets/music/main_middle_space.ogg",
+      "sha256": "b86b0a3db04bd7d9f271b952f64605c7f8db6641fa58a9b0d5e6e1ec1cc3681a"
+    },
+    {
+      "file": "assets/music/main_shallow.ogg",
+      "sha256": "15585b438e6963d2911e6989ad246206d9a94feaf72922946b82789a77f89bc3"
+    },
+    {
+      "file": "assets/music/main_shallow_fragments.ogg",
+      "sha256": "a72b69e8d8f05aec2f5e2f7a8265fe45a622a1a112096852c60c8d762c40c1c9"
+    },
+    {
+      "file": "assets/music/main_shallow_repeat.ogg",
+      "sha256": "62557051d5996e873f49bcaaf1081cc36b634fd1098b07187450d8ec11404a48"
+    },
+    {
+      "file": "assets/music/main_shallow_space.ogg",
+      "sha256": "48d10b7eec2ea97f301a35354b4bac5a051756adc21d2e47c40e6c8b976c68f8"
+    },
+    {
+      "file": "assets/music/millennium_final.ogg",
+      "sha256": "0a766f2234624c16dffeb32fb1b0a4671395e4da5b09d5893f78e4db86802ebf"
+    },
+    {
+      "file": "assets/music/obsession_battle.ogg",
+      "sha256": "9d48a24a2626f067f5067155a227fff515fc8fde9d28f38f7387f629ae254f51"
+    },
+    {
+      "file": "assets/music/realm_doors.ogg",
+      "sha256": "e15a8eff2335dfafac877789891fb7bf7550ab89321e3808fa7a792b620ce596"
+    },
+    {
+      "file": "assets/music/realm_ember.ogg",
+      "sha256": "7290d7cbb7498294811f3a3bbc6b3471951325ca40fbafcaa6d05cfd81604e4a"
+    },
+    {
+      "file": "assets/music/realm_hospital.ogg",
+      "sha256": "4b903c3231a0ee925b9c3353c9ce703043a5e02d7a8e6a326e9379955bd34de1"
+    },
+    {
+      "file": "assets/music/realm_library.ogg",
+      "sha256": "3bb97fc35d592b35c48d4154c48abe6e1c877b35820ba3708624b8e4a08396b4"
+    },
+    {
+      "file": "assets/music/realm_millennium.ogg",
+      "sha256": "8a5fb9baddf26f084bacf574b815bf8e0947c41f36a6408e99e0aeccc8047c3f"
+    },
+    {
+      "file": "assets/music/realm_tide.ogg",
+      "sha256": "028a26f6e1d4f44cfcd86e7bd5c203d1479849970f73df6277794336f61a9f07"
+    },
+    {
+      "file": "assets/music/realm_toys.ogg",
+      "sha256": "aca07881f32b2a336bb4b4849e35894c0b8f27c94446ef3235786bedbba859ea"
+    },
+    {
+      "file": "assets/music/scribe_battle.ogg",
+      "sha256": "c255044426e8eb7579d14ace23ec172dddb479991c68d7130eaf02a38c48f677"
+    },
+    {
+      "file": "assets/music/theme.wav",
+      "sha256": "893a9721414763ffdffac8a9536622599f2e45c1679e59923fe3cbdeff011437"
+    },
+    {
+      "file": "assets/sfx/backtrack.ogg",
+      "sha256": "0c3888b8b784c6596b5e918e2b133e5ce11b044c37aa0b90a4151ae10c1fdeea"
+    },
+    {
+      "file": "assets/sfx/backtrack.wav",
+      "sha256": "435e903d2994512dfcb9972f600a2e826c08cc34050ae9f23424b4d77aa4c9db"
+    },
+    {
+      "file": "assets/sfx/board_commit.ogg",
+      "sha256": "4ed9d94f88b2666e13f97613c453980f9d822509d10731b0f57356ba747e0339"
+    },
+    {
+      "file": "assets/sfx/board_invalid.ogg",
+      "sha256": "32b882851212d7af8579ac85be45970abda4a2b1f74f79ae6d89ad591853ffff"
+    },
+    {
+      "file": "assets/sfx/board_place.ogg",
+      "sha256": "a8c5a5121e6c228cd9e84b15b5c8726eb0764f91e7d3bfc5a3f01d2621de52f4"
+    },
+    {
+      "file": "assets/sfx/board_remove.ogg",
+      "sha256": "d45d26177304be2c140ed09e83d873afb727d7c8b27ee0137bb56869c979efa6"
+    },
+    {
+      "file": "assets/sfx/board_rotate.ogg",
+      "sha256": "af9835a11302aedeff05eb63646bedaf9a6675af6053b955e813ae44e2f2c921"
+    },
+    {
+      "file": "assets/sfx/circuit_off.ogg",
+      "sha256": "f1645cc3b4052b7f83c5ace46f1511b8bc26006c8dc3efc23990f111a1a03951"
+    },
+    {
+      "file": "assets/sfx/circuit_on.ogg",
+      "sha256": "ccf639f8e402efd55be881a817e19e787f37ff41fdfb8b5bb08eab543e363300"
+    },
+    {
+      "file": "assets/sfx/construct.ogg",
+      "sha256": "3e787c8f1bab8ad61eacef8a4ab417cc76fc56ddd0641bfe6e905436d47674dd"
+    },
+    {
+      "file": "assets/sfx/construct.wav",
+      "sha256": "fda303b62e7a8f48e1f5d88dffe51c3955ecd83f7578675b2a52ef63016f62cc"
+    },
+    {
+      "file": "assets/sfx/defeat.ogg",
+      "sha256": "2d9a37333ce34deaac4e35b2a966b6b5308a27fd3b3512676b1f490812d76213"
+    },
+    {
+      "file": "assets/sfx/defeat.wav",
+      "sha256": "9b669f43148517c78a4cb81cef34171120d441f827ddd18fe3fbbe689108bc6b"
+    },
+    {
+      "file": "assets/sfx/descend.ogg",
+      "sha256": "9f4960bf3ad6548f96038904a91d18b8735879f0430b236a91ed5f80d72c318e"
+    },
+    {
+      "file": "assets/sfx/descend.wav",
+      "sha256": "63df6db8cb7cb609e9c32a7bcd56c7dce5b70e4d99be42baea21e95dc43eba2f"
+    },
+    {
+      "file": "assets/sfx/electric_arc.ogg",
+      "sha256": "85c51224e196fbdab36058e83ef01d506915cb969405c635c82348ba79705fc8"
+    },
+    {
+      "file": "assets/sfx/enemy_cast.ogg",
+      "sha256": "dea8488a2a17b6c7922d143d9256e0c60b65c9cb185a0bb50b2ac87ace8528b2"
+    },
+    {
+      "file": "assets/sfx/enemy_charge.ogg",
+      "sha256": "ef429ee16e8fed60605a62e194a605bd8b46aebe90e44fbee7deb310c1c65bca"
+    },
+    {
+      "file": "assets/sfx/enemy_die.ogg",
+      "sha256": "3e8410914783a235d84b9c7f961717cd9db680d95de89ebdaa84d6ae73a1a649"
+    },
+    {
+      "file": "assets/sfx/enemy_die.wav",
+      "sha256": "2df32917ca5d733a10f12775434a8af9d542e90a2e90032900746a529142a184"
+    },
+    {
+      "file": "assets/sfx/equip.ogg",
+      "sha256": "f6666fbb262c6636b86a73445d8383d6f6d2931cdc9af2bb83d734bdaf861b90"
+    },
+    {
+      "file": "assets/sfx/equip.wav",
+      "sha256": "5409f5f18c09a99afb263bae22283feffd45d3a7e341f702d16a67d053276131"
+    },
+    {
+      "file": "assets/sfx/event_done.ogg",
+      "sha256": "aaca7628a65705b5118e1c24dc6b27d45cf25f7f1307123b38b3e0f7b0310ced"
+    },
+    {
+      "file": "assets/sfx/event_done.wav",
+      "sha256": "ef9db4604ef806450d3d913e9a9b2c5991df7aca45d47e27dc6c7650b048232d"
+    },
+    {
+      "file": "assets/sfx/explosion.ogg",
+      "sha256": "0cb1367fa32f70f35141d1512d1592ed6db3d242cefa677c922c584a5ab2d822"
+    },
+    {
+      "file": "assets/sfx/finish.ogg",
+      "sha256": "6bb33e2ac5860fb278cba227a4701374c673025f6b04363c03fad454180f9f55"
+    },
+    {
+      "file": "assets/sfx/finish.wav",
+      "sha256": "46a7ef5b8a5b10a12a08c99c83cdec3d543f1854d3d65f2befe55c9f6425bbbb"
+    },
+    {
+      "file": "assets/sfx/fire.ogg",
+      "sha256": "130d7ec56fac0315f1a2f94e8651a1d1f93607ce4920b3c1f250b89694260d76"
+    },
+    {
+      "file": "assets/sfx/fire.wav",
+      "sha256": "af9c6e02627363ea677c5f4c9fdb1fb2c1414d6c44eb5b0bd78d9ebea447447b"
+    },
+    {
+      "file": "assets/sfx/fire_empty.ogg",
+      "sha256": "b84b3022a0d3ff5551c959f1d9578c2684ad8e2372bbc5daee85192cfea5b6ee"
+    },
+    {
+      "file": "assets/sfx/fire_empty.wav",
+      "sha256": "584d5622312f621ae8c020b73142b524d19ecdc00f42f52f50e883b8b4e37c7f"
+    },
+    {
+      "file": "assets/sfx/fire_extinguish.ogg",
+      "sha256": "53f1192bca090d444d535e111d95b2b39ef17064d646cb1cec923a3c74acec95"
+    },
+    {
+      "file": "assets/sfx/fire_ignite.ogg",
+      "sha256": "f593a550b1a90bf0310bfbcea22e0cd0ceccec102a6e845c2967daff3ae564f8"
+    },
+    {
+      "file": "assets/sfx/freeze.ogg",
+      "sha256": "05cad07be503c0098272b2a7632e135dc1c53897e4d07236ef28e7d3d471f777"
+    },
+    {
+      "file": "assets/sfx/gas_release.ogg",
+      "sha256": "abaa6f8817e2cf7b2436fa798bffb7d5c682b7755fcca95395987479887be00d"
+    },
+    {
+      "file": "assets/sfx/hit.ogg",
+      "sha256": "d8317d74761b3953d45800be229a135941627820047e8940dcf5239019ba8edb"
+    },
+    {
+      "file": "assets/sfx/hit.wav",
+      "sha256": "f1fcfff1cb9432fc49f5cac103c89484fe329c75f04d7355c3960a6d0c7caa3c"
+    },
+    {
+      "file": "assets/sfx/insight.ogg",
+      "sha256": "89f1aa09a64394491a0a7008984c4771f4e32e545b10a6f15bd340d810244f06"
+    },
+    {
+      "file": "assets/sfx/insight.wav",
+      "sha256": "60eb54eb18df845e25d6fdce4ecf2b1b1b5a87ef9f6435e70992ed64dacc9884"
+    },
+    {
+      "file": "assets/sfx/interact.ogg",
+      "sha256": "752c1c8914b5f6313ca373cc4370906eb1a822f12d49568c83461135892092c3"
+    },
+    {
+      "file": "assets/sfx/interact.wav",
+      "sha256": "4ae57746603fe5cc4fed147ef599e117b177e5e32ae9df0d1ed71d9f75f79988"
+    },
+    {
+      "file": "assets/sfx/liquid_mix.ogg",
+      "sha256": "de2a6b22270f3973637b82fedfc6c51818c78f6ff9be34f36381842c8fe543ef"
+    },
+    {
+      "file": "assets/sfx/memory.ogg",
+      "sha256": "1d5b2bf1818c841eed421d5ff9ac4d6138b68de248a840d71d2dd3b7d16756ce"
+    },
+    {
+      "file": "assets/sfx/memory.wav",
+      "sha256": "b8304d69db8a1e0a5d4cc6b5318bbdc104239a25556b9259b6fe428b4ff0256c"
+    },
+    {
+      "file": "assets/sfx/npc.ogg",
+      "sha256": "404a2ad0f6728883dbaab7f180d6d1e137f6dbfdd1848b5c2bd0c95f05d06f63"
+    },
+    {
+      "file": "assets/sfx/npc.wav",
+      "sha256": "396d581479481fed028715e80b2ac62225745cd807ac628efc24ad7c2d7a5e57"
+    },
+    {
+      "file": "assets/sfx/open.ogg",
+      "sha256": "9d257cbe8a2c6d8eb709294a0e5f27d5b8563abab00d3e167493cec7305a4c96"
+    },
+    {
+      "file": "assets/sfx/open.wav",
+      "sha256": "4bfef035e0d051011a3c2e4250e040339faf064bfeb88ede70adbf35d2366eb6"
+    },
+    {
+      "file": "assets/sfx/parry.ogg",
+      "sha256": "aadc027bd0cce507ce8bc5bf7608e9e93954c31fd470d22d6e4180f285bd6cc5"
+    },
+    {
+      "file": "assets/sfx/parry.wav",
+      "sha256": "5ee41f11e17157b813a75f102bc1bac9c8eaad8ce5c85b7679f6c27ef81096cb"
+    },
+    {
+      "file": "assets/sfx/pickup.ogg",
+      "sha256": "d59467153b7246856f0868b7cbfeb7ff2ebdd1035248a859eb9fe559f1379fc3"
+    },
+    {
+      "file": "assets/sfx/pickup.wav",
+      "sha256": "1b9bdf87558e7ea71a0c31b872f95b25a4b7a9208a77b551100ba156bf6f33a2"
+    },
+    {
+      "file": "assets/sfx/portent_clear.ogg",
+      "sha256": "e23bc42feb86e557944d97ea17469362a2f1122b22413fe87267a9f29be3e245"
+    },
+    {
+      "file": "assets/sfx/portent_gain.ogg",
+      "sha256": "95d8004887b2e9ff3b435e7837dab1d97a67b1ff94f10296d6d306a334e48851"
+    },
+    {
+      "file": "assets/sfx/pressure_plate.ogg",
+      "sha256": "f26984d46b21f21a7802fc3926f0f8fa50cb0c23fe997eb3b600253e4f23fcdc"
+    },
+    {
+      "file": "assets/sfx/push_block.ogg",
+      "sha256": "b4058933406f7b6d21bdbc86642e5554224a548c6f3910c4474a8f423dc33075"
+    },
+    {
+      "file": "assets/sfx/ricochet.ogg",
+      "sha256": "ebb27349625789c18f6372155ac76075bab2f529ebc418a4cafaf6132539f43c"
+    },
+    {
+      "file": "assets/sfx/step.ogg",
+      "sha256": "eddfbfdb25aa95773cf5f2ba219aa2114b3dd31bf964be76ba8c11f224664b3f"
+    },
+    {
+      "file": "assets/sfx/step.wav",
+      "sha256": "ab7860c293681f28abdf6cbf9feed5d3a3e7dca498ca8fc0514ac1591c3e3619"
+    },
+    {
+      "file": "assets/sfx/step_ice.ogg",
+      "sha256": "5f3020e4997a8000abe14d5bf08257651ec395a896a5db69c4598ae60a265a1e"
+    },
+    {
+      "file": "assets/sfx/step_ice.wav",
+      "sha256": "e367e5956d6f4c874c8e064566ae3f3c4497beb55d1bd77f394d6d9dde508899"
+    },
+    {
+      "file": "assets/sfx/step_plant.ogg",
+      "sha256": "6f026e22f0c870a496df2da019cfcba797572afd4529f143d866e139b5f686b7"
+    },
+    {
+      "file": "assets/sfx/step_plant.wav",
+      "sha256": "5e93eb20a42a38440a09cc2be0decb08e3ce709b7bbe5137a90c5525fe6ee921"
+    },
+    {
+      "file": "assets/sfx/step_water.ogg",
+      "sha256": "7ed7c5bf89425597edcf223bb9cc9a9859bb1b4f7ed3360aa59cb430febdb494"
+    },
+    {
+      "file": "assets/sfx/step_water.wav",
+      "sha256": "b36638a2466764c0777e522b9c571153a88c1728655ea164d63fe67bdf6e16bb"
+    },
+    {
+      "file": "assets/sfx/throw.ogg",
+      "sha256": "c788e9d9e33ebeedb69ba70d37fcfc71ca3808f2e33fe96f8c8372b7729fc093"
+    },
+    {
+      "file": "assets/sfx/throw.wav",
+      "sha256": "27c3e5cc1f1959c6ddfa68d99c618fb572467c122c6fc3b0a172964e78769f05"
+    },
+    {
+      "file": "assets/sfx/throw_land.ogg",
+      "sha256": "1f15c8974d415925406bb1d458c1104fbcba162221d5baa6ab53e78966244f32"
+    },
+    {
+      "file": "assets/sfx/ui_click.ogg",
+      "sha256": "2dc6707ba00be4bfc40d04b5506c6178e5b9513a3aee0abdb31a961cfe499e40"
+    },
+    {
+      "file": "assets/sfx/ui_click.wav",
+      "sha256": "6a3d7675a7a520cb2ba5f014f21999e20ad35fbe500696eb06590fba2e0b0e61"
+    },
+    {
+      "file": "assets/sfx/ui_error.ogg",
+      "sha256": "0833220505d5be3255431505311057c548c71d4b3e2155c8c2d7deb415e1c3ee"
+    },
+    {
+      "file": "assets/sfx/ui_error.wav",
+      "sha256": "78d3f388064d9e0984956468a815e643cf5f3e2d32ad385c6ec64134f7b3f4af"
+    },
+    {
+      "file": "assets/sfx/unlock.ogg",
+      "sha256": "c875d7feb7c113b9747be197c196824b997c6dc9931024452903696298d7f962"
+    },
+    {
+      "file": "assets/sfx/unlock.wav",
+      "sha256": "bea3b4fd676abd9ef1bf805f57799623ab5d31ccaeda01f535918f817b1a69bd"
+    },
+    {
+      "file": "assets/sfx/uproot.ogg",
+      "sha256": "544e2107cde2e7eeb08f835cc5ae0462fcfc0633b87ffc7290cdbb0c26c3f7cd"
+    },
+    {
+      "file": "assets/sfx/uproot.wav",
+      "sha256": "bd88dabac40e64b69735ad83b73320f667462e3873f320a035d9ed034d21bdfd"
+    },
+    {
+      "file": "assets/sfx/use_potion.ogg",
+      "sha256": "1ac8fe9fd90106078c0ed0cb10a5eacc834fde5418fa5f2ecb852ac807b81f49"
+    },
+    {
+      "file": "assets/sfx/use_potion.wav",
+      "sha256": "f18031e037372570d6e3a6342e367d8edcfec1c252ca66b5f2894d61f58e9e98"
+    },
+    {
+      "file": "assets/sfx/wound_heavy.ogg",
+      "sha256": "b84608d1276c3a0f4b10312cab54a885b7c683d7e49bc547ce3b27cfc96ac437"
+    },
+    {
+      "file": "assets/sfx/wound_heavy.wav",
+      "sha256": "55a089f9060217a4e1d33c0f7c56240615e989b2ee3f8eabe9af9080606e718f"
+    },
+    {
+      "file": "assets/sfx/wound_light.ogg",
+      "sha256": "ce6fdc1db754a41ce41ee03fab627add499f3395bc5464151f33231978c7c8a7"
+    },
+    {
+      "file": "assets/sfx/wound_light.wav",
+      "sha256": "afbc684a43bd08ed8c1f3048f33aedc45488de0a8da49c4401fb9eb6c673fab3"
+    },
+    {
+      "file": "assets/wezterm/README.md",
+      "sha256": "b61cf6817c5d7fd264914680ae1d86e7543a2e6ed73672c87c12609e63f04ade"
+    },
+    {
+      "file": "assets/wezterm/dream_effects.lua",
+      "sha256": "2bb09c32a359b0336e5099133acff40553a43c3c65e90b846d4a33e62ae5afd1"
+    },
+    {
+      "file": "assets/wezterm/mist.png",
+      "sha256": "0d8572ab03517c06f598b909bcca01ccea6de3bf10b057ffb7bbaad3fa888fab"
+    },
+    {
+      "file": "assets/wezterm/ribbons.png",
+      "sha256": "a1daa4d0cf3f69c32cc73c5edd0bc3d93cd5b49ab6c9f231b5d886168576ba2b"
+    },
+    {
+      "file": "assets/wezterm/still.png",
+      "sha256": "0134051a552b2bf7ed351adcdcaaee984d050eeddbb43a7ac411a9e1b8c03933"
+    },
+    {
+      "file": "build.py",
+      "sha256": "083ff5e58e2de5c4547b95ac83971a248a829211179cd50a06fd12ac03f9037f"
+    },
+    {
+      "file": "dream_demo/__init__.py",
+      "sha256": "6cec0d014125a19fed07f65d04fa3ebbee18a0c6927c0607922564da3290fa0a"
+    },
+    {
+      "file": "dream_demo/app.py",
+      "sha256": "e66df4ed015d0a3d1d210652176a04a4b423c6bebc271a22ce8a6a7136107777"
+    },
+    {
+      "file": "dream_demo/audio.py",
+      "sha256": "eb63131c531fcddee13743bb5b7f143357f4eed5cb2af8c30c66b7bdd7c79e04"
+    },
+    {
+      "file": "dream_demo/catalog_registry.py",
+      "sha256": "083469b0fd0b7f75ba14be4575fd1aa7d2d713b868a49d0cbc17ee0212b34199"
+    },
+    {
+      "file": "dream_demo/cell_size.py",
+      "sha256": "f6287da91c5a0a26cc98298a9a93a42260c71b4804b238ef5e37858353fe0082"
+    },
+    {
+      "file": "dream_demo/circuit_schema.py",
+      "sha256": "aea52393c1ca2e9f773aca13fd6f0a934ac488d287082d32b8f8f421a0d916b6"
+    },
+    {
+      "file": "dream_demo/config.py",
+      "sha256": "882bb9cd7dd74c8b216c583b1524f011f5e77a15b0b4a42f56241d24089181a8"
+    },
+    {
+      "file": "dream_demo/controls.py",
+      "sha256": "7a07148b78cecc05fca18690131dd17265a123f62bc5276de81002179197e6da"
+    },
+    {
+      "file": "dream_demo/core/__init__.py",
+      "sha256": "35a89dad1e268da58627bc255a5b8e4d3e3725bddf5090bd53537502b8ef3e92"
+    },
+    {
+      "file": "dream_demo/core/ability_targeting.py",
+      "sha256": "cb25614233453cb03c99b4d5a8f2b2341f452afef79583786fa2880a53e97b22"
+    },
+    {
+      "file": "dream_demo/core/acoustics.py",
+      "sha256": "42780f7e4efcb2a25fc83d1033f48b914647d70beb0c774fcfde1894b4bd4b00"
+    },
+    {
+      "file": "dream_demo/core/action_permissions.py",
+      "sha256": "ec462ded0731016bf13f09544a9bf7b6cac4e9ef0b9fc3d3445df557bd23b9c0"
+    },
+    {
+      "file": "dream_demo/core/actions/__init__.py",
+      "sha256": "60e3ce74820a889bc48feb9fd8f4658dd0edb8feeac7dbb5ceb030b669eebec9"
+    },
+    {
+      "file": "dream_demo/core/actions/combat.py",
+      "sha256": "d7d641c67cb67bde7cef543b3c07d7cfa24ae4a6a5418f7d66c2dc6c7692f282"
+    },
+    {
+      "file": "dream_demo/core/actions/items.py",
+      "sha256": "976f8c93fce4936ec77482c62b1107ca0b986069882ea9882d53027770520e93"
+    },
+    {
+      "file": "dream_demo/core/actions/movement.py",
+      "sha256": "32489b697b2bf40f3a09a192341f7317d15344995962b97c88a0d01808b2fd6c"
+    },
+    {
+      "file": "dream_demo/core/actions/social.py",
+      "sha256": "be1e0a9ed25768738781565623b1990c4c8f981c4eee7be86efd617743b66d30"
+    },
+    {
+      "file": "dream_demo/core/anomaly_intents.py",
+      "sha256": "a7df58d477e52a04a92860d68e0211902c4dfe8016f16bf4fe6404f76daff864"
+    },
+    {
+      "file": "dream_demo/core/ballistics.py",
+      "sha256": "88110c2071b22e54162d00fb1b061d832704ceb337fff06eeee2de3cee48532f"
+    },
+    {
+      "file": "dream_demo/core/book_learning.py",
+      "sha256": "c09f0cb413232bc004bd801656cfc42f366426a68e6f02e1d017688dc947999c"
+    },
+    {
+      "file": "dream_demo/core/cast_fx.py",
+      "sha256": "b8e20722195937404834bb146d7b3996be7c4aeaee88671d7da8d13b824c80ee"
+    },
+    {
+      "file": "dream_demo/core/chaos.py",
+      "sha256": "fc1df1b20ce4ee4e99b162e05187c91a470a07d36652e20ef2171ad0cc250822"
+    },
+    {
+      "file": "dream_demo/core/chaos_anomalies.py",
+      "sha256": "49af6144951879b2f52e20d7b6ad098ea78a71b3e4e8fb44e6f24dec11e69c11"
+    },
+    {
+      "file": "dream_demo/core/chaos_skills.py",
+      "sha256": "0b844532a36ac84cea898de927f9a4278342b2a679bc4887c17e0222684a20a2"
+    },
+    {
+      "file": "dream_demo/core/circuits.py",
+      "sha256": "e43296f036fd50d1d1df7b1c2012c5f325f8549a6a8268801cf2d9945f71bec2"
+    },
+    {
+      "file": "dream_demo/core/combat_constructs.py",
+      "sha256": "78ce0a26e32edd00e29d22ea8f9c91ca5beae76055de3a945c2de42ab93e2e5c"
+    },
+    {
+      "file": "dream_demo/core/constants.py",
+      "sha256": "43d8c7d58420749903d760487fca1b11fd3638339756a2214efa0f48b0c54950"
+    },
+    {
+      "file": "dream_demo/core/construct_environments.py",
+      "sha256": "0d24b30a826f5581295e6290ffd1fbe934838bd3f898af822eea0f9bab4ae091"
+    },
+    {
+      "file": "dream_demo/core/content.py",
+      "sha256": "55808177dbfe3697decb50a68384b33e045cc83c618b6e6252ace214fbba967e"
+    },
+    {
+      "file": "dream_demo/core/dialogue_contract.py",
+      "sha256": "47fe98848bce6e5abc2f2e438f859db2c0780d061615375c034aea04d9c36b0c"
+    },
+    {
+      "file": "dream_demo/core/doors.py",
+      "sha256": "303a6dfb395208a6f022eb93c6bf50938e7128972ddca14f3735d36ddd876177"
+    },
+    {
+      "file": "dream_demo/core/dream_types.py",
+      "sha256": "6c4e10126373250e02bb87578b2177f320b58298239fe42b2b8412a07aaa801c"
+    },
+    {
+      "file": "dream_demo/core/dreams.py",
+      "sha256": "5520173fca2dd3d5e3f95b0fe335a3bf7ab79ca92cc94c4b7e080756f50a11e3"
+    },
+    {
+      "file": "dream_demo/core/drug_debts.py",
+      "sha256": "40b5de188b16e08b5ba0dd154ada202945ef50445089aaedb1315b6ef7dc80af"
+    },
+    {
+      "file": "dream_demo/core/ebbing.py",
+      "sha256": "212076adb91527aab633555ba73b8bdf3998b5357770886c093451d88dde9047"
+    },
+    {
+      "file": "dream_demo/core/enemies.py",
+      "sha256": "f604bb00f073509c36b5677dddb36680d3236490ec0a248290d62936c486d4e6"
+    },
+    {
+      "file": "dream_demo/core/enemy_skills.py",
+      "sha256": "0bf69b0cd7f9af75d176364e81a19cfc0fbf1b447d01b0d6d157c9c2304c07c8"
+    },
+    {
+      "file": "dream_demo/core/entities.py",
+      "sha256": "00a80d1724410d2b341f212d0d96ec3f49cc6d97d9b6e28c3669c178336a5a7d"
+    },
+    {
+      "file": "dream_demo/core/epilogue.py",
+      "sha256": "1f95ab5258c9fd7a0de469e49cb1b97242be5fc64e1f322a5bab0d53ffe5c2f2"
+    },
+    {
+      "file": "dream_demo/core/equipment_board.py",
+      "sha256": "82f64c1051f00339139ad1a35da01698df007f332890d9ea3521e3ee0af12280"
+    },
+    {
+      "file": "dream_demo/core/expansion_abilities.py",
+      "sha256": "be686ecf05044312f6928c45a7bdddbf570d8cc43ee71242c38e74275c377de7"
+    },
+    {
+      "file": "dream_demo/core/expansion_consumables.py",
+      "sha256": "13f92aa28df593a076e28a3a6271d0a57bdbf4d2e44e1c7c73c1e4f60f4e164d"
+    },
+    {
+      "file": "dream_demo/core/expansion_insights.py",
+      "sha256": "0493b5a71f7e5dc08a3f3ffcb2ec9af326bc5ee5bdd3fce15a2996f245eaf21f"
+    },
+    {
+      "file": "dream_demo/core/expansion_rewards.py",
+      "sha256": "9a08366bdd2874f69f7e4ae0adc49c8a588c8438fb5fc5680dbee507564929ef"
+    },
+    {
+      "file": "dream_demo/core/failure_review.py",
+      "sha256": "e6d3af91dacc1db94470eb3a41a35f6ee916109bdbef90560a94ae848e1aacab"
+    },
+    {
+      "file": "dream_demo/core/firing_sources.py",
+      "sha256": "a53456e0a0b16ae15b17ac58d575123f5f43488b12c4294d8da1fbddb3dfd268"
+    },
+    {
+      "file": "dream_demo/core/fixtures.py",
+      "sha256": "1f3efb59183d7e7a25283b00a2efc794b11489dcdf3afbb93b17b479d8f24775"
+    },
+    {
+      "file": "dream_demo/core/gas_generation.py",
+      "sha256": "3b9c1b18c0a23234c887cbb8e8f9c03c768dc190ae6657f2730ccf391c4b1d09"
+    },
+    {
+      "file": "dream_demo/core/gas_kernel.py",
+      "sha256": "6bbf29323256a40f2f07e3b9d344de3e6c067db7e14f0d55f4ac230bf277a870"
+    },
+    {
+      "file": "dream_demo/core/generation.py",
+      "sha256": "8f3451f0f0638cdda57d408bc9f73b44e9a3b0b7e5486ef3de11b6d8e50cb852"
+    },
+    {
+      "file": "dream_demo/core/hit_events.py",
+      "sha256": "c60dd0534e97d57b7a0854d34659cb7e4db60d7e3ea38d7ae2c5e6ed2b9ed798"
+    },
+    {
+      "file": "dream_demo/core/hospital_effects.py",
+      "sha256": "59b739b2df1637b8d993c3215a32f6b6a5aecf756241291ea960bf1c94af1d48"
+    },
+    {
+      "file": "dream_demo/core/hospital_layouts.py",
+      "sha256": "cc8a76b542f53e645757135f3008f1198a5b0fce40a9ab8a7222656a8b13e4e3"
+    },
+    {
+      "file": "dream_demo/core/hospital_medicines.py",
+      "sha256": "65d704b470d63a9db78d509d7b622e80c6570b03194a22039ed4dd2ef443e64c"
+    },
+    {
+      "file": "dream_demo/core/hospital_scenes.py",
+      "sha256": "7e606252882e4d48916a19f4d6798e201c2d0aee4f703e92332155d10f3eeafb"
+    },
+    {
+      "file": "dream_demo/core/hospital_skills.py",
+      "sha256": "d76819c36dda6f52e2a95043b6f3123897f79a62ad1bc9d94eb39e54207b451e"
+    },
+    {
+      "file": "dream_demo/core/identity_traits.py",
+      "sha256": "b76b2293f361d4e0fcb41499a16c0dda6799c59a172eaa01ea009ce09bc37df3"
+    },
+    {
+      "file": "dream_demo/core/item_access.py",
+      "sha256": "306c713f10c511f85c93bebe5fc28929d095a67ec7328a31762df9527d47bb6b"
+    },
+    {
+      "file": "dream_demo/core/item_devices.py",
+      "sha256": "2180404abe410bb7fd852b5e71d4a60b72049bc791d1636273c2235f6587e423"
+    },
+    {
+      "file": "dream_demo/core/item_targeting.py",
+      "sha256": "ba24ddfa3a790059cd1f96f8ef9c898579fb637609a8eac27a9c02b13cf0e991"
+    },
+    {
+      "file": "dream_demo/core/library_abilities.py",
+      "sha256": "7a82b2ff4c399270dc3552c00955d8128ffee3c7a871e344ff00150ecd596749"
+    },
+    {
+      "file": "dream_demo/core/library_content.py",
+      "sha256": "073aa6bb85b6f54103a0be403bdae775be9d463883e097feacd838516fc54127"
+    },
+    {
+      "file": "dream_demo/core/library_layouts.py",
+      "sha256": "ecc818f3651c528091a347c456b547138adaea5e060a3007ee9cdabb2d16561b"
+    },
+    {
+      "file": "dream_demo/core/library_skills.py",
+      "sha256": "d59d1f3e9790e956d2f0aa5fe38669925f208fb46db01a00c5b318aad4020bb0"
+    },
+    {
+      "file": "dream_demo/core/light_flash.py",
+      "sha256": "ea4f2ebe3a9593bb23031d8f31d2364329e77575303948ba48a33bddca5fdf2a"
+    },
+    {
+      "file": "dream_demo/core/light_scenes.py",
+      "sha256": "7041428c1f34fe00d6dc9ea5f3efd4a67782e5f55f25bbe2652f6178ca632115"
+    },
+    {
+      "file": "dream_demo/core/logic.py",
+      "sha256": "72f49e4ab2ba00c046df569ae96fc2ef840f27d9187a36bcf4ec10e7130cb477"
+    },
+    {
+      "file": "dream_demo/core/main_difficulty.py",
+      "sha256": "1ccbf0fbe3b0aa07a35f412519783d0d3a76defd7470575ee938f94a1e05c457"
+    },
+    {
+      "file": "dream_demo/core/main_learning.py",
+      "sha256": "633440ee6f217c41e8cde3c47a2963121f8bc06ccc54c1e849af5367dd6328cd"
+    },
+    {
+      "file": "dream_demo/core/map_scene.py",
+      "sha256": "955a8cf879b715786ff7953e855151ef8d1dc458a5ff8393e40e395fb657df7d"
+    },
+    {
+      "file": "dream_demo/core/materials_sim.py",
+      "sha256": "57d5f32742adc3734212bd080a3160a3cf9cef77a3cfd5079d33ef7d03b56eff"
+    },
+    {
+      "file": "dream_demo/core/memory_buffers.py",
+      "sha256": "4cb44f352093ba687b29e887baa57cb4305d08136ca6bfbe1f5d813764d565f2"
+    },
+    {
+      "file": "dream_demo/core/memory_management.py",
+      "sha256": "68244faeb890f0696ea36107075daf5840ead6ba71a1d2ba261722cc20afa0b7"
+    },
+    {
+      "file": "dream_demo/core/npc_offers.py",
+      "sha256": "8224ec5de98d1b309780de667014566c4c1966bff49f7d7a4049337508f93aa0"
+    },
+    {
+      "file": "dream_demo/core/origin_course.py",
+      "sha256": "f840ae1c239d6dbe12cdef751702d3af8a4b5433d8f21748d7da5573692cd127"
+    },
+    {
+      "file": "dream_demo/core/origin_course_en.py",
+      "sha256": "4444a8323e21bb428cafafe032c77f46f060ea600f6b20fdad50b3059c55fc61"
+    },
+    {
+      "file": "dream_demo/core/pathing/__init__.py",
+      "sha256": "0176d5c82bcbc1e184c225e757e4211e3b46a8c95a5d1d3a266affd6e8ffd509"
+    },
+    {
+      "file": "dream_demo/core/pathing/astar.py",
+      "sha256": "47a3478afe2cdb9dcc833699db56555adee05bdcb812f8cc4e45c7db17940d09"
+    },
+    {
+      "file": "dream_demo/core/pathing/pursuit.py",
+      "sha256": "be094278422e22a3ec0d4ec513a6a8eebd1b1dd8832ed4e49a0d78bbd8b6139c"
+    },
+    {
+      "file": "dream_demo/core/pathing/routes.py",
+      "sha256": "c85eb88b68c1af0b5eaed12a8505841be0ebce229e56ebd275c3b61f6cb81b65"
+    },
+    {
+      "file": "dream_demo/core/phase_changes.py",
+      "sha256": "f3124dfd0bdc6273dd28f1f17397977ec6d7137841a926a1763a5627806cc822"
+    },
+    {
+      "file": "dream_demo/core/plant_notes.py",
+      "sha256": "7f137130ee0caf1ac7ce58c34da7103ed33979f1d2ddd7a596e4ba674e6d7bd7"
+    },
+    {
+      "file": "dream_demo/core/plant_release.py",
+      "sha256": "ab385af62cd1b40ad423ba6c54e1bdb641b3e60d77f771aee6ecc3f2f01dd2c2"
+    },
+    {
+      "file": "dream_demo/core/plant_survey.py",
+      "sha256": "fdf2388dc3c147e17e4e68d1aabbb74698d03687d2e5b9def0a091a471fb599a"
+    },
+    {
+      "file": "dream_demo/core/portents.py",
+      "sha256": "32ecc37dca803b4b341973b7e0e8abbb505bdb6cfe4fc33c4d3824d7cedc2304"
+    },
+    {
+      "file": "dream_demo/core/realm_architecture.py",
+      "sha256": "a838bdc78e1d25265b0dadfe52377557701f101ec32995ecd5f7fa6694fec476"
+    },
+    {
+      "file": "dream_demo/core/realm_challenges.py",
+      "sha256": "3ee5bb5287869c5af294ce401bd71abd66de693b3e11787e6a64c32bc5cb2c1a"
+    },
+    {
+      "file": "dream_demo/core/realm_enrichment.py",
+      "sha256": "298c4a6d1374ca5da87efd1d4d2f850fe669f780537a80ab4524ce02bb57d853"
+    },
+    {
+      "file": "dream_demo/core/realm_entries.py",
+      "sha256": "ecf19db4620a21d567087bc156b96f2b2d823e8b26eb1ba5ffe52bd1618ec41f"
+    },
+    {
+      "file": "dream_demo/core/realm_environment.py",
+      "sha256": "f85ab5277453e96ae89cdd1bcf284677c16b90970895e60420ad87c359b15af7"
+    },
+    {
+      "file": "dream_demo/core/realm_layouts.py",
+      "sha256": "5f797bfe1f82cc4b35c6c51f5be74190eeab309438e74e02017ce30d72519e1e"
+    },
+    {
+      "file": "dream_demo/core/realm_lights.py",
+      "sha256": "1bbb5907aa9af4eccbec60f57c3022c6c941a1188d992ff1439647a56ab2a671"
+    },
+    {
+      "file": "dream_demo/core/realm_surface.py",
+      "sha256": "bd56ad3e5c7b04ac37d5e5d577aa94289f159fc9b6751625ed5fd9e34c8f5d52"
+    },
+    {
+      "file": "dream_demo/core/resource_summary.py",
+      "sha256": "ddb39865d2363258d8944147dbe7ce98852f697c3ad1fcb7aaa6379cc098a668"
+    },
+    {
+      "file": "dream_demo/core/retry.py",
+      "sha256": "d6731ceb95d4cbd7c911bfb14ab81862dd585bb2bcb02788999fd1dbd2182bf4"
+    },
+    {
+      "file": "dream_demo/core/roles.py",
+      "sha256": "f77ded162aad504a4eaada8d9d94e41b567393b026f855417d7a87c7e36f22c3"
+    },
+    {
+      "file": "dream_demo/core/run_options.py",
+      "sha256": "0fc51e14f911a9815ba5454413abba90203c1f1730e326e5c78d54c20679ec3a"
+    },
+    {
+      "file": "dream_demo/core/save_kernel.py",
+      "sha256": "ad4c3397863115edcf892db5905d93624dd0745776a06e3fb6159e0758f3ff4e"
+    },
+    {
+      "file": "dream_demo/core/scenes.py",
+      "sha256": "e6c8176c60ddb66e6e3f3cfb29bb9956798f8ea80b1dc08e0f7d0cce2b26263b"
+    },
+    {
+      "file": "dream_demo/core/self_audit.py",
+      "sha256": "6116252e6ac91d8990099b2e00114b6529e9d948c00b2af6100a7e0fed4e6a9f"
+    },
+    {
+      "file": "dream_demo/core/sentence_contract.py",
+      "sha256": "d6caafa5ee6d736787a92326c5b779882c8e3d0ee3772ee38ac20ec9ef96f613"
+    },
+    {
+      "file": "dream_demo/core/settlement.py",
+      "sha256": "18c242abdd06f89ea9a74852e5b455c62f5a427cd22be58c2eb097ce5435c59d"
+    },
+    {
+      "file": "dream_demo/core/skill_slots.py",
+      "sha256": "4da3b14dc25448fdf35f08b6926a423266e518166bbeaa1b59b79a30cd04fe30"
+    },
+    {
+      "file": "dream_demo/core/sound_markers.py",
+      "sha256": "3281fbb9e03ad2e58d4346fea11709cb0afd472bb9676c3ab2ba9c83e3ca6844"
+    },
+    {
+      "file": "dream_demo/core/sound_preview.py",
+      "sha256": "5ad91c8e9f32a66213621f24e9f61798a3ec0512e150a52aef99c4a0b2e90984"
+    },
+    {
+      "file": "dream_demo/core/sound_visuals.py",
+      "sha256": "97086e7201f1eb80161794f7075c95a85bb2d4894fe94cff716f2fc82bba387b"
+    },
+    {
+      "file": "dream_demo/core/stable_identity.py",
+      "sha256": "e93315032d99316df34d9d9e938a11df924653ecfa946c047f91c720d5fc2427"
+    },
+    {
+      "file": "dream_demo/core/stat_sources.py",
+      "sha256": "6e3311fbe37ec101536cfa1d000ab731ba7b367e08f5c484c3bcf14c1c927306"
+    },
+    {
+      "file": "dream_demo/core/state.py",
+      "sha256": "1bc978beece926129d318dc4207f351c619fb2e6fdb39e16bcde8cb53751f843"
+    },
+    {
+      "file": "dream_demo/core/stats.py",
+      "sha256": "2d28a16bd55a3843e892e8c46ba36186219e09840ac2aa4b9d1ae276adca9aa7"
+    },
+    {
+      "file": "dream_demo/core/surface_terms.py",
+      "sha256": "4343bb34842d8a52f5e9c6df9ef7e03abb8f078339f1a831fd38215a4ae3f6d1"
+    },
+    {
+      "file": "dream_demo/core/tactical_layouts.py",
+      "sha256": "343874b3ce6bae5a5b321c01298b0b2e623e5251e40e7008befd5a9176e26a21"
+    },
+    {
+      "file": "dream_demo/core/tamper_compass.py",
+      "sha256": "a544a90b03798c3327f7cd347dfcb2be465edada4c1336d8ee556ea5e4a4dd2a"
+    },
+    {
+      "file": "dream_demo/core/tamper_contract.py",
+      "sha256": "41179106673b1e53c86383a6d2fda38c5b6b5984fef8a1c252ca40699f0f453e"
+    },
+    {
+      "file": "dream_demo/core/tamper_fluid.py",
+      "sha256": "e4ad0d70e4b8e644929173c08f47e36aca5718645fe638d48c8f03b406e880d6"
+    },
+    {
+      "file": "dream_demo/core/tamper_pipeline.py",
+      "sha256": "5c10e512b428fbc98afc66f930484816240eb5e70928f6225b64d4ae527e5e39"
+    },
+    {
+      "file": "dream_demo/core/tamper_previews.py",
+      "sha256": "d1f464c27806b63aa3f4733efbc216d3ca13b161e65502371019f92b298a24b4"
+    },
+    {
+      "file": "dream_demo/core/tamper_prose.py",
+      "sha256": "72d8607e437558f2f3a118d596adaba9f78f3254291a8c5473fb4b68def735cd"
+    },
+    {
+      "file": "dream_demo/core/tamper_protection.py",
+      "sha256": "8085ca31af712654ae0ab7207841948867ade36ba0c7adc04b40e2beb27909de"
+    },
+    {
+      "file": "dream_demo/core/tamper_range.py",
+      "sha256": "b0c01d16c337d518c0c945a321bd83cb97017fd071d825d18b4e37307db6a4e9"
+    },
+    {
+      "file": "dream_demo/core/tamper_regions.py",
+      "sha256": "1dd5b28ea1a64ecdc014fb868678fbd9546ac4183bc30a4275a89ef3f749e449"
+    },
+    {
+      "file": "dream_demo/core/tamper_risks.py",
+      "sha256": "481a4314175b4080d31d68841cb35649deac368c18ad6c5b346081c1cd763b18"
+    },
+    {
+      "file": "dream_demo/core/tamper_views.py",
+      "sha256": "7444235c51b39fc53c18dc60b4d318067624f422a857712057fd3b4599a48794"
+    },
+    {
+      "file": "dream_demo/core/tamper_world.py",
+      "sha256": "11bcb884502111af992488455f53bf480596f60ea1712f79b8a8706d8a7ded31"
+    },
+    {
+      "file": "dream_demo/core/tampering.py",
+      "sha256": "4e1a320e72bfdd0a5a50ff5c1c412df7cb78fc4bef9426462e97b4b1215a8328"
+    },
+    {
+      "file": "dream_demo/core/tempo.py",
+      "sha256": "a052b800f8a99f512612893d6f82b3ce8670dd60d55997e6509dd58c063f9266"
+    },
+    {
+      "file": "dream_demo/core/throwing.py",
+      "sha256": "c349b2207dd20450c9d5b25bfde82709d3c37edec025cb65d1cb2a9e71eacf76"
+    },
+    {
+      "file": "dream_demo/core/timed_actions.py",
+      "sha256": "f446075155fb0e277840537eb37e852a02d09a98fe6383806e7f7a84a8475165"
+    },
+    {
+      "file": "dream_demo/core/toy_puzzles.py",
+      "sha256": "b9a8195037a4ae719a12d529a0ee45aa97deb5b45301a7504827f45ee029ed40"
+    },
+    {
+      "file": "dream_demo/core/treasure_offers.py",
+      "sha256": "ff335314feb4c61b3830e98f650fc77e38f415f5b02c343e40ba352ca50f1d94"
+    },
+    {
+      "file": "dream_demo/core/tutorial.py",
+      "sha256": "672d28c86c202900d970ad771835da5f114ee0fe963169bdf72867fd712ccc0f"
+    },
+    {
+      "file": "dream_demo/core/tutorial_categories.py",
+      "sha256": "2491a0f52693a8b07bd894784d583f28706bf419b5736aeba95b132d346a7071"
+    },
+    {
+      "file": "dream_demo/core/tutorial_guidance.py",
+      "sha256": "84552f9eb84a28dd71564399104d6cfeeaadcbffbee85b97cd2f0ffd9c7a8f8f"
+    },
+    {
+      "file": "dream_demo/core/vision/__init__.py",
+      "sha256": "c9af78b633d5d2f55adf9ccd92ea98db7baf56fafae210cbbcec0af2815a0476"
+    },
+    {
+      "file": "dream_demo/core/vision/cache.py",
+      "sha256": "ac2356791da9a2545a20507b494fea7306dfedfc3351fcda88510b54a9666cc3"
+    },
+    {
+      "file": "dream_demo/core/vision/glow.py",
+      "sha256": "6313e562f42c4c1345f3adaf52dbad75ec49faa12fc89231fe626f3dbfd2bb11"
+    },
+    {
+      "file": "dream_demo/core/vision/knowledge.py",
+      "sha256": "1a23f0893c20348b239154392fe7b7e0401f88109382611b0e91ba6aaffd43db"
+    },
+    {
+      "file": "dream_demo/core/vision/knowledge_kernel.py",
+      "sha256": "07f8e8ba506929ce5cfbe1627a8c030d9679d3decdca71d8c22eb16baa18055e"
+    },
+    {
+      "file": "dream_demo/core/vision/light_cache.py",
+      "sha256": "c4e3d6479f9076710a5a3b62c902eb5cd10e4cc5dc9e2f140276d04da351c003"
+    },
+    {
+      "file": "dream_demo/core/vision/light_field.py",
+      "sha256": "c9ff9b395fe39c5cbafc26a7f68436631e66f979bdec65ed704504f20bad635f"
+    },
+    {
+      "file": "dream_demo/core/vision/sight.py",
+      "sha256": "d54f964e47c6caad58334d9701aedf4cbe20379242433cc9786f09d192ea3e8d"
+    },
+    {
+      "file": "dream_demo/core/vision/sight_kernel.py",
+      "sha256": "174295cfd1195f8330291ebc4308ca6ac05dbe7545db95d604cd6064461c5b0f"
+    },
+    {
+      "file": "dream_demo/core/visual_events.py",
+      "sha256": "c351046af8c606b2f8f55d2a8d678da994399822f6a0713c3f35cb5dc856c863"
+    },
+    {
+      "file": "dream_demo/core/weapons.py",
+      "sha256": "f47f200bd0300a80bc6e5e191b39205b2ac0866d8ec725a88c8a57eb659ed74b"
+    },
+    {
+      "file": "dream_demo/cy_kernels.py",
+      "sha256": "e3278c4eb8377a8c590f6c386cd48d5f66af7b6c49929d3dc089cdb3e6dcb597"
+    },
+    {
+      "file": "dream_demo/data/__init__.py",
+      "sha256": "070cdf33d3d58ce50e4f296e58b6f937f0f9cc11832e177c396e957804c27f25"
+    },
+    {
+      "file": "dream_demo/data/abilities.py",
+      "sha256": "60d454bed00e28a8f621623c3f0657df330eed9470935d220bbf53b3e6ad2137"
+    },
+    {
+      "file": "dream_demo/data/ability_facts.py",
+      "sha256": "88d5b1bb127c71f4acdae51b315276400afc4e4fb0d63d23becb4e4a4dd24de2"
+    },
+    {
+      "file": "dream_demo/data/advanced_circuit_vaults.py",
+      "sha256": "daff85bf23807c00176288fb2ab9c9f6ace046d868bca3f45e3f8374abb5cde0"
+    },
+    {
+      "file": "dream_demo/data/anomalies.py",
+      "sha256": "2959c2872190668cc92e8703f6d152a850a39ab93c9609aea2398c32b160ae5f"
+    },
+    {
+      "file": "dream_demo/data/anomaly_skills.json",
+      "sha256": "622ee8710e99cc2ced59220c61c2149e52d64426fffa4936066ba16fc9dbd406"
+    },
+    {
+      "file": "dream_demo/data/anomaly_skills.py",
+      "sha256": "97ccfb265267e42482c87bbbb1b1d96ef69e55aecdb68a02a846ac17881f869a"
+    },
+    {
+      "file": "dream_demo/data/cast_fx.py",
+      "sha256": "11f8ad275f99b38b02ffb9527dfb03bc11f3e4ab52f439131e1788791989289b"
+    },
+    {
+      "file": "dream_demo/data/cell_size_compat.py",
+      "sha256": "963ce85f64dc521aa9a29fa9f5a85650f2035c75b25535f31b99172fa013a12d"
+    },
+    {
+      "file": "dream_demo/data/chaos_anomalies.py",
+      "sha256": "0651fe92b03fa1f47f339cc5a234c0a9c4384227e8349542d42085b12784336e"
+    },
+    {
+      "file": "dream_demo/data/circuit_templates.py",
+      "sha256": "0a197f10e4cf9b279bb00547b2d66af6b956259b1cd8c65ce58d2ba864ed98ac"
+    },
+    {
+      "file": "dream_demo/data/construct_pairs.py",
+      "sha256": "fa47323daa785e7583344e18b04963ebe0bd24211231ea7436de665683a00ce1"
+    },
+    {
+      "file": "dream_demo/data/dream_types.py",
+      "sha256": "400f31032dc7d902256f20fb9be62f8ab25079513dc801285d60ee20c8bf1b11"
+    },
+    {
+      "file": "dream_demo/data/dreams.py",
+      "sha256": "d14f43704df370532065480ecc74eda2f99cc110865cfd479db05d36783ccd8c"
+    },
+    {
+      "file": "dream_demo/data/endings.py",
+      "sha256": "91706a763fb5a78b428f2d8f1184ad32ebfe653b7b85275ae9eb9a016ec085a8"
+    },
+    {
+      "file": "dream_demo/data/environment_prose.py",
+      "sha256": "a714602a88589196a41ad1bf265bc234ed8514163ec048967ec3fe3b92a3708a"
+    },
+    {
+      "file": "dream_demo/data/epilogue_upgrade.py",
+      "sha256": "0dd572d8c93f793151b4a72749070df6bab16bb01c51f8bcfec5aae4674d5f50"
+    },
+    {
+      "file": "dream_demo/data/event_icons.py",
+      "sha256": "d71ef9b9bdc5725671a036a73682255d8478d17d9e15cb4b32b56eaa06727c28"
+    },
+    {
+      "file": "dream_demo/data/event_rule_choices.py",
+      "sha256": "dea346735c2ae86f7315ba078eb092ad8759d38bb8c158bad938a707c83797f5"
+    },
+    {
+      "file": "dream_demo/data/events.py",
+      "sha256": "fc72c447520a6c2a693f46253ed2bdc4ffadbf9ff9bc52e14005b02115175c2b"
+    },
+    {
+      "file": "dream_demo/data/expansion/__init__.py",
+      "sha256": "080464ec6a47639441ae921ed6e89b64e454e7be662c803b89cd10914cb136d2"
+    },
+    {
+      "file": "dream_demo/data/expansion/catalog.json",
+      "sha256": "5e51c25e79a9e2abdf40141b6c7a5b94a9ba0e8827be6893184da4fcbca8977a"
+    },
+    {
+      "file": "dream_demo/data/expansion/catalog.py",
+      "sha256": "441fddcc16bdc4bcf5b744c75ea1aa8aa4578f6668cfd3c7f76871c6412b8197"
+    },
+    {
+      "file": "dream_demo/data/expansion/consumable_runtime.py",
+      "sha256": "c402aad568b8b8bdfb5267eaba588360a7e4e9e9af3b7d14bbfdaf4341665385"
+    },
+    {
+      "file": "dream_demo/data/expansion/growth_runtime.py",
+      "sha256": "eed96f403692f20586a7d80b1a407692b4cb236af63b707298ee3f0cb88a85ae"
+    },
+    {
+      "file": "dream_demo/data/expansion/sources.py",
+      "sha256": "9e69e78a863db53c5513847591b75a38f637dc5dcc74200ccc872c51efc9e30f"
+    },
+    {
+      "file": "dream_demo/data/factions.py",
+      "sha256": "d86b197c930f69597347fd4620878283a2b7653577141df60944c951d21de894"
+    },
+    {
+      "file": "dream_demo/data/hospital.py",
+      "sha256": "fbea7b2e252d3ac70129261e7147c920b7f77a0d2dc8b9492abc8badd9e81556"
+    },
+    {
+      "file": "dream_demo/data/icon_glyphs.py",
+      "sha256": "8deb1d7e5ab423e866a6e13a9ae484cc99a18a502f079f99285f803573a2dce2"
+    },
+    {
+      "file": "dream_demo/data/identity_prose.py",
+      "sha256": "6ad266bb09c673c4102e761201b41345cb4cc7e61c4b0f8e5a3778e5b9782548"
+    },
+    {
+      "file": "dream_demo/data/ids.py",
+      "sha256": "4fd7b41892f5e30930abce572f196593be70bee9e30a8e4a9df1d95255116ec0"
+    },
+    {
+      "file": "dream_demo/data/insights.py",
+      "sha256": "aa33111aebcad341819dbcbe2e369f5b5abcdb34a25b9cb793f0fa632f3dd6a6"
+    },
+    {
+      "file": "dream_demo/data/item_icons.py",
+      "sha256": "ad698c3961bd45d4cb7b2670a97f45115af618d7a2a07dcb0c9b8d0db4868c28"
+    },
+    {
+      "file": "dream_demo/data/item_prose.py",
+      "sha256": "17ab4fc18ff6f5036101e37546507e21759100cad4bb22f6c37a4c882597e231"
+    },
+    {
+      "file": "dream_demo/data/items/__init__.py",
+      "sha256": "b6193dfa5d5fbcaf830075bdb4ea842202a692d2a96fd8120f19a5c03e95cb0a"
+    },
+    {
+      "file": "dream_demo/data/items/consumables.py",
+      "sha256": "d02f42f3e1483b903cf86548109b1e1f2e20f34e593236703b2b4c937023e098"
+    },
+    {
+      "file": "dream_demo/data/items/deployables.py",
+      "sha256": "7064aa54e6fd3adbe9866e07be1b86fd3a005e5c548f32b67aca7d04e4e79334"
+    },
+    {
+      "file": "dream_demo/data/items/equipment.py",
+      "sha256": "71f17dcf3ca7e7f25d0be87baee91375ea17338bb46363728dec7905e96ef28b"
+    },
+    {
+      "file": "dream_demo/data/items/hospital.py",
+      "sha256": "376eee61724187424cf673374c62443da427934f8f35821358857c2d8b6af488"
+    },
+    {
+      "file": "dream_demo/data/items/hospital_equipment.py",
+      "sha256": "2ee8feb260816025e1d7f2b858006815388756f4c133de9158ea9edd5031667e"
+    },
+    {
+      "file": "dream_demo/data/items/ingestibles.py",
+      "sha256": "713de4645953db14acf664057d85d60a4ba7bf28e7929ab21532e7fd8603baf0"
+    },
+    {
+      "file": "dream_demo/data/items/interactives.py",
+      "sha256": "e802dbf8456cb3fe56d9b178135592a3edfdcdebee2eadc8d647fa3c555d544b"
+    },
+    {
+      "file": "dream_demo/data/items/library.py",
+      "sha256": "9c463f0d84a3d0d4ada60cdce6d75f401108bdd43ae79204843cdb07f0cfb291"
+    },
+    {
+      "file": "dream_demo/data/items/memories.py",
+      "sha256": "118135067eeaee3586d4cdc3c803578f425de4955479a8f66f8d49de5fccf6e6"
+    },
+    {
+      "file": "dream_demo/data/items/usables.py",
+      "sha256": "39df9d49d33c64ce73a08bc8ad304ea65b4d284b57f7a54369ede0c4895b019a"
+    },
+    {
+      "file": "dream_demo/data/library.py",
+      "sha256": "3991e8dff69c2f304960ff00ca8c98b3047e442d337d5b2ece3f343de3fb95d9"
+    },
+    {
+      "file": "dream_demo/data/light_sources.py",
+      "sha256": "ec1171c446ecc405f483b5952b5cf6e28457fc5052958e808375fd155bb72da1"
+    },
+    {
+      "file": "dream_demo/data/memory.py",
+      "sha256": "8de36bdc9b207dc9afa2114bf2ffff6cd844d46cfae3f8f325b1ca9c68394626"
+    },
+    {
+      "file": "dream_demo/data/migration.py",
+      "sha256": "543156b1651095ab848ac62e80fa1354b9f2ee26c57a9a571dc89a3cc03b56bf"
+    },
+    {
+      "file": "dream_demo/data/npc_tamper_choices.py",
+      "sha256": "daac051a1c52c73e3d00dbecb12a0a509a1963dc7baf1e6860060181caf0ea73"
+    },
+    {
+      "file": "dream_demo/data/npcs.py",
+      "sha256": "1ce22febbf3119b1e1dabb6ec165ab6aa0750c143d7abb8727fa2cfeb78b7737"
+    },
+    {
+      "file": "dream_demo/data/perception.py",
+      "sha256": "8b7d7c6fa20fdd373648b3cd7e3be8687c6d0a5eb79893743d1f6c756da2dbca"
+    },
+    {
+      "file": "dream_demo/data/quests.py",
+      "sha256": "1db545fdc9b354626105db4202b96a8b721a08834b5c39b622b6a8f73e9f7757"
+    },
+    {
+      "file": "dream_demo/data/realm_challenges.py",
+      "sha256": "65f805f195fbb9a0913c5fe902fff63fc4f01c9056dd779832b167e7176e9be7"
+    },
+    {
+      "file": "dream_demo/data/realm_item_prose.py",
+      "sha256": "9d03aab9ffd0151122ca5294c8f08aaff4db1ad050dc861c5902dd0912242846"
+    },
+    {
+      "file": "dream_demo/data/resource_write_registry.py",
+      "sha256": "094e1dc4c2180eaf54de8685a0c86ba10b246ef97ac8a5a91f4598d133894e00"
+    },
+    {
+      "file": "dream_demo/data/scenes.py",
+      "sha256": "aad602aa32204d2ebf49ae7ce93346690763e9e13fb186a4a069eddbcf7b798b"
+    },
+    {
+      "file": "dream_demo/data/semantic_icons.py",
+      "sha256": "87b5cb6542e2eb2df417dbc13ae1d242d4f1b6bb1daed9fcf092f78e9b7289f1"
+    },
+    {
+      "file": "dream_demo/data/skill_prose.py",
+      "sha256": "c0bd7e40637e06ad9d3ce8b410cd736a8920d3c251da0d8cf68bfa7a6235eb66"
+    },
+    {
+      "file": "dream_demo/data/sokoban_levels.py",
+      "sha256": "ec2b25f95be0486e01d0c0c489dd0a8d9e0ff6d38bd0db143e2826c66812c7a3"
+    },
+    {
+      "file": "dream_demo/data/stat_definitions.py",
+      "sha256": "c049c4a9848f72ceaa6e5408283d5c7269a3d784b564e5921ec13f2d80fea620"
+    },
+    {
+      "file": "dream_demo/data/tamper_anomalies.py",
+      "sha256": "92773043aa211dacc61dd7a1ca3786cfcef4cf1cb756ff61b12ea138ba379558"
+    },
+    {
+      "file": "dream_demo/data/tamper_combinations.py",
+      "sha256": "44390d12a29121716bcb068c883f1b86530dd965b84d59dd3f3fc0a362422c58"
+    },
+    {
+      "file": "dream_demo/data/tamper_protection.py",
+      "sha256": "649fa1e8b9d9a338f7a934bdb343f670d234aa4c18087344edea1f4e24754733"
+    },
+    {
+      "file": "dream_demo/data/tamper_schema.py",
+      "sha256": "00924aa4750737159c9e93841a42d3390307f416ae1e6a1ffc4314af7573585e"
+    },
+    {
+      "file": "dream_demo/data/tamper_three_choices.py",
+      "sha256": "34abf599edf88f5a6bc21445520fa1082cadea686a17186112c5518e22915b2c"
+    },
+    {
+      "file": "dream_demo/data/tamper_validation.py",
+      "sha256": "4749a211e1f3f57df58bb4ea827c32ae4cce52693e4c4b3ffad3bedb1ad10e62"
+    },
+    {
+      "file": "dream_demo/data/tamper_world.py",
+      "sha256": "204b3aa623237f9ae64f27c78185508d933c382270d2810078cd44684d5bba3a"
+    },
+    {
+      "file": "dream_demo/data/tampering.py",
+      "sha256": "88e70e7be7dc987c00a821cbe163f3d13aaa12a56e7cbf1884ab77fe033eb42b"
+    },
+    {
+      "file": "dream_demo/data/themes.py",
+      "sha256": "3769832304ea43fd6475e42d3ecc7de8adeda9079b5bdc7cc4c0b28b76d6a0c7"
+    },
+    {
+      "file": "dream_demo/data/validation.py",
+      "sha256": "ca333c9412afe23572ac94ac1614caa64ec28d1395d2669204e42d941a74947b"
+    },
+    {
+      "file": "dream_demo/data/vault_events.py",
+      "sha256": "5956356521ff24062a524e356a8049c0fe34bf4ed16562a9c9a0eb76d6b76fe4"
+    },
+    {
+      "file": "dream_demo/data/visual_catalog.py",
+      "sha256": "6a635323752addba2de25c7ba81249324c5678336fed97ee531ac56c0977787d"
+    },
+    {
+      "file": "dream_demo/data/visual_tiers.py",
+      "sha256": "0213a1e0b4c00b93b62f1ff1404a2ee7378000c7a00cf17458fdb69bfef9b4a1"
+    },
+    {
+      "file": "dream_demo/env_compat.py",
+      "sha256": "a0045017347a1f5ef157aaf0f764c3fc8f1e8d0744563e38668450e93c9d83c7"
+    },
+    {
+      "file": "dream_demo/equipment/__init__.py",
+      "sha256": "0d3897a06ada6baea094fca60eb5020dcf904cf776941c3832fbd8cd7a0906ba"
+    },
+    {
+      "file": "dream_demo/equipment/active.py",
+      "sha256": "de7988d6e808cf202f01dbfbab380d56f4b70284d5676c5ba91d32f85c9449fe"
+    },
+    {
+      "file": "dream_demo/equipment/aggregation.py",
+      "sha256": "9c3274b8481d5edbbd21818273c6866737223188cd8f7cb76919a5f00d6c5624"
+    },
+    {
+      "file": "dream_demo/equipment/board.py",
+      "sha256": "235b5d72d2c5dc0ac981b9622d8a99b2d419caf2f175e9118b264f54e1539f26"
+    },
+    {
+      "file": "dream_demo/equipment/conditions.py",
+      "sha256": "e7274eadbb3940683adcd7d1e6195b57556181be3f434976456e9be1a8839483"
+    },
+    {
+      "file": "dream_demo/equipment/english_binding.py",
+      "sha256": "ef07543d6ee42fb163d4ddd3e0166936accb186783f9135fc9c6f56a96a21cc8"
+    },
+    {
+      "file": "dream_demo/equipment/events.py",
+      "sha256": "8abcf7cfc15df4c008a49699110ee01478982aebf1ff75cfd3c2cc434e1aa808"
+    },
+    {
+      "file": "dream_demo/equipment/expansion_runtime.py",
+      "sha256": "1c01254ace4a614f51ed9b411176634e715c24e214d6448dcf68de88c634cf55"
+    },
+    {
+      "file": "dream_demo/equipment/function_words.py",
+      "sha256": "8b2ab0eb65bc5f3decc795c8f611fb6c3917515e825bdc6ba52bcba621402920"
+    },
+    {
+      "file": "dream_demo/equipment/gear_light.py",
+      "sha256": "cc53fdde1432f93f97a939895e720b725438c6b3c853d25e1094affc2dc8e986"
+    },
+    {
+      "file": "dream_demo/equipment/gear_tools.py",
+      "sha256": "166cbb7a59c43b23fe19db0ce59f5abc3e24cfd947e7c65dd6c4976e69f11b24"
+    },
+    {
+      "file": "dream_demo/equipment/grammar.py",
+      "sha256": "ae1bfcfda3ef6e06459fd93fcd0ec77d91cf2e9c8f68ced6f0c2d3daac4ba8c0"
+    },
+    {
+      "file": "dream_demo/equipment/hospital.py",
+      "sha256": "61e5ed9fd54d82cdcd8300289ea8324080343fd565733f94b23c50ab825617a7"
+    },
+    {
+      "file": "dream_demo/equipment/icon_art.py",
+      "sha256": "369fec4c5b373438006a09d25104459c2544bf9880c6bea2d4ca9e437b00a388"
+    },
+    {
+      "file": "dream_demo/equipment/item_shapes.py",
+      "sha256": "a9d0ca0bc098a8db117bc3184b88dcfb6c1449ed483cdb62d3d5d34a1d2e0dff"
+    },
+    {
+      "file": "dream_demo/equipment/lexicon.py",
+      "sha256": "e13868990d5a7c77122c939eeaf8d746bbda2af82b6205847ead09f67f449ce5"
+    },
+    {
+      "file": "dream_demo/equipment/library.py",
+      "sha256": "c439ba9d261bf4fadec92063e9d1c3eabb402689c5ace77a92f82d53c761fa1e"
+    },
+    {
+      "file": "dream_demo/equipment/links.py",
+      "sha256": "c9415dfa5f9060405e1bc8e64de5fadc3c6ddc1d70845e54d63e0d1cfcf44f63"
+    },
+    {
+      "file": "dream_demo/equipment/migration.py",
+      "sha256": "7ca96303d5d53c0a9897f22cf5fedc72a07af5b6a2bc0b19453f7ef7f95e707d"
+    },
+    {
+      "file": "dream_demo/equipment/placement.py",
+      "sha256": "8f82fdfe6c48090ef1a354cacfecbc5fa1d836e79db227193b0b7d7b40ea59e3"
+    },
+    {
+      "file": "dream_demo/equipment/positional.py",
+      "sha256": "c877fec6fd09c0cfb51f3215172e22f1b58c968eab7f55d70a341510a9b21465"
+    },
+    {
+      "file": "dream_demo/equipment/positional_events.py",
+      "sha256": "702ac2bc275440e40ed64680e05cc3367b180404761969665bbd894c77d1cfd3"
+    },
+    {
+      "file": "dream_demo/equipment/projection.py",
+      "sha256": "150b4e35cb378ce8e856d4074ca7a08d0dd6fc040aa5e511a777d4c1106bae8a"
+    },
+    {
+      "file": "dream_demo/equipment/prose.py",
+      "sha256": "4d4eeec0fefbd32607da90460f2e47e59e893441fecd5f1d6a2e339841eb9726"
+    },
+    {
+      "file": "dream_demo/equipment/reading.py",
+      "sha256": "6c5830711feff3d93aea58a86cbb7e7c95d51dedec483debfeaedd2417fe7693"
+    },
+    {
+      "file": "dream_demo/equipment/relations.py",
+      "sha256": "b9dd74315cb7993ca8b92402609ac7c299a0e95aa8dfcbd9f973f7ccc825fc5e"
+    },
+    {
+      "file": "dream_demo/equipment/remaining_gear.py",
+      "sha256": "3113d2d20b7b913120556ddac6b702c65372c6c88fd78b9ea33876eed652cb9c"
+    },
+    {
+      "file": "dream_demo/equipment/repetition.py",
+      "sha256": "05a99f3702467951927d942cc6f620f8f7e29c5def30a0e13515287dbed8c293"
+    },
+    {
+      "file": "dream_demo/equipment/roles.py",
+      "sha256": "06a34728ed3a27e69b06e1051f0fda9ec81d81a74f0577563f7f712a84cf707c"
+    },
+    {
+      "file": "dream_demo/equipment/root_facts.py",
+      "sha256": "c979c38c7884b67ce698766e93588e41eb1f461f8425a4268b9b986385e30c47"
+    },
+    {
+      "file": "dream_demo/equipment/runtime.py",
+      "sha256": "b35d90ff9d2e71b285e31e9202ac3dca4ce26bbc87990eac20aec5bffde7a81f"
+    },
+    {
+      "file": "dream_demo/equipment/semantics.py",
+      "sha256": "e4203ad7a100d5006fd0cdf8d3b101b0abf4f82b3647362c5bac42da7aad4af3"
+    },
+    {
+      "file": "dream_demo/equipment/senses.py",
+      "sha256": "3450c5f0a991c908655b66d3a543fc7b9de9b3472780f77f5c0c368355d1b62c"
+    },
+    {
+      "file": "dream_demo/equipment/sentence_facts.py",
+      "sha256": "8e7b092ee679379461ec620e9aa1969ade723f992df3d3a24bf23ab241fcc493"
+    },
+    {
+      "file": "dream_demo/equipment/sentence_prose.py",
+      "sha256": "ab76abd4302ddbc7eac3d275c536d5310cff623a60ba97456fb58da5bc5f6da3"
+    },
+    {
+      "file": "dream_demo/equipment/shapes.py",
+      "sha256": "c73ab216f0e4193d7caab364b29143c30d8397ef473f26ff8ecb962e2d4bc7b5"
+    },
+    {
+      "file": "dream_demo/equipment/syntax.py",
+      "sha256": "e938e1bba3b3541d522f94c2a6a9deffff47f2fe52bc456fd637b84e7cf50789"
+    },
+    {
+      "file": "dream_demo/equipment/targets.py",
+      "sha256": "c56f8189240259e9b7cf54cbcc4bde0b2b378efc15cbedafed3e701769b34749"
+    },
+    {
+      "file": "dream_demo/equipment/tools.py",
+      "sha256": "451cb72801c4698f9b600c4808ff84f383d7147136610802c9ae2401654e88d1"
+    },
+    {
+      "file": "dream_demo/equipment/view.py",
+      "sha256": "88144902150c0bb3dbeebb233d4b345d26425405550c92774483b42ab604250b"
+    },
+    {
+      "file": "dream_demo/font_assets.py",
+      "sha256": "5e331f217edce9d1f6cc75bdd45ea47c9de52300c11c6a64daa182a2b97fdb70"
+    },
+    {
+      "file": "dream_demo/i18n.py",
+      "sha256": "38f4d42fed023bad8553cd4506b49d966eb80da6d1ab6f07b3261b28ddf5cbd0"
+    },
+    {
+      "file": "dream_demo/i18n_codex_en.py",
+      "sha256": "31ae8127b84eeac92815189002f6cff057a9015469b9750cc5f2ee7ff2cf24fb"
+    },
+    {
+      "file": "dream_demo/i18n_concurrent_gaps_en.py",
+      "sha256": "1bd1fdadd3f46410336f3461ad8fb6c4c00af9b07e1ce87311465821c9dd31db"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/__init__.py",
+      "sha256": "b6bb2f2e36f8c145866493bea3a13fa8348bef3c2633dcfda63e41067d5d449f"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/content_events.py",
+      "sha256": "9a30bf730aa0bf58b7d545d28cafec83aceaa1af06f38e8a089da1b67fac0225"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/content_extra.py",
+      "sha256": "cc535b07f371d2b4b6fbc9d16e7a349a7771362873cf5c2d0d8f14efe2bc3935"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/content_materials.py",
+      "sha256": "c106b918a9b504228a6177f65be1c90ec0bfd77dc48d7eb9ce081eae2dff6f1e"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/content_realms.py",
+      "sha256": "49960998fc32f5ef724525b8c98a6997215aa85b8a1d97e08629fa241b7f45b1"
+    },
+    {
+      "file": "dream_demo/i18n_content_en/content_tutorial.py",
+      "sha256": "2ea0630ad371506b8aec687af6a0f0e1ce0af276e3b70ebdf51c80f2655a21ed"
+    },
+    {
+      "file": "dream_demo/i18n_deployables_en.py",
+      "sha256": "967743628f6acd607805276683443c70f39d8a8d21a8bccc03ec4f121de81dbc"
+    },
+    {
+      "file": "dream_demo/i18n_elevation_en.py",
+      "sha256": "26297a7bcec6ec8199267c5c549247321f0f0f5163756c782c7cf4cc9a7a026a"
+    },
+    {
+      "file": "dream_demo/i18n_enemy_skills_en.py",
+      "sha256": "716bf0d9a12407b79d65b2746be5a0426b9f6a5d6f7d03bb5c4327fab8e04611"
+    },
+    {
+      "file": "dream_demo/i18n_epilogue_en.py",
+      "sha256": "bae06b4b9b10cfcc93872241db2b0defd96c5944c1aaaff3a45378b33fe50460"
+    },
+    {
+      "file": "dream_demo/i18n_equipment_en.py",
+      "sha256": "ece98209a83ce1f16f97805fbd22d948cb9a093d0fbc32464897e85724078eae"
+    },
+    {
+      "file": "dream_demo/i18n_expansion_gaps_en.py",
+      "sha256": "4a8bcb9773fc6084f0a28d75c198f09b1bea8c6df5114de92426f4f265989f19"
+    },
+    {
+      "file": "dream_demo/i18n_insight_memory_gaps_en.py",
+      "sha256": "68ffae1d2325f0623a973466b1ac1091503ac4fd4eed8a51a61433aa1820038c"
+    },
+    {
+      "file": "dream_demo/i18n_late_gap_en.py",
+      "sha256": "9672bc5ae7bf1047f99accb1e7b910786f5c67c460338e386b26a2b5c17fcbcf"
+    },
+    {
+      "file": "dream_demo/i18n_npc_gaps_en.py",
+      "sha256": "52c74ef44bf7b6e2f02fce1c437c6820eb3a75cd2afb282c7258afeb5820e685"
+    },
+    {
+      "file": "dream_demo/i18n_origin_course_en.py",
+      "sha256": "8e68b37d901919615a8d9bcb9c7ac501616f62ef6ef01906caae60723ed763b6"
+    },
+    {
+      "file": "dream_demo/i18n_plant_en.py",
+      "sha256": "5abb790d95ee1775a2466f7c5e6a666bbc1d224e7dbfaa8edf8f9c44ad12fc35"
+    },
+    {
+      "file": "dream_demo/i18n_puzzles_en.py",
+      "sha256": "98d9451f89a0c022bc942f0decc6ff0d610ecc75ca3de2ca7e72f8c5fc5434f2"
+    },
+    {
+      "file": "dream_demo/i18n_reactions_en.py",
+      "sha256": "bea752cf10e5a2e1d89972290f1bcafc76b9954cbbb2e3545808eec25c6ceaf9"
+    },
+    {
+      "file": "dream_demo/i18n_realms.py",
+      "sha256": "97b4323815ee8cdcd6362d85106b0e98fddb946b12982cb91b85a8a7d1efb14f"
+    },
+    {
+      "file": "dream_demo/i18n_stat_names_en.py",
+      "sha256": "9aa72653318847693119f22554ed5d121c884ebf6b8b77c2f1b11698ea599628"
+    },
+    {
+      "file": "dream_demo/i18n_surface_en.py",
+      "sha256": "c995ac838bab22a37294dd1d2b98c87585464793e1dbfbc3a1a7dda29003c8ce"
+    },
+    {
+      "file": "dream_demo/i18n_system_roles_en.py",
+      "sha256": "313fb4b04f06e5da2d9dcf0b0f5971ac1900e00180422c257013cb7ad5dac3b0"
+    },
+    {
+      "file": "dream_demo/i18n_tamper_en.py",
+      "sha256": "b1c72f5cc57a219fd0caa3b52edf7cf3603d1eea1bb8b7a49fdb9de77617cb35"
+    },
+    {
+      "file": "dream_demo/i18n_tamper_protection_en.py",
+      "sha256": "3f6371df69dd26d0aec75d764b0ff4bb102735610a2ca2840b73217c7e6d1b5b"
+    },
+    {
+      "file": "dream_demo/i18n_terrain_preview_en.py",
+      "sha256": "9082fc3c64ead9bb648b2f5cc87226f020e440f5794d115645376f3367908e84"
+    },
+    {
+      "file": "dream_demo/i18n_ui_en.py",
+      "sha256": "1e838c1c01973bd29bfec13f73e3a59e3efd307fe15268d065b2654868e8d1e1"
+    },
+    {
+      "file": "dream_demo/i18n_vaults_en.py",
+      "sha256": "23a92dff98273318b7c5d27c0e62d793b6396a93856f6555681988f8f0866443"
+    },
+    {
+      "file": "dream_demo/map_generation.py",
+      "sha256": "15a69c15c49d66676d21cbaf38f85b16192403c46fb5c9a8c20e6b867cf7aaf3"
+    },
+    {
+      "file": "dream_demo/mapgen/__init__.py",
+      "sha256": "d4b59198a4c6e50c0bd2de0477a7fbaae7f607b0fea86975b50c2439a79f4e06"
+    },
+    {
+      "file": "dream_demo/mapgen/doors.py",
+      "sha256": "1d63c7696c3bbab66cd1db572938b697683bac76ddc805ddf53d4baf0724e359"
+    },
+    {
+      "file": "dream_demo/mapgen/elevation.py",
+      "sha256": "eadd4d67e2dbea20c13c27c46b958af5c9a30da66a25d2168c4d0017a406de12"
+    },
+    {
+      "file": "dream_demo/mapgen/epilogue.py",
+      "sha256": "9f17fca955f6b60e87a8e237bf45a401f2bc336a79804b5ab93d4f8d0f81ae02"
+    },
+    {
+      "file": "dream_demo/mapgen/epilogue_paths.py",
+      "sha256": "3ce5e5863d1894bd6c047e4eb7dad369da8864d63aa937cab4f8de2ebe72f87f"
+    },
+    {
+      "file": "dream_demo/mapgen/forms.py",
+      "sha256": "9a1750b47d5b798093e8e155eb92b1ae178d87e529203a6536383d832005ae2b"
+    },
+    {
+      "file": "dream_demo/mapgen/layout.py",
+      "sha256": "8743fe402710e2f9f449ffae3865dc4232de025453cafffd5fea544d7b76f0d3"
+    },
+    {
+      "file": "dream_demo/mapgen/origin.py",
+      "sha256": "68f4a20f1a305e7c0af1512f1a952c0a409f4c99e6f19be67405c94900268879"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/__init__.py",
+      "sha256": "2035421d72338b12d8e05a095891c069ff31f479ce36d13f4b2fb5994a8d1332"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/base.py",
+      "sha256": "a6ffa830dcf40761f319a1165d364fc8298d0c4fd4e8d9a0a690593ebac2512c"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/loader.py",
+      "sha256": "67988da985b237505cc239b0c58ac96fb276b153bc0960aac2bf6c9796063159"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/post_fixed.json",
+      "sha256": "32453e270e260422141baea5c098fc072c6cfd5a56509d4c3c837097c92cceab"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/post_variable.json",
+      "sha256": "4ee884867c49d3719633194ed3bed2df9c50f5df105c4786ecbcc735ba455977"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/pre_fixed.json",
+      "sha256": "20fcc30d223de0cd5b4e2111f95d395b739fbcbbecbd1c6e1a20bf6276af5b89"
+    },
+    {
+      "file": "dream_demo/mapgen/vaults/pre_variable.json",
+      "sha256": "1515834470bf39a48c6ee24b1cad9f13f30c3344e961feacecaa1151aae698de"
+    },
+    {
+      "file": "dream_demo/materials/__init__.py",
+      "sha256": "ef7e086608f37bf956ff92f3e387d30c7cfd1bddc1f299cfc89d9bf6796adc92"
+    },
+    {
+      "file": "dream_demo/materials/common.py",
+      "sha256": "25dee5810dd3a7a62bc402187d70aea2f609a7f0c3a13eac013cfa7160b8ddd6"
+    },
+    {
+      "file": "dream_demo/materials/definitions.py",
+      "sha256": "a67d8fc652c4a68433f34a42de515afd1f8512d392a701cb02e04d3e5bce5c12"
+    },
+    {
+      "file": "dream_demo/materials/descriptions.py",
+      "sha256": "93aa136c4607a96a55e07b4ae32b54bb089e9488559ca468d0bbe4c107fc1407"
+    },
+    {
+      "file": "dream_demo/materials/floors.py",
+      "sha256": "a09f28981e29f77ccc9daf542e489731d96b8d4d84905a6c322d83b448731123"
+    },
+    {
+      "file": "dream_demo/materials/gases.py",
+      "sha256": "818d3faae180d2fc7c26897fdf42b8f77215e3b5564900ec6d8898dd8b546c27"
+    },
+    {
+      "file": "dream_demo/materials/library.py",
+      "sha256": "840eee1027585eef82472e7fa4885cc70d03d5ee87f78ad0002363b29db9e7f6"
+    },
+    {
+      "file": "dream_demo/materials/liquids.py",
+      "sha256": "65e5ba133e86efa941a75f13d1a9b8d3ef66a33f382a812f3f1d48bb1969e480"
+    },
+    {
+      "file": "dream_demo/materials/logic.py",
+      "sha256": "31955e5bebbf8a1aadee764b2959b46a384faba990797794cf98819ebb191739"
+    },
+    {
+      "file": "dream_demo/materials/plants.py",
+      "sha256": "84591c62bf90e5a0002a80492648d2f1a99bb4efbd01f0d8d52e82b7f0a31b85"
+    },
+    {
+      "file": "dream_demo/materials/portents.py",
+      "sha256": "26f6660139c410aca2ba0a03eba5392a0642dbfaf3029058ac7b953761e3522c"
+    },
+    {
+      "file": "dream_demo/materials/reactions.py",
+      "sha256": "c17810f70af6c86d6f1f077d20f820ba4e394b3095b6084e2de80b89cc7ff9b1"
+    },
+    {
+      "file": "dream_demo/materials/walls.py",
+      "sha256": "e34da2cab4c6093ac4a49a6b79e388a7bd87a1246025e2db1a6b17a75d2aa4a4"
+    },
+    {
+      "file": "dream_demo/menu_pages.py",
+      "sha256": "4801622af5b482cb5ebe795e6037b0a3146bebe30e1d626831f90bceca78c582"
+    },
+    {
+      "file": "dream_demo/mouse_protocol.py",
+      "sha256": "7e1989ecc759659f2dae938bb5921c87546d3cb5b32afb19b5824888d6731c2f"
+    },
+    {
+      "file": "dream_demo/music.py",
+      "sha256": "6a8dbd53dc608b43adabf33b7e55387657a3a84e06bd38e96b52546263e4548d"
+    },
+    {
+      "file": "dream_demo/perf.py",
+      "sha256": "9980b665cff291a63882825aac8b2ed60a44849e43a52cd6e0872fa64805441d"
+    },
+    {
+      "file": "dream_demo/persistence.py",
+      "sha256": "9506b8c245f0d4d5f977e2924a21cd3c86fde371a454874a945b2304d4abf934"
+    },
+    {
+      "file": "dream_demo/posix_mouse.py",
+      "sha256": "45436ba256802fac1682622fa2ea35e133d79e2a975cbfb53f84a61a6cce6e00"
+    },
+    {
+      "file": "dream_demo/rarity_colors.py",
+      "sha256": "8c9c9790f6cbeca24c1507f7f3dfa1c824320bc2cccce403d5a869a38888d03f"
+    },
+    {
+      "file": "dream_demo/symbols.py",
+      "sha256": "502eca35ed95a76dfb591f50363b0a5067d375c534cd46dce5d944b994dbf418"
+    },
+    {
+      "file": "dream_demo/system_locale.py",
+      "sha256": "a6f4a15996af3a2f29c413d8427731d2ae83b3fe12b0142bed6f0c269d6decd4"
+    },
+    {
+      "file": "dream_demo/terminal_keys.py",
+      "sha256": "9b8a1f55beb6cdc836fb1ba860fd6420ef8b0b04bb5afeb1c853fce41dea9a4c"
+    },
+    {
+      "file": "dream_demo/terminal_launch.py",
+      "sha256": "76f633cccfbe9932e5311ae1be467ddd9e15ac96eb3cc09059b8034b8c03c492"
+    },
+    {
+      "file": "dream_demo/ui/__init__.py",
+      "sha256": "7ea29bc6b151a651b76de71b9aa561d3c849a039a4e088f7166340731d19c009"
+    },
+    {
+      "file": "dream_demo/ui/_native.py",
+      "sha256": "e7f64b040797294cd749a37b82d80cc0986575feaaec02bfeabb77eefcaf5d2d"
+    },
+    {
+      "file": "dream_demo/ui/_native_image_plane.py",
+      "sha256": "f356d634c057665beae0e68daee75787ba7860fac19315f062f321d0711a4319"
+    },
+    {
+      "file": "dream_demo/ui/_native_map_scene.py",
+      "sha256": "8a30fe68e682566fba93926bb6d504a4d759f62941e218d0629eb9d101f0c55f"
+    },
+    {
+      "file": "dream_demo/ui/_native_plane_ipc.py",
+      "sha256": "374da5b4e84172e79da73a3cae348fd34ca2434ef4197b3a985cef9e693e94fe"
+    },
+    {
+      "file": "dream_demo/ui/_native_plane_worker.py",
+      "sha256": "8f1876b89afde692dd809d8c2cd5063fce21a429872d125162507f2b3f22a0b9"
+    },
+    {
+      "file": "dream_demo/ui/_wide_compositor.py",
+      "sha256": "43fe4d00edc75c920a58861d9b0b4a9cd8ea9c4bf19c42ea7331f7f05020cad3"
+    },
+    {
+      "file": "dream_demo/ui/aiming.py",
+      "sha256": "f435358aa9c713863dd452f2f5996d7ff6a539ed8d0c854d212bb0d5a20e4038"
+    },
+    {
+      "file": "dream_demo/ui/anomaly_intent_marks.py",
+      "sha256": "37a76848905ff980caf360e054bc4ae8938a2fcecc5fbec1f45eee8bf715e633"
+    },
+    {
+      "file": "dream_demo/ui/app/__init__.py",
+      "sha256": "f10d21925c5bf688323ce191cb567280d7a09e00d7d5930dbbef8f0bb5f1a742"
+    },
+    {
+      "file": "dream_demo/ui/app/app.py",
+      "sha256": "42c1b11254c3e6151e512069ab59c3872caaa6a6fe9b527b4d4edf678cb04438"
+    },
+    {
+      "file": "dream_demo/ui/app/board_editor.py",
+      "sha256": "cd653f5415f7ae27c95389be9b3452200100e7e19824fe743ca075d703485f1b"
+    },
+    {
+      "file": "dream_demo/ui/app/css.py",
+      "sha256": "d9b2d1401843c47f04924728e608541da92ee959d56b6ec99c094b259501ad42"
+    },
+    {
+      "file": "dream_demo/ui/app/footer.py",
+      "sha256": "00cd9a6e993052ba28ebceb8f6842dfda38b437ef95093f4a8acdd73fcf0d689"
+    },
+    {
+      "file": "dream_demo/ui/app/fx_kernel.py",
+      "sha256": "7faaaffa9805eb20732fd8df19537b9c8b0c816bb562702940c0e2188c1b8f4b"
+    },
+    {
+      "file": "dream_demo/ui/app/navigation.py",
+      "sha256": "62afb60df8fb44ae228248cf87f155241be3eb2007813336db2d2c8d95353f6b"
+    },
+    {
+      "file": "dream_demo/ui/app/panels.py",
+      "sha256": "4931c5c04f136222f12cc73429b57aa32490a8569f4e739bd3d3d3cbe30db873"
+    },
+    {
+      "file": "dream_demo/ui/app/save_prefetch.py",
+      "sha256": "eb166848e35875f0b63807c7272288beabdfb0122cda16bf479d9134957c3b1e"
+    },
+    {
+      "file": "dream_demo/ui/app/session.py",
+      "sha256": "1984febbc06f99049c11e9a6d500cb361220b81c5e9ae9c8f9675dbdf2693aef"
+    },
+    {
+      "file": "dream_demo/ui/asciimatics_bridge.py",
+      "sha256": "6f10c28674ae03ac44b8f5c938371f280759175c962f41acd49cec765c5e1268"
+    },
+    {
+      "file": "dream_demo/ui/board_editor.py",
+      "sha256": "3189f10108facd7c2692ed275a0b27a5a61938b78a229683a0e98d91fc65d813"
+    },
+    {
+      "file": "dream_demo/ui/border_feedback.py",
+      "sha256": "f4a3764543ef7a9835024ea4ccbbda7206d1df421497cdf8a5f603eb4e433df7"
+    },
+    {
+      "file": "dream_demo/ui/border_motion.py",
+      "sha256": "6b13c19c186934d96b6367585f64ea122338b51286aa30495b955ad08ec145ba"
+    },
+    {
+      "file": "dream_demo/ui/border_patterns.py",
+      "sha256": "8e09b75cf09286671f21f31d4f971e95b4c77bdccaafb0029812dd15c648428d"
+    },
+    {
+      "file": "dream_demo/ui/cast_fx.py",
+      "sha256": "4ddd668a8f676ac7c73413bfdab0da08af8505b2f58e2468088f498dc6579996"
+    },
+    {
+      "file": "dream_demo/ui/cast_visuals.py",
+      "sha256": "12bc18549be507b7bb637db63fbd5baacd115937f2b33bc5ec69cb8c2178f3f6"
+    },
+    {
+      "file": "dream_demo/ui/cell_detail.py",
+      "sha256": "93e5da05b5575e5d3b296182a0fe6722eed680f731313b75068109b74f044c9d"
+    },
+    {
+      "file": "dream_demo/ui/cinematic_atmosphere.py",
+      "sha256": "96ab2242b840315fbbe2b8517eeb927a458d6ad026bcb782431ecb1289a83f35"
+    },
+    {
+      "file": "dream_demo/ui/cinematic_frame.py",
+      "sha256": "f1d76913e0d68984224d58a880d433d44d5d7362a33694587bc83308d2a64754"
+    },
+    {
+      "file": "dream_demo/ui/cinematic_timeline.py",
+      "sha256": "cfb9a56066c2521e3adfa50effe34dade1a5c446ff400783a32810a3e846fbff"
+    },
+    {
+      "file": "dream_demo/ui/controls_help.py",
+      "sha256": "af42b0eff0c8a119fe001189855e582ffc8933d60824d71e154e563c94e01549"
+    },
+    {
+      "file": "dream_demo/ui/debug_panel.py",
+      "sha256": "0efba28bd84e5c77fa23ad10f6725b84b39bb344b9e93c139202ddf1faef33c6"
+    },
+    {
+      "file": "dream_demo/ui/deco.py",
+      "sha256": "8476552a73223962bb7a84e4d37ffc2cbc1c0c46b91cbee09f872fcad5a7789e"
+    },
+    {
+      "file": "dream_demo/ui/dream_types.py",
+      "sha256": "45de295078d1ff547f852c9a11357c82b75789b5a1abdc2511048c2faeb0fced"
+    },
+    {
+      "file": "dream_demo/ui/effects.py",
+      "sha256": "51bb18f1e748a5b528e50d04b4d01566dbaefaad60a6d6da4671c85d21ad9876"
+    },
+    {
+      "file": "dream_demo/ui/elevation.py",
+      "sha256": "8f7c75a8f2106e61f46b4125151ee0c3826f7d9cd5ec88f8b8c231d11280b570"
+    },
+    {
+      "file": "dream_demo/ui/equipment_art.py",
+      "sha256": "6c3ad2916bd1f25c34306a6400a549941e47fed43487ab777a732e7bcef85db0"
+    },
+    {
+      "file": "dream_demo/ui/facility_visuals.py",
+      "sha256": "2193c340564aef9e22f1bfb5d0af1b38ff97ccf7e30f36207e5e8650351e1dfa"
+    },
+    {
+      "file": "dream_demo/ui/fast_static.py",
+      "sha256": "a438b1799fd503c01b438679b0dca2f66d4fb7d2a8bd183f0ffddce5b7520911"
+    },
+    {
+      "file": "dream_demo/ui/firing_presentation.py",
+      "sha256": "e3fdb566600620ca4954661aebbd7bb41b6d24af863de84ca94220da60d19799"
+    },
+    {
+      "file": "dream_demo/ui/floating_toast.py",
+      "sha256": "46ab14bf1abb64e1bf5cc719172883696daa2c973789bf7af7f2be0a1e19efaa"
+    },
+    {
+      "file": "dream_demo/ui/frame_geometry.py",
+      "sha256": "c53fa952056e4c426528934c11bb1a60765a8cef7ee4e72cf242218aea9d0ec2"
+    },
+    {
+      "file": "dream_demo/ui/fx_diagnostics.py",
+      "sha256": "f2d40666e87af1d61748893254bc33f5452d5a434a9c60326c87b0de708b4dba"
+    },
+    {
+      "file": "dream_demo/ui/gas_status.py",
+      "sha256": "a0fb9fd0dbbdf5672733424299ce8df325770bf2518828854346a027d8590229"
+    },
+    {
+      "file": "dream_demo/ui/glass_button.py",
+      "sha256": "8403a788908f3e62c50f9e12a95b413606602b69a2db131b0a6c781cc72841ba"
+    },
+    {
+      "file": "dream_demo/ui/glyphs.py",
+      "sha256": "60af2f36af958402ffc6e97942c20569fb291bea99b97ea3ba89f13bc2677125"
+    },
+    {
+      "file": "dream_demo/ui/graphics.py",
+      "sha256": "8027745329e6f45f528daa4f1f0957b16a40296a00da07151de1eb84557a1045"
+    },
+    {
+      "file": "dream_demo/ui/home_particles.py",
+      "sha256": "dd163a9d4ed05ec6dfc38e778f278a97f7de34377241041f08c63a44b486deb7"
+    },
+    {
+      "file": "dream_demo/ui/home_scene.py",
+      "sha256": "327ba64ac6a0b1594ae2867fa927f1788e8a6062c0a90c6920fd12b3b76b17fc"
+    },
+    {
+      "file": "dream_demo/ui/home_title.py",
+      "sha256": "f5457a0e656883704f905687ed48f66d6aacd42c5c6df5e502279a4fabd936fb"
+    },
+    {
+      "file": "dream_demo/ui/image_preview.py",
+      "sha256": "07dcf584229f32fefc82b2ee51a7b249c6333cd935155f0cc4e6b43f3058430d"
+    },
+    {
+      "file": "dream_demo/ui/input/__init__.py",
+      "sha256": "20d2e229b44cbe7488dd258c925fdc0abde687a909697e26d83da78bb077c67d"
+    },
+    {
+      "file": "dream_demo/ui/input/context_actions.py",
+      "sha256": "3e1b2ace69ad3963d91c7881b9a2aa6f1f35ceb11b17c60c4672fe54d5820125"
+    },
+    {
+      "file": "dream_demo/ui/input/key_routing.py",
+      "sha256": "9483f15924df422bae5ea5d6c50eb53cd6eb57f4e7c9b666295147ccff800312"
+    },
+    {
+      "file": "dream_demo/ui/input/mouse_routing.py",
+      "sha256": "378f0a6b30bf2dd81250717042a190e07335c4a09456d81352b58372f554a031"
+    },
+    {
+      "file": "dream_demo/ui/layer_info.py",
+      "sha256": "acc8e584253f2b32ea6a2d00a3e92a8367516346950c6fef66501693c1dceb32"
+    },
+    {
+      "file": "dream_demo/ui/layer_observation.py",
+      "sha256": "8d015fb07531c320029eb9c92d88d90b910bf9c981da139eb0a9a42707125b5a"
+    },
+    {
+      "file": "dream_demo/ui/left_event_log.py",
+      "sha256": "ffcb616e38a10205a4109c9e8e9c290287001bc3223d359c2f8556faea94a807"
+    },
+    {
+      "file": "dream_demo/ui/live_map.py",
+      "sha256": "2072024353761f40dedba81876c0e875dd200e2da3580ed323ad446d37bccc0b"
+    },
+    {
+      "file": "dream_demo/ui/map_display.py",
+      "sha256": "f8ebd6350dcea471a6ee36e223d1381acd970fcfacfb5c387e77bfc0e98f6c0f"
+    },
+    {
+      "file": "dream_demo/ui/map_display_screen.py",
+      "sha256": "666bcf554d54d2079ed49093b0ec2108aee2475eaf9b457497b1705aa5be908b"
+    },
+    {
+      "file": "dream_demo/ui/map_image.py",
+      "sha256": "409c0a3c57980ead8eda561d06dd890b2e54024372153cba23133dfbb924e117"
+    },
+    {
+      "file": "dream_demo/ui/map_image_transport.py",
+      "sha256": "4f12988a6b023c3774bb4469c09ddce59fa81ed359e149108c27ca7bae5164ea"
+    },
+    {
+      "file": "dream_demo/ui/map_particles.py",
+      "sha256": "c6cfcc8f4c3c6183ca088bfcbea052bba96dec4247d9f3626c9eeeaffefddffd"
+    },
+    {
+      "file": "dream_demo/ui/map_presentation.py",
+      "sha256": "fa7e985527c2e4f6315af10bbaf3712acc63948bf654919781b13becbef431c4"
+    },
+    {
+      "file": "dream_demo/ui/movement_presentation.py",
+      "sha256": "2eb75e5918f37a897e2c6e95dc39dc5b7a944bc5ca7b628276a8c439f08dc7fe"
+    },
+    {
+      "file": "dream_demo/ui/movement_timing.py",
+      "sha256": "fc664a513babe3a2837359c8eab1d6080a1ba7e954ef92c6133b30532da2d7de"
+    },
+    {
+      "file": "dream_demo/ui/navigation_labels.py",
+      "sha256": "6290ab96251edb90302fa428670c16fb31c7d3ca7c978cc506ad31e3e5b5d9bd"
+    },
+    {
+      "file": "dream_demo/ui/newgame_options.py",
+      "sha256": "b796feef925dcad6f017a00824d37e259b18e9740a04cb63b2ed7d93f2422c3e"
+    },
+    {
+      "file": "dream_demo/ui/observation_marks.py",
+      "sha256": "3671d274215b1a1964c352b1aeda622ff508c0eae15bd90f63df59d44984820a"
+    },
+    {
+      "file": "dream_demo/ui/ornament_frame.py",
+      "sha256": "28c53c5e864a43b9998c84f39067a65e6705c1db7aa20ffc398d81e1e926e5a2"
+    },
+    {
+      "file": "dream_demo/ui/panel_fields.py",
+      "sha256": "7faf649ae70a2dfcc8e37a2a1458381daf8cb21dfb9923352d02d62ce257decd"
+    },
+    {
+      "file": "dream_demo/ui/panel_shortcuts.py",
+      "sha256": "4003f29c2e775ad9f4582eb220537b475a21f05b5acc572dbe9e78fcdb2b2c9f"
+    },
+    {
+      "file": "dream_demo/ui/panel_typography.py",
+      "sha256": "3f64087b8d4c78b297712025a7b4eea0a83bfae2a9d1abe691e5aada895819bd"
+    },
+    {
+      "file": "dream_demo/ui/panels.py",
+      "sha256": "35bc511db2e775e855e5599c3cac6e207e6a2acd5c6a6f5c94bc3d6f1643aea9"
+    },
+    {
+      "file": "dream_demo/ui/paper_zones.py",
+      "sha256": "b53fb715afd0bdecdcfd0ed7e2ec88748800c074f171ebc337a60f2726789b6f"
+    },
+    {
+      "file": "dream_demo/ui/projectile_styles.py",
+      "sha256": "19f81993e1e89037d5b77277e9cc95dff0413fbeb122939a75941219815303cf"
+    },
+    {
+      "file": "dream_demo/ui/qol.py",
+      "sha256": "e8cd6530714e5492714af1f3c57da54c588efd8e6c502dc75e326be0f129a10d"
+    },
+    {
+      "file": "dream_demo/ui/raster_kernel.py",
+      "sha256": "df92b5a6319cf74e53a47642f2d4d75c87e01c9421d4a3b393b6f28504416d36"
+    },
+    {
+      "file": "dream_demo/ui/realm_borders.py",
+      "sha256": "a2ee1a508422df064c17763ce7d9f07b951c38b9cd144f38e01e57f7877153bd"
+    },
+    {
+      "file": "dream_demo/ui/region_themes.py",
+      "sha256": "0cb40fc5c181d2c6aad913c4f418e7ad235dfcd59abbdfbe4a607b7640df3709"
+    },
+    {
+      "file": "dream_demo/ui/render.py",
+      "sha256": "f318910266b286016b5505118d0b4975dccb0a268fbc823e9344a555753ce16d"
+    },
+    {
+      "file": "dream_demo/ui/self_audit.py",
+      "sha256": "65306eac670346788f046d719de25251e6d4bb7acdcaf0f21f18f54a83fa598a"
+    },
+    {
+      "file": "dream_demo/ui/sentence_writer.py",
+      "sha256": "e188f11d723235814d0398a4864ffee3433360e0d4ce8d509a8966be254c0c5d"
+    },
+    {
+      "file": "dream_demo/ui/settlement.py",
+      "sha256": "eaae4b733337798b27446bf000d3ea97ba1d46cfec8c42fb4d5885c33ca6d35b"
+    },
+    {
+      "file": "dream_demo/ui/sidebar_lock.py",
+      "sha256": "3484721978e408557e1a84c1824938e35c5efbf4ea9c8ff357d634263da358d5"
+    },
+    {
+      "file": "dream_demo/ui/sidebar_management.py",
+      "sha256": "ee5916bf9739a50be8336314d56c2ae357420a64d2db944a0bee86b7e8b28fc4"
+    },
+    {
+      "file": "dream_demo/ui/sidebar_models.py",
+      "sha256": "27b0543aa9d1d812083e8bca3f470bef32aca23a9d8235c3c5cc217b872021e9"
+    },
+    {
+      "file": "dream_demo/ui/sidebar_workspaces.py",
+      "sha256": "28d94507725f74856fa31b113a15a3fe59f3efd5aaa89b6122bd58d6082939ad"
+    },
+    {
+      "file": "dream_demo/ui/signal_status.py",
+      "sha256": "93da636c6afe5dd4519afceeccb7502c058c03097e9e4546fa4af2fc02fab247"
+    },
+    {
+      "file": "dream_demo/ui/sound_ripple.py",
+      "sha256": "f106be788792477739c243e55470105aa9fe8892ee0d7572a247917f9290eb16"
+    },
+    {
+      "file": "dream_demo/ui/static_updates.py",
+      "sha256": "401cc0fed86fee918e64287e210c7e50ed01a7d595d3fbd20bde2a2332dc638a"
+    },
+    {
+      "file": "dream_demo/ui/styles.py",
+      "sha256": "550abe14f7dd57ae56c8e48be58272aa5c8373210221b8258eb0837850682af5"
+    },
+    {
+      "file": "dream_demo/ui/tamper_animation.py",
+      "sha256": "f56fe0ceaf2d5653fd9e0da18a87811268a552325a20fd2b287aa87abaf3df81"
+    },
+    {
+      "file": "dream_demo/ui/tamper_host.py",
+      "sha256": "40ee1b8d2f97bca7ca2cfc6feb79db0e11ea0062e1c0953db22ca675e0fc160d"
+    },
+    {
+      "file": "dream_demo/ui/tamper_layout.py",
+      "sha256": "9d0f5a0018486caf6fd4df2d5d6188130a699f614a395b29647bc889c74a277b"
+    },
+    {
+      "file": "dream_demo/ui/tamper_presentation.py",
+      "sha256": "bc663bdd9f6ddc4336129c7ded2656ac21111ff3a71b478e03e786c843a17711"
+    },
+    {
+      "file": "dream_demo/ui/tamper_world.py",
+      "sha256": "12785c223b1bf837f0a7811d522efcf0beb2f6c37188864375a27a063b546909"
+    },
+    {
+      "file": "dream_demo/ui/tampering.py",
+      "sha256": "5eaef0e4b2febd545b6bedccfe5af8cba1e015367f58daa758e181068445cc70"
+    },
+    {
+      "file": "dream_demo/ui/task_journal.py",
+      "sha256": "0abdf8d69f27fa3457d1afc94b675c69d31171e9033df4d3ea8e845c8a21932c"
+    },
+    {
+      "file": "dream_demo/ui/terrain_preview.py",
+      "sha256": "084cbbfed60eb3d75797534700b0b7afbaf22ec3763d681225c4b81924aeb526"
+    },
+    {
+      "file": "dream_demo/ui/terse.py",
+      "sha256": "488596a8d604cd334212be8726cf998b8613439710537bbf2e9bacd941a4669c"
+    },
+    {
+      "file": "dream_demo/ui/transition.py",
+      "sha256": "639fc91fd9a1a4a0e74ecd8ebaea7aaf53f665f2faa99b79c45de3a64c8caca8"
+    },
+    {
+      "file": "dream_demo/ui/tutorial_card.py",
+      "sha256": "36e983b3011091f43333bc746bff78211d655385b9a9702cd350a510d059d241"
+    },
+    {
+      "file": "dream_demo/ui/tutorial_coach.py",
+      "sha256": "920bee92006fcdf4def1c467b1dd174651ef8822512e89b297d9d017a34a4a3e"
+    },
+    {
+      "file": "dream_demo/ui/tutorial_cues.py",
+      "sha256": "fb019f6eaf5719b80bffc13dc2a503d3bfaefcbdac996bb77211e347553299e0"
+    },
+    {
+      "file": "dream_demo/ui/tutorial_direction.py",
+      "sha256": "2b991e4f0ea9ea80a465677a5ad0827e4782e556f05d747caa4ca0c258507188"
+    },
+    {
+      "file": "dream_demo/ui/typography.py",
+      "sha256": "8d36f2387db36e908a3d9ff8fdb7133834f3e97f2ed4d0fddf04151e45905dca"
+    },
+    {
+      "file": "dream_demo/ui/visual_compositor.py",
+      "sha256": "ccbb205bd264f69251c568186b45ce194e9b4635043f3d6e236c23d784643354"
+    },
+    {
+      "file": "dream_demo/ui/visual_event_adapter.py",
+      "sha256": "b6f175bb147250cb177d274d3aacd4431ed365347006adaa774479dbccf06e5f"
+    },
+    {
+      "file": "dream_demo/ui/visual_frame.py",
+      "sha256": "ab1af1bed4e57ac6ab6ccf211ad8ea7079476d9cd343ce1855d6ce2e8d607eaa"
+    },
+    {
+      "file": "dream_demo/ui/visual_policy.py",
+      "sha256": "72a8b8b469523451aa29314802a2321ea2cd5401289393df717e85d0e73990dc"
+    },
+    {
+      "file": "dream_demo/ui/visual_primitives.py",
+      "sha256": "d86ab6335594c3042274d40d07cb166405000e357f8d6c2b7be3f5d1fd19b1f5"
+    },
+    {
+      "file": "dream_demo/ui/visual_semantics.py",
+      "sha256": "0aa930b34a8fd6c8bfbc17e6e772df0d8553eeee5224221dbe1a24fc0b2592dd"
+    },
+    {
+      "file": "dream_demo/ui/visual_timeline.py",
+      "sha256": "1dd48a11a9fa92d822212287c94892d7c7e867f17a02f736d52c0e5dd91a2192"
+    },
+    {
+      "file": "dream_demo/ui/widgets.py",
+      "sha256": "6ef46293d9d3725b8cbfb39b43e567f48d54f3eaa19f886c4f0ce89da038f272"
+    },
+    {
+      "file": "dream_demo/ui/world_renderer.py",
+      "sha256": "385f1a590138d853d383750617daa5940000f52f21c1bfe0c0cf5d941061c86d"
+    },
+    {
+      "file": "dream_demo/user_config.py",
+      "sha256": "669f60b7ed15cf3d3cf9fd623ed5c65c31ac76f4b928a0762aac38832056714f"
+    },
+    {
+      "file": "dream_demo/wezterm_effects.py",
+      "sha256": "16a02980eb750e2ab5c3a12d0921adf2e3aee9dfce0907d6a044289045b00f89"
+    },
+    {
+      "file": "dream_demo/wezterm_setup.py",
+      "sha256": "14e97c078dd3950a01ecccf1ee5ce66db50ae63f6db6c31eb22ca2c625df6c1d"
+    },
+    {
+      "file": "dream_demo/windows_ime.py",
+      "sha256": "a95d6b5aadd01f47ac0a3574712eeb729392ba75fabff96a2365cb75402f6c13"
+    },
+    {
+      "file": "dream_demo/windows_mouse.py",
+      "sha256": "3b565fb6019e615c2b8987e103161f327a263a11316053a5a30b035c185edaa8"
+    },
+    {
+      "file": "dream_demo/world/__init__.py",
+      "sha256": "17fd74e74bcd9e0124c5a3f4f33df3c4e382dc9086b004a4c7b1220ee7a4a582"
+    },
+    {
+      "file": "dream_demo/world/facts.py",
+      "sha256": "1c14316509af73aece8de54ac851d72250f11206e8938948d51e1511d58f0c23"
+    },
+    {
+      "file": "dream_demo/world/ledger.py",
+      "sha256": "1118e668e8c07764e7ecde56cc6171868cfcdb15fdf43d458caf974fe1aa957e"
+    },
+    {
+      "file": "dream_demo/world/relations.py",
+      "sha256": "5be4cdd54eab03036fea1b35c83805065de7d135ee0e61647653878c5bf639d5"
+    },
+    {
+      "file": "dream_demo/world/scenes.py",
+      "sha256": "a13b784d0a32d52fdb972e074ef813e5bb60e3e12b601e880be583df5f599816"
+    },
+    {
+      "file": "dream_demo/world/tasks.py",
+      "sha256": "f140b495143c0bb2ff52119db014f20026cdf56b841d7939f7f38ee9c9a40311"
+    },
+    {
+      "file": "dream_demo/world/transactions.py",
+      "sha256": "b412ca72a86c2be37b0b78ae57693f6828203707087d186f5727bdca731425ae"
+    },
+    {
+      "file": "dream_demo/world/travel.py",
+      "sha256": "8b275ede845f815b2542900413af5824894fcb37ff7b43f90a3eaae38ecade21"
+    },
+    {
+      "file": "launch_game.py",
+      "sha256": "d197c2f2a05a7307180c17c002145e81d315e186025f243c99404cf37833e389"
+    },
+    {
+      "file": "requirements.txt",
+      "sha256": "b26708022401049a46c39c30a084416dd3e3022e65c1dd6e1e96833ff39f03ee"
+    },
+    {
+      "file": "run_demo.py",
+      "sha256": "6f3d0fdb40a1699d85f4830603110f132ab3f27cf24cccbabab0989fa4642bd4"
+    },
+    {
+      "file": "scripts/build_cython_ext.py",
+      "sha256": "aefec20116bc007412b6b63464f18c989959a54879989947ef4465d66c0726c9"
+    },
+    {
+      "file": "scripts/build_interface_font.py",
+      "sha256": "2386347d539870298c43a0c8030e59c3390c0cee490825ea7a1b19bba00ca86a"
+    },
+    {
+      "file": "scripts/build_portable_bundle.py",
+      "sha256": "e4b94c286c5e5134d3476bcd5fb6984fed2d68b0f726adef6e4f3181a62e9627"
+    },
+    {
+      "file": "scripts/build_serif_mono_font.py",
+      "sha256": "af692f49917c656e762d2279837b78362f4bfde8c217d72b969244ac4caf144a"
+    },
+    {
+      "file": "scripts/build_song_reading_font.py",
+      "sha256": "3cb15513d35abd7772dcaad9a9eb8b177f6ab013454d2fb2c0a27e5d42f702b3"
+    },
+    {
+      "file": "scripts/build_unified_game_font.py",
+      "sha256": "b70f2d3124c291fab8f515801935a7a5c3df6dfd3334557696f20f39e4d809c9"
+    },
+    {
+      "file": "scripts/circleci_macos_release.py",
+      "sha256": "45b46a9d446cdfeeae97e77ddad9637b29a90ba4180155bbd8a3151a18394b56"
+    },
+    {
+      "file": "scripts/prepare_portable_terminal.py",
+      "sha256": "a87ab63bfbdc13a475bdf2f6891aee6fbc77a191fccf24f35cb429e0daaada2a"
+    },
+    {
+      "file": "scripts/verify_emoji_release.py",
+      "sha256": "f171f20fe2184cc02a0c6f4b52f3ba9f509419531183c1c1e80a1b862008778a"
+    },
+    {
+      "file": "scripts/windows_bootstrap.cs",
+      "sha256": "4726fb8277b617a91bc32c63cd7368ae0cbeb706c1681ce27bfd0e10c9aa6655"
+    },
+    {
+      "file": "\u68a6\u5c42\u5f02\u8c61\u4e3b\u52a8\u6280\u80fd\u5f00\u53d1\u8868.xlsx",
+      "sha256": "5065eef10e2287bc559b774c7b9e4dea57e9a8149e348086f841707b78f54be0"
+    }
+  ]
+}

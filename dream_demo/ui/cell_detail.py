@@ -136,7 +136,7 @@ def display_identity(state: Any, entity: Any) -> tuple[str, bool]:
     from ..core.map_scene import actor_display
 
     name, _icon = actor_display(state, entity)
-    return str(name), str(name) != str(entity.label)
+    return tr(str(name)), str(name) != str(entity.label)
 
 
 def integrity_bounds(state: Any, entity: Any) -> dict[str, Any]:

@@ -43,10 +43,16 @@ version 3 only**（SPDX：`GPL-3.0-only`）。完整且未经修改的许可证�
 字体构建工具的代码许可与生成字体的许可是两个问题；运行 GPL 构建工具本身
 不会将 OFL 字体或第三方图标改为 GPL。
 
-`DreamStrataUnified-Regular.ttf` 是混合许可的研究候选，**尚未完成物理合并后的
-许可兼容性核查，不作为已批准公开分发的字体**。现有构建会复制整个字体目录，
-所以“不是默认字体”不等于“不会进入发行包”；首次公开发布前必须修正发行内容，
-或完成替换、额外授权与许可复核。不能把它直接声明为 OFL 或 GPL 后放行。
+`DreamStrataUnified-Regular.ttf` 是物理合并字体，**2026-10-27 复核后可以随发行包分发**。
+合并来源为 OFL-1.1（Noto Serif SC／Symbols(2)／Math／Serif 系列、Victor Mono 与 Noto Emoji 轮廓）、
+MIT（Phosphor 派生 Interface Icons）、Apache-2.0（Material Design Icons 派生 Material Icons）与
+CC-BY-3.0（Game-icons.net 派生 Dream Icons）；四种许可都允许合并与再分发，
+且上游许可文本与 14 个上游字体名称表**均未声明保留字体名（Reserved Font Name）**，
+产物已整体改名为 Dream Strata 系列。合并字体整体以 OFL-1.1 分发，其中嵌入的
+MIT／Apache-2.0／CC-BY-3.0 轮廓各自保留原许可与署名；OFL 全文、上游版权声明、
+NOTICE-MDI、逐项 Game-icons 署名与修改说明均随字体目录分发。
+逐源哈希、cmap 并集与复核命令见 `assets/fonts/UNIFIED-LICENSE-NOTICE.md`
+（工程与许可条款判断，不替代法务意见）。
 
 ### 品牌和来源
 
@@ -100,7 +106,7 @@ This project uses `GPL-3.0-only`; it does not automatically authorize future GPL
 
 `.wezterm/fonts` contains copies of font resources. Each copy retains the license of its source font; its directory does not make it GPL-licensed. A font-building tool and the font it produces have separate licensing considerations. Running a GPL-licensed build tool does not by itself relicense OFL fonts or third-party icons under the GPL.
 
-`DreamStrataUnified-Regular.ttf` is a mixed-license research candidate. **The licensing compatibility of its physically merged content has not been fully checked, and it is not approved for public distribution.** Existing build scripts copy the entire font directory: being non-default does not mean the file is excluded from a release. Before public release, correct the distributed contents or complete the necessary replacements, additional permissions, and licensing review. Simply labeling it OFL or GPL is not a resolution.
+`DreamStrataUnified-Regular.ttf` is a physically merged font that, after the 2026-10-27 review, **may be distributed with the release packages**. Its sources are OFL-1.1 (Noto Serif SC / Symbols (2) / Math / Serif families, Victor Mono, and Noto Emoji outlines), MIT (Phosphor-derived Interface Icons), Apache-2.0 (Material Design Icons-derived Material Icons), and CC-BY-3.0 (Game-icons.net-derived Dream Icons). All four licenses permit merging and redistribution, and neither the bundled OFL texts nor the name tables of the 14 upstream fonts declare a Reserved Font Name; the merged font has been renamed throughout to the Dream Strata family. The merged font as a whole is distributed under OFL-1.1, while the embedded MIT / Apache-2.0 / CC-BY-3.0 outlines retain their own licenses and notices. The OFL text, upstream copyright notices, NOTICE-MDI, the per-icon Game-icons attribution, and the modification statement ship with the font directory. Per-source hashes, the cmap union, and the review commands are recorded in `assets/fonts/UNIFIED-LICENSE-NOTICE.md` (an engineering and license-terms assessment, not legal advice).
 
 ### Branding and provenance
 
@@ -115,8 +121,3 @@ If an earlier copy was lawfully licensed to someone under previous terms, this c
 This English text explains the project's licensing boundaries. It does not amend the standard license texts or grant rights beyond the applicable licenses.
 
 [Back to top](#en) · [简体中文](#zh)
-
-
-本仓库为精简的源码运行版本，不包含 WezTerm 二进制、构建工具、开发文档或统一字体研究候选。历史开发记录与构建材料保留在原开发仓库。
-
-This repository contains the source-playable edition. WezTerm binaries, build tools, development documents, and the unified-font research candidate are excluded. Historical development records and build materials remain in the original development repository.

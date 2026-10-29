@@ -1,10 +1,73 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
-from rich.cells import set_cell_size
-from .data.icon_glyphs import game_icon, map_icon, ICONS
+from .cell_size import set_cell_size
+from .data.icon_glyphs import game_icon, map_icon, ICONS, icon_text
+from .env_compat import LEGACY_PREFIX, NEW_PREFIX, flag as _env_flag
+
+# ---- ICONS 开关的热路径（2026-10-27 A4）------------------------------------
+# 地图一帧 800+ 格都要经过 symbol()/map_symbol() → game_icon()/map_icon()，而
+# 两者每次都走 env_compat.flag('ICONS') → os.environ.get：实测 get('ICONS')
+# ≈1.0µs/次（os.environ 的 __getitem__ 要 encodekey + 解码），一次动作 3372 次
+# 环境读取绝大多数出在这里（docs/2026-10-27-action-hotpath-profile.md §7）。
+#
+# 这里只把「开关读取」换成 os.environ 同一份数据表上的两次普通 dict 查找
+# （实测 ≈0.07µs），**仍然每次调用现读活环境**——monkeypatch.setenv /
+# os.environ[name]=v 写的正是这张表，所以 ONEIRSCRIPT_ICONS / DREAM_STRATA_ICONS
+# 的运行时切换依旧立即生效，不做任何跨帧缓存。字形解析仍复用
+# icon_glyphs.icon_text，ICONS 表本身的变化也立即生效。
+_ENV_DATA = getattr(os.environ, "_data", None)
+_ENV_DATA_IS_TEXT = bool(
+    isinstance(_ENV_DATA, dict)
+    and all(isinstance(key, str) for key in list(_ENV_DATA)[:1])
+)
+_ICONS_ENV_NEW = NEW_PREFIX + "ICONS"
+_ICONS_ENV_LEGACY = LEGACY_PREFIX + "ICONS"
+_TRUTHY_FLAGS = ("1", "true", "yes", "on")
+
+
+def themed_icons_enabled() -> bool:
+    """env_compat.flag('ICONS') 的等价热路径版（每次调用现读活环境）。
+
+    语义与 env_compat.flag 逐字一致：新名优先、旧名回退、都没有按 False、
+    真值集合相同。取不到 os.environ._data（非 CPython / 私有字段消失）时
+    回退到 env_compat.flag，行为不变。
+    """
+    data = _ENV_DATA if _ENV_DATA_IS_TEXT else None
+    if data is None:
+        return _env_flag("ICONS")
+    value = data.get(_ICONS_ENV_NEW)
+    if value is None:
+        value = data.get(_ICONS_ENV_LEGACY)
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY_FLAGS
+
+
+def themed_icon(key: str) -> str | None:
+    """icon_glyphs.game_icon(key) 的等价热路径版。
+
+    仅替换开关读取这一笔固定开销；key 是否存在、图标字形如何解析都与
+    game_icon 完全一致（等价性由 tests/test_hotpath_micro_261027.py 逐键断言）。
+    """
+    if not _ENV_DATA_IS_TEXT:
+        return game_icon(key)
+    if key not in ICONS or not themed_icons_enabled():
+        return None
+    return icon_text(key)
+
+
+def themed_map_icon(key: str) -> str | None:
+    """icon_glyphs.map_icon(key) 的等价热路径版（键前缀 map:）。"""
+    if not _ENV_DATA_IS_TEXT:
+        return map_icon(key)
+    slot = "map:" + key
+    if slot not in ICONS or not themed_icons_enabled():
+        return None
+    return icon_text(slot)
 
 
 @dataclass(frozen=True)
@@ -226,11 +289,61 @@ SYMBOLS: dict[str, SymbolDef] = {
     "plant.thorn_vine": SymbolDef("✽ ", "tv"),
     "plant.vane_moss": SymbolDef("⌖ ", "vm"),
     "plant.wax_bloom": SymbolDef("❊ ", "wb"),
-    "plant.moon_shroom": SymbolDef("♧ ", "mo2"),
-    "plant.hollow_shroom": SymbolDef("♧ ", "ho2"),
+    # 月光蕈/空鼓菌起于「蘑菇换色变体」，本轮各自长出不同机制（减声／巨响），
+    # 按设计文档 §4「形状相同、机制不同的两株不能只靠颜色区分」不再共用 ♧：
+    # 月光蕈取月牙 ☾，空鼓菌取空心菌盖 ◒。
+    "plant.moon_shroom": SymbolDef("☾ ", "mw "),
+    "plant.hollow_shroom": SymbolDef("◒ ", "ho2"),
     # ---- 梦中梦·千禧园专属植物（码 24/25）----
     "plant.millennium_grass": SymbolDef("❋ ", "mG "),
     "plant.bubble_algae": SymbolDef("° ", "bA "),
+    # 踩倒之后是另一株（H1）：字形压平、ascii 换小写，不能沿用挺立态。
+    "plant.millennium_grass_low": SymbolDef("☘ ", "mg "),
+    # ---- 三位面专属新增植物（2026-10-26，码 27–41）----
+    # 千禧园：电子媒介与软塑料。同一组内不复用主题字。
+    "plant.millennium.tape_tangle": SymbolDef("≋ ", "mt"),
+    "plant.millennium.dial_reed": SymbolDef("♬ ", "ds"),
+    "plant.millennium.contact_whisker": SymbolDef("⌁ ", "cw"),
+    "plant.millennium.frame_shard": SymbolDef("▥ ", "fs"),
+    # ⌇ 在 Noto 里是极细的竖线（地图轮廓短轴只有整格的 0.21，撑不满一格），
+    # 且与「全声合唱」异象同形；热熔须改取实心四瓣火花 ❈。
+    "plant.millennium.heat_filament": SymbolDef("❈ ", "hf"),
+    # 藏书宫：页 / 线 / 墨 / 留白 / 磨页。
+    "plant.library.page_ridge": SymbolDef("▤ ", "pg"),
+    "plant.library.binding_tangle": SymbolDef("⋈ ", "bt"),
+    "plant.library.ink_wick": SymbolDef("▱ ", "iw"),
+    "plant.library.blank_felt": SymbolDef("□ ", "bf"),
+    "plant.library.abrasion_tabs": SymbolDef("▨ ", "at"),
+    # 至白疗所：缝线 / 滤材 / 光阑 / 压差 / 滴注。
+    "plant.hospital.suture_tangle": SymbolDef("⌘ ", "su"),
+    "plant.hospital.filter_tuft": SymbolDef("▦ ", "ft"),
+    "plant.hospital.shutter_fold": SymbolDef("◧ ", "sf"),
+    "plant.hospital.pressure_sac": SymbolDef("◔ ", "px"),
+    "plant.hospital.infusion_ampoule": SymbolDef("◖ ", "if"),
+    # ---- H1 形态（催生目标，docs §10.1）：同一个东西收着放，字形要能看出
+    # 「还没立起来」——平片 / 合页，与立起态的 ▥ ▤ 成对，不另起一套花叶模板。
+    "plant.millennium.frame_shard_flat": SymbolDef("▭ ", "fh"),
+    "plant.library.page_ridge_flat": SymbolDef("▬ ", "pl"),
+    # ---- 耗尽／空壳两档（§4）：一次性对象没有「半」档，只有满与空 ----
+    "plant.millennium.tape_tangle.spent": SymbolDef("∿ ", "mt2"),
+    "plant.millennium.dial_reed.spent": SymbolDef("♩ ", "ds2"),
+    "plant.millennium.contact_whisker.spent": SymbolDef("⌐ ", "cw2"),
+    "plant.millennium.frame_shard.spent": SymbolDef("⌷ ", "fs2"),
+    "plant.millennium.heat_filament.spent": SymbolDef("∘ ", "hf2"),
+    "plant.library.page_ridge.spent": SymbolDef("⌸ ", "pg2"),
+    "plant.library.binding_tangle.spent": SymbolDef("⌸ ", "bt2"),
+    "plant.library.ink_wick.spent": SymbolDef("▪ ", "iw2"),
+    "plant.library.blank_felt.spent": SymbolDef("▫ ", "bf2"),
+    "plant.library.abrasion_tabs.spent": SymbolDef("⌙ ", "at2"),
+    "plant.hospital.suture_tangle.spent": SymbolDef("⌗ ", "su2"),
+    "plant.hospital.filter_tuft.spent": SymbolDef("⊞ ", "ft2"),
+    "plant.hospital.shutter_fold.spent": SymbolDef("◨ ", "sf2"),
+    "plant.hospital.pressure_sac.spent": SymbolDef("◌ ", "px2"),
+    "plant.hospital.infusion_ampoule.spent": SymbolDef("○ ", "if2"),
+    "plant.hollow_shroom.spent": SymbolDef("♢ ", "ho3"),
+    "plant.mushroom.spent": SymbolDef("♤ ", "m3"),
+    "plant.sage_moss.spent": SymbolDef("※ ", "sg2"),
+    "plant.vane_moss.spent": SymbolDef("⌗ ", "vm2"),
     "consciousness": SymbolDef("◉ ", "C "),
     "anomaly.page_hound": SymbolDef("𓃡 ", "P "),
     # ---- 梦中梦·千禧园（emoji 异象；M0 探针全 SAFE）----
@@ -327,9 +440,57 @@ SYMBOLS: dict[str, SymbolDef] = {
     # 「梦中人」分类（NPC 图鉴，2026-10-11）+ NPC 条目 ascii 档通用回退键。
     # ascii 用 DF（Dream Folk）：'N ' 已被 moving_staircase 占用（ascii 全表唯一性测试）。
     "category_npc": SymbolDef("◯ ", "DF"),
+    # 设置页五个分类的页签图标（2026-10-24 玩家要求「设置的标签也在前面加入图标」）。
+    # 字形守则照旧：恰好两列（窄字形双写或加空格）、ascii 缩写全表唯一。
+    "settings_general": SymbolDef("⚙ ", "GE"),
+    "settings_display": SymbolDef("▭▭", "DS"),
+    "settings_audio": SymbolDef("♪♪", "AU"),
+    "settings_keys": SymbolDef("⏎⏎", "KB"),
+    "settings_data": SymbolDef("⎔⎔", "DT"),
     "npc": SymbolDef("† ", "nf"),
     "previous": SymbolDef("◀ ", "< "),
     "next": SymbolDef("▶ ", "> "),
+    # ---- 少字模式（terse mode）专用字段图标 ----
+    # 状态条：心智 / 清醒 / 想象 / 噪音 / 混乱。语义字体可用时优先语义图标
+    # （data/semantic_icons 的 stat.* / noise.pulse）；这里是普通终端回退。
+    "stat.mind": SymbolDef("☻ ", "MD"),
+    "stat.lucidity": SymbolDef("◉ ", "LC"),
+    "stat.imagination": SymbolDef("✦ ", "IM"),
+    "stat.noise": SymbolDef("♪ ", "NS"),
+    "stat.chaos": SymbolDef("✳ ", "CH"),
+    # 右栏子页签（六个工作区下方的各子界面）。
+    "section.constructs": SymbolDef("✦ ", "AC"),
+    "section.fire": SymbolDef("▲ ", "FR"),
+    "section.tamper": SymbolDef("✎ ", "TM"),
+    "section.board": SymbolDef("▦ ", "BD"),
+    "section.memory": SymbolDef("◈ ", "MM"),
+    "section.insights": SymbolDef("◆ ", "IN"),
+    "section.portents": SymbolDef("◇ ", "PT"),
+    "section.stats": SymbolDef("∑ ", "ST"),
+    "section.audit": SymbolDef("⊙ ", "AU"),
+    "section.nearby": SymbolDef("◎ ", "NB"),
+    "section.records": SymbolDef("▤ ", "RC"),
+    "section.quests": SymbolDef("✓ ", "QS"),
+    # 面板内部小页签（行囊分类等）：少字模式只显示这些符号。
+    "subtab.all": SymbolDef("≣ ", "TA"),
+    "subtab.carried": SymbolDef("♕ ", "TC"),
+    "subtab.ingest": SymbolDef("♨ ", "TI"),
+    "subtab.perishable": SymbolDef("◷ ", "TP"),
+    "subtab.interactive": SymbolDef("◇ ", "TX"),
+    "subtab.habit": SymbolDef("▣ ", "TH"),
+    "subtab.board": SymbolDef("▦ ", "TB"),
+    "subtab.memory": SymbolDef("◈ ", "TM"),
+    # 右栏工具栏。
+    "tool.search": SymbolDef("⌕ ", "SR"),
+    "tool.filter": SymbolDef("▽ ", "FL"),
+    "tool.sort": SymbolDef("↕ ", "SO"),
+    "tool.expand": SymbolDef("+ ", "EX"),
+    "tool.menu": SymbolDef("≡ ", "MN"),
+    "tool.clear": SymbolDef("× ", "XX"),
+    "tool.pin": SymbolDef("⚲ ", "PN"),
+    "tool.back": SymbolDef("← ", "BK"),
+    "tool.related": SymbolDef("◇ ", "RL"),
+    "tool.fold": SymbolDef("≣ ", "FD"),
 }
 
 
@@ -369,7 +530,10 @@ def symbol(key: str, mode: str, unicode_supported: bool = True) -> str:
     if definition is None:
         return "??"
     if mode == "themed" and unicode_supported:
-        private = game_icon(key)
+        # Restore the original narrow door bars in the reserved two-cell slot.
+        if key == 'wall.door':
+            return spaced_icon(definition.themed)
+        private = themed_icon(key)
         if private is not None:
             return private
         if key in CONTINUOUS_WALL_KEYS:
@@ -387,7 +551,7 @@ def map_symbol(key: str, mode: str, unicode_supported: bool = True) -> str:
     symbol 的小字形，避免放大版图标挤坏正文排版（§7.5.B 分隔路由）。
     """
     if mode == "themed" and unicode_supported:
-        private = map_icon(key)
+        private = themed_map_icon(key)
         if private is not None:
             return private
     return symbol(key, mode, unicode_supported)
@@ -425,12 +589,15 @@ def glyph_for(icon: str, fallback: str, mode: str, unicode_supported: bool = Tru
     ASCII 档位或不支持 Unicode 的终端直接回退，避免字体回退把整行搞错位。
     """
     icon = str(icon or "").replace('\ufe0e', '').replace('\ufe0f', '')
-    if icon.startswith('item.') and icon in ICONS:
+    if (icon.startswith(('item.', 'expansion.')) and icon in ICONS):
+        definition = ICONS[icon]
         if mode == 'themed' and unicode_supported:
-            return game_icon(icon) or set_cell_size(ICONS[icon]['fallback'], 2)
+            return themed_icon(icon) or set_cell_size(definition['fallback'], 2)
+        if definition.get('ascii_fallback'):
+            return definition['ascii_fallback']
         return symbol(fallback, 'ascii', False)
     if mode == 'themed' and unicode_supported and icon.strip() in ('🖋', '👕', '🎖', '🔧', '✎', '♖', '⚜', '⚒'):
-        private = game_icon(fallback)
+        private = themed_icon(fallback)
         if private is not None and fallback.startswith('carried_'):
             return private
     if icon and mode == "themed" and unicode_supported:
@@ -476,6 +643,9 @@ def drop_glyph(
     slot = getattr(item, "slot", None)
     fallback = carried_slot_key(slot) if slot else "manifestation"
     if compact:
+        icon = str(getattr(item, "icon", "") or "").replace('\ufe0e', '').replace('\ufe0f', '')
+        if icon in ICONS and ICONS[icon].get('ascii_fallback'):
+            return ICONS[icon]['ascii_fallback']
         return symbol(fallback, "ascii")
     return glyph_for(getattr(item, "icon", ""), fallback, mode, unicode_supported)
 
@@ -500,6 +670,16 @@ from .data.library import LIBRARY_ANOMALIES
 from .data.hospital import HOSPITAL_ANOMALIES
 from .data.tamper_anomalies import OMISSION_ANOMALY_ID, TAMPER_ANOMALIES
 SYMBOLS[OMISSION_ANOMALY_ID] = SymbolDef(TAMPER_ANOMALIES[OMISSION_ANOMALY_ID]['glyph'], 'OM')
+# 混乱极高专属异象：👿 🖤 😇 是单码位 emoji（终端两列宽，entity_glyph
+# 的 2 列归一化对它们是无操作）；ASCII 档位给两位字母回退。
+from .data.chaos_anomalies import CHAOS_ANOMALIES, CHAOS_ANOMALY_IDS
+_CHAOS_ASCII = {
+    "chaos.wrath": "WR", "chaos.hollow": "HW", "chaos.false_light": "FL",
+}
+for _catalog in CHAOS_ANOMALY_IDS:
+    SYMBOLS[_catalog] = SymbolDef(
+        set_cell_size(CHAOS_ANOMALIES[_catalog]['glyph'], 2),
+        _CHAOS_ASCII.get(_catalog, '??'))
 for _catalog, _definition in {**LIBRARY_ANOMALIES, **HOSPITAL_ANOMALIES}.items():
     # Preserve the literal script identity in both presentation modes.
     SYMBOLS[_catalog] = SymbolDef(set_cell_size(_definition['glyph'], 2), 'Q:' if _catalog == 'library.reader' else set_cell_size(_definition['glyph'], 2))

@@ -19,7 +19,7 @@ COURSE_TEMPLATE_VERSION = 2
 # just because the player opened an unrelated panel.
 _ROWS = (
  ('A1','梦的起始：行动与时间','沿入口短路走到◇，再等待一次。查看与取消不会推进时间；行动耗时随速度变化。','moved waited reached_move'),
- ('A2','右栏与焦点','打开一个右栏页签，使用 / 切换焦点。七页签分别管理行囊、征兆、装备、洞察、观测、操作与任务。','panel_opened focus_switched'),
+ ('A2','右栏与焦点','用 Tab 或 Shift+Tab 切换行动、行囊、构筑、自身、环境、日志六个大菜单，使用 / 切换焦点。','panel_opened focus_switched'),
  ('A3','查看自己的状态','分别打开自我察觉、噪音混乱、完整键位和设置。自我察觉中展开一个属性，读基础值与来源。','self_opened self_expanded signals_opened help_opened settings_opened'),
  ('A4','观察与自动行走','观察中选择◇以外的可达位置，自动前往后停止。再次开始导航并主动取消；不可达不行动。','observed autowalk_arrived path_cancelled'),
  ('B1','知道地形不等于看见','观察 B 区隔墙侧室的地形图，然后绕到墙后读取实际内容。地图全知只在本层生效。','chart_observed side_room_seen'),
@@ -29,28 +29,43 @@ _ROWS = (
  ('C1','近战与关系','走向战斗区玩偶，命中后读取它的完整度和状态。稳定的向导不是战斗目标。','struck_doll enemy_detail_opened'),
  ('C2','先瞄准，再出手','F 瞄准，O 辅助选敌，Tab 自由落点。先取消一次，再实际命中靶；取消不扣弹药。','aim_cancelled aim_assisted aim_free fired_hit'),
  ('C3','让弹道通过','观察靶道障碍和通路，在畅通位置命中远靶。不要浪费弹药试穿墙。','blocked_aim clear_shot'),
- ('D1','寻找行囊中的物品','在物品区收纳教材，打开物品详情并尝试搜索、筛选、排序。','picked_up item_detail_opened searched filtered sorted'),
+ # 2026-10-26：删去「搜索/筛选/排序」三条子任务。侧栏工具行（#sidebar-tools 的
+ # 搜/类/序按钮）已由 sidebar_management._refresh_sidebar_tools 常驻隐藏，
+ # 玩家点不到，教程却要求点它；键盘 Alt+F/L/R 虽仍可用，但教程的点击口径已作废。
+ ('D1','寻找行囊中的物品','在物品区收纳教材，打开物品详情。','picked_up item_detail_opened'),
  ('D2','使用和消耗','使用一份可用教材，读取真实效果并比较余量。投掷是另外的行为。','item_used'),
  ('D3','方向与落点投掷','物品菜单 Q 进入投掷瞄准，方向键或鼠标选方向和距离，Enter／点击确认。先 Esc 取消一次，再把普通教材投到近处玩偶格、诱饵投到远处。普通无伤害物不会砸伤目标；近处不超过2格，远处至少3格。','throw_plain throw_functional throw_near throw_far throw_cancelled'),
  ('D4','容器与台面','先从水边取玻璃瓶，在水格使用并盛装、倒出。站到石台旁，在物品菜单 P／点击「放到台面」，然后用行动键取回；投掷也能落到台面，放置不会触发物品的撞击效果。','filled poured table_placed table_retrieved'),
  ('E1','联想盘：拿放与旋转','打开联想盘，按 a 拿放、R 旋转，Enter 确认整理。草稿未确认时不生效。','board_committed board_rotated'),
  ('E2','装备的句子与效果','阅读盘面整句并确认；在自我察觉中查看装备属性来源。补丁睡衣放入第3列可组成持有句。','board_committed board_sentence_seen equipment_source_seen'),
- ('E3','让条件与行为成句','盐渍线圈放在第1列，水枪放同一行第5列。确认后条件只约束同行行为；湿润导电位置才能放行。','conductive_sentence condition_compared'),
- ('E4','记忆与洞察','从日志借用被动教材，查看记忆来源与洞察规则，再投出诱饵验证回响。借用成长在离开前归还。','memory_practiced memory_seen insight_seen insight_practiced'),
+ ('E3','让条件与行为成句','盐渍线圈放在第1列，水枪放同一行第5列。确认后条件只约束同行行为；导电位置才能放行，①金属教材格可与干地比较。','conductive_sentence condition_compared'),
+ ('E4','记忆与洞察','被动教材已备好，查看记忆来源与洞察规则，再投出诱饵验证回响。借用成长在离开前归还。','memory_practiced memory_seen insight_seen insight_practiced'),
  ('F1','学习与构想','使用借用书卷学习一个现有构想，在操作页查看说明并成功施放；只有成功施放才算完成。','ability_learned ability_cast'),
  ('F2','篡改：先读原句','选择实际目标、程度和条件，读准确报价。先取消一次，再成功提交一笔修改。','tamper_cancelled degree_seen conditions_seen tamper_committed'),
  ('F3','代价与时机','施放构想后提交篡改，再打开噪音混乱详情观察混乱和连续压力。不要为演示副作用反复冒险。','ability_cast tamper_committed chaos_after_tamper_seen'),
  ('F4','多个目标与地图预览','在 F 区两块液体之间选择具体来源，按 V 查看地图再返回编辑；草稿应保持不变。','tamper_regions_seen tamper_map_returned'),
  ('G1','听见自己的动作','比较 G 区的安静与发声路线，打开噪音详情读取修正来源。读数是预计声径，不是累积槽。','quiet_preview noisy_preview signals_opened'),
- ('G2','声音与调查','向导可开始声音练习：用借用诱饵把能听声的练习对手引向声源，再绕掩体离开。可在日志重置。','sound_investigated sound_disengaged'),
+ ('G2','声音与调查','本节已备好声音练习：用借用诱饵把能听声的练习对手引向声源，再绕掩体离开。可从引导目录重练。','sound_investigated sound_disengaged'),
  ('G3','听觉与实际视野','在日志开始听闻练习，到 G 区南侧隔墙北面 (15,31) 等待真实钟声；打开噪音详情读取方向线索，再绕过隔墙看声源。地形已知不代表看见生物；借用「听声辨向」后等待，可多读远近档。','heard_hidden heard_detail_seen hearing_source_seen'),
  ('H1','征兆会结束','在环境样本获得征兆，查看后离开来源，等待它自然结束。练习有代价，可重置恢复。','portent_gained portent_seen portent_ended'),
- ('H2','有限材料的相变','向导开始环境练习后，观察隔离池的水和水蒸气；用真实火源触发一次转换，读取新材料。','phase_changed phase_detail_seen'),
- ('H3','连锁也会影响自己','在隔离池使用燃烧类教材，从安全通道观察真实点燃与材料变化；别站在落点上。','fire_started fire_observed'),
+ ('H2','有限材料的相变','隔离池与热源已备好。在玻璃池外等待灼热池底触发水和水蒸气的真实转换，再读取新材料。','phase_changed phase_detail_seen'),
+ ('H3','连锁也会影响自己','站在安全格 (31,26)，向玻璃池外的高丛 (31,28) 投出燃烧瓶，再观察点燃与材料变化；不要隔墙投掷或站在落点上。','fire_started fire_observed'),
  ('I1','对话、交换与赠品','与出口纸偶聊天，完成一次付费交换和一次限领赠品；领完还可以聊天。借用品不带出教学层。','npc_talked trade_done gift_done'),
  ('I2','接取与交付','纸偶可委托你取回物品区的练习物；在任务日志看缺少项，带回后交付，也可放弃重接。','practice_accepted practice_log_seen practice_delivered'),
  ('I3','离开教程','本层随时 N 下潜，不要求站到出口。正式主梦与梦中梦各看自己的下潜条件。打开日志阅读出口说明。','exit_read'),
- ('I4','保存与恢复','F10 / Alt+Q 保存退出，再继续入梦。存档保留练习进度；离开后第1层恢复原探索设置。','course_resumed'),
+ ('I4','隐藏与恢复引导','收起引导后，从悬浮入口重新打开并继续练习。独立教程不保存；退出后返回正常存档槽，正式进度不受影响。','guide_hidden guide_restored'),
+ ('J1','事件与回应','本节已在 A 区备好事件。走到异常地点旁回应会打开对话框：先读完每个选项的代价与所得，再决定；离开也是合法选择。','event_dialog_seen event_choice_made'),
+ ('J2','植物与采撷','本节已在 E 区备好植物。踩过高丛会折成低草；站到稀有植株上拔起，读得到的材料或征兆。','plant_trampled plant_uprooted'),
+ ('J3','材料反应','本节已备好水源与湿墨池，用容器盛水，走到墨池上倒进去。两种液体相遇会真实转化成新液体；读产物与存量。','reaction_seen'),
+ ('J4','弹匣与换弹','本节已借出钉枪，把它放进联想盘源位并确认成句。发射到空匣后换弹：读余量、换弹步数与想象力费用。','magazine_fired magazine_reloaded'),
+ ('J5','药物与债务','本节已借出浓缩咖啡因，使用后查看清醒度账单，再等待两回合看它分期扣除；离开时练习债务归还。','drug_debt_started drug_debt_paid'),
+ ('J6','异象情报','本节已在 E 区备好异象，打开它的详情：读分级、完整度、关系与技能，区分看见对象与知道地形。','anomaly_detail_seen'),
+ ('J7','击破与崩解','击破这只练习异象，拾取它的固定掉落，再读崩解度与击杀记录。随机掉落不算完成，只看确定结果。','anomaly_defeated anomaly_rewarded'),
+ ('J8','构造环境','本节已借出火花，把它指向一块可见空地。确认后先读它留下的场，再等待两回合看它落地并消失。','construct_created construct_ended'),
+ ('J9','机关与电路','本节已备好机关石台与显影方尖，取走台面上的练习物：信号沿电线传到接收端，周围地形显影。','circuit_triggered'),
+ ('J10','陷阱与识别','机关石台并不都友善：陷阱石台外观相同。取走另一张台面上的练习物，读这次实际触发的结果。','trap_triggered'),
+ ('E5','虚词「的」：属性修饰','将点火手套放在第1列、美工刀放第5列，在第4列放「的」并确认。读取整句：手套提供点燃属性，不再额外执行一次行为。','attribution_committed'),
+ ('E6','虚词「地」：方式与范围','将迅念指环放第1列、美工刀放第5列，在第4列放「地」并确认。比较攻击耗时；方式只约束关联行为，不是全局加速。','manner_committed'),
 )
 _PENDING = {}
 MODULES = tuple(dict(id=code, title=title, body=body, requires=tuple(facts.split()),
@@ -84,9 +99,86 @@ _LOAN_FIELDS = (
  '_action_count','quiet_step_ready',
  'quiet_step_charges','quiet_step_until','echo_ward_until','masked_step_until',
  'sound_bearing_until','buzzing_echo_enabled','ash_memory_settled','heard_sound_clues',
- 'delayed_sounds','delayed_fuel',
+ 'delayed_sounds','delayed_fuel','dissolution',
 )
 LOAN_DEFINITIONS = ('water_gun','spellbook','buzz_lure','molotov','warm_water')
+
+# 进阶练习站点（J1-J10）：全部由任务日志按需在 E 区空地生成，不写进固定模板，
+# 也不改初始地图断言。每项都必须能由真实动作完成，证据在 pump/action_result/
+# observe_ui 里读取世界状态，而不是「打开过界面」。
+_PRACTICE_EVENT = (14, 3)              # A 区：异常地点事件
+_PRACTICE_PLANT_TALL = ((32, 13), (33, 13))  # E 区：高丛（踩踏折低）
+_PRACTICE_PLANT_RARE = (36, 14)        # E 区：铃兰薄荷（可拔起得材料）
+_PRACTICE_REACTION_WATER = (30, 20)    # E 区：水源
+_PRACTICE_REACTION_INK = (34, 20)      # E 区：湿墨池（倒水后真实转化）
+_PRACTICE_ANOMALY = (33, 21)           # E 区：惰性真实异象
+_PRACTICE_CIRCUIT = ((34, 15), (37, 15))  # E 区：机关石台 → 显影方尖
+_PRACTICE_TRAP = (30, 16)              # E 区：陷阱石台（假警报场景）
+_PRACTICE_ANOMALY_ID = 'anomaly.folded_person'
+_PRACTICE_EVENT_ID = 'event.coffee_ring'
+
+
+def _practice_item(state, definition_id, x, y):
+    """Put one managed practice item on the floor and remember its instance."""
+    from .entities import WorldItem
+    item = state._make_item(definition_id)
+    state.world_items.append(WorldItem(item, x, y))
+    managed = state.tutorial.setdefault('practice_item_uids', [])
+    managed.append(item.instance_id)
+    return item
+
+
+def _add_loan_item(state, definition_id):
+    """Borrow one extra practice item through the same loan ledger."""
+    item = state._make_item(definition_id)
+    state.inventory.append(item)
+    state.tutorial.setdefault('loan_ids', []).append(item.instance_id)
+    state.tutorial.setdefault('loan_items', []).append(asdict(item))
+    return item
+
+
+def _clear_managed_items_at(state, x, y):
+    managed = set(state.tutorial.get('practice_item_uids', ()))
+    state.world_items[:] = [entry for entry in state.world_items
+                            if not (entry.item.instance_id in managed
+                                    and (entry.x, entry.y) == (x, y))]
+
+
+def _restore_practice_cell(state, x, y):
+    cell = state.cell(x, y)
+    cell.solid = False
+    cell.wall_kind = ''
+    cell.height = 0
+    cell.integrity = 100
+    cell.wire = 0
+
+
+def _clear_practice_sites(state):
+    """Reset only managed practice objects; never other sites or real holdings."""
+    event_uids = state.tutorial.pop('practice_event_keys', ())
+    if event_uids:
+        state.events[:] = [e for e in state.events
+                           if e.event_id not in event_uids]
+    uid = state.tutorial.pop('practice_anomaly_uid', None)
+    if uid:
+        state.enemies[:] = [e for e in state.enemies if e.id != uid]
+    for uid in state.tutorial.pop('practice_item_uids', ()):
+        state.world_items[:] = [e for e in state.world_items if e.item.instance_id != uid]
+        state.inventory[:] = [i for i in state.inventory if i.instance_id != uid]
+    for x, y in _PRACTICE_PLANT_TALL:
+        state.set_plant(x, y, 0)
+    state.set_plant(*_PRACTICE_PLANT_RARE, 0)
+    for x, y in (_PRACTICE_REACTION_WATER, _PRACTICE_REACTION_INK):
+        cell = state.cell(x, y)
+        cell.liquid = 0
+        cell.liquid_kind = ''
+    for (x, y) in (_PRACTICE_CIRCUIT[0], _PRACTICE_CIRCUIT[1], _PRACTICE_TRAP):
+        _restore_practice_cell(state, x, y)
+    state.trap_scenarios.pop('%d,%d' % _PRACTICE_TRAP, None)
+    for key in ('plant_setup', 'mint_before', 'drug_baseline', 'drug_seen',
+                'magazine_item', 'construct_seen', 'circuit_armed', 'trap_armed',
+                'reaction_ready', 'spark_ready', 'drug_ready'):
+        state.tutorial.pop(key, None)
 
 
 def is_course(state):
@@ -157,7 +249,7 @@ def start(state):
 
 def entries(state):
     if not is_course(state): return []
-    done=set(state.tutorial.get('completed',())); skipped=set(state.tutorial.get('skipped',()))
+    done=set(state.tutorial.get('completed',())) | set(state.tutorial.get('reviewed', ())); skipped=set(state.tutorial.get('skipped',()))
     return [dict(m,status='done' if m['id'] in done else 'pending' if m['pending'] else
                  'skipped' if m['id'] in skipped else 'todo') for m in MODULES]
 
@@ -214,9 +306,48 @@ def pump(state):
         if water<24 and steam>12: facts.add('phase_changed')
     if state.run_stats.get('ignitions',0)>state.tutorial['loan_baseline']['run_stats'].get('ignitions',0):
         facts.add('fire_started')
+    # ---- 进阶练习（J1-J10）：只从真实世界结果取证，不看界面是否被打开过 ----
+    if state.tutorial.get('plant_setup'):
+        if any(state.cell(x,y).plant != 2 for x,y in _PRACTICE_PLANT_TALL):
+            facts.add('plant_trampled')
+    mint_before=state.tutorial.get('mint_before')
+    if mint_before is not None:
+        mint_now=sum(item.quantity for item in state.inventory
+                     if item.definition_id=='mint_dew')
+        if mint_now>mint_before: facts.add('plant_uprooted')
+    if state.tutorial.get('reaction_ready'):
+        if state.cell(*_PRACTICE_REACTION_INK).liquid_kind=='稀墨':
+            facts.add('reaction_seen')
+    if state.tutorial.get('drug_ready'):
+        balance=sum(int(row.get('remaining',0)) for row in state.drug_debts)
+        seen=state.tutorial.get('drug_seen')
+        if seen is not None and balance<seen: facts.add('drug_debt_paid')
+        if balance>0:
+            facts.add('drug_debt_started')
+            state.tutorial['drug_seen']=balance if seen is None else min(seen,balance)
+    gun=next((item for item in state.inventory if item.definition_id=='nail_gun'),None)
+    if gun is not None:
+        magazine=getattr(gun,'magazine',None); capacity=getattr(gun,'magazine_capacity',None)
+        if magazine is not None and capacity and magazine<capacity: facts.add('magazine_fired')
+    kills_before=state.tutorial.get('anomaly_kills_before')
+    if kills_before is not None and state.run_stats.get('kills',0)>kills_before:
+        facts.add('anomaly_defeated')
+    drop_before=state.tutorial.get('anomaly_drop_before')
+    if drop_before is not None:
+        drop_now=sum(item.quantity for item in state.inventory
+                     if item.definition_id=='folded_projectile')
+        if drop_now>drop_before: facts.add('anomaly_rewarded')
+    if state.tutorial.get('spark_ready'):
+        if state.construct_environments:
+            state.tutorial['construct_seen']=True; facts.add('construct_created')
+        elif state.tutorial.get('construct_seen'):
+            facts.add('construct_ended')
+    if state.tutorial.get('circuit_armed') and getattr(state,'_logic_energized',None):
+        facts.add('circuit_triggered')
     state.tutorial['facts']=sorted(facts)
     state.tutorial['completed']=sorted(set(state.tutorial.get('completed',())).union(
-        m['id'] for m in MODULES if not m['pending'] and set(m['requires'])<=facts))
+        m['id'] for m in MODULES if not m['pending'] and (set(m['requires'])<=facts or
+            (m['id']=='I4' and not state.tutorial.get('coach_version') and 'course_resumed' in facts))))
     state.tutorial_events.clear()
     _advance(state)
 
@@ -224,16 +355,44 @@ def pump(state):
 def _advance(state):
     unavailable=set(state.tutorial.get('completed',()))|set(state.tutorial.get('skipped',()))
     index=max(0,int(state.tutorial.get('step',0)))
+    if state.tutorial.get('coach_version') and index < len(MODULES):
+        from .tutorial_categories import category_for, lessons
+        module = MODULES[index]
+        category = category_for(module['id'])
+        group = lessons(category)
+        position = next(i for i, item in enumerate(group) if item['id'] == module['id'])
+        if module['id'] in unavailable:
+            following = next((item for item in group[position+1:]
+                              if item['id'] not in unavailable and not item['pending']), None)
+            if following is not None:
+                state.tutorial['step'] = next(i for i, item in enumerate(MODULES) if item['id'] == following['id'])
+                state.tutorial.pop('coach_category_finished', None)
+            else:
+                if all(item['id'] in unavailable for item in group):
+                    state.tutorial['coach_category_finished'] = category
+        state.tutorial['coach_finished'] = all(item['id'] in unavailable for item in MODULES)
+        return
     while index<len(MODULES) and (MODULES[index]['id'] in unavailable or MODULES[index]['pending']): index+=1
     state.tutorial['step']=index
-    # All objectives may finish while the player keeps practicing. N still works.
-    if index>=len(MODULES): state.tutorial['active']=False
+    # 主线（A-I）完成后卡片收束；J 组是可从日志自由选择的进阶练习，不强迫走完。
+    advanced_start=next((i for i,m in enumerate(MODULES) if m['id'].startswith('J')),len(MODULES))
+    if index>=len(MODULES):
+        if state.tutorial.get('coach_version'):
+            state.tutorial.update(step=len(MODULES)-1, coach_finished=True, active=True)
+        else:
+            state.tutorial['active']=False
+            state.tutorial['advanced_mode']=False
+    elif index>=advanced_start and not state.tutorial.get('advanced_mode') and not state.tutorial.get('coach_version'):
+        state.tutorial['active']=False
 
 
 def select(state,module_id):
     if not is_course(state) or module_id not in BY_ID: return False
     if BY_ID[module_id]['pending']: return False
     state.tutorial.update(active=True,paused=False,step=next(i for i,m in enumerate(MODULES) if m['id']==module_id))
+    state.tutorial.pop('coach_category_finished', None)
+    state.tutorial.pop('coach_finished', None)
+    if module_id.startswith('J'): state.tutorial['advanced_mode']=True
     skipped=state.tutorial.get('skipped',[])
     if module_id in skipped: skipped.remove(module_id)
     return True
@@ -250,6 +409,7 @@ def skip(state):
 def reset_practice(state):
     """Explicit top-up of the same loan instances, never a new random book."""
     if not is_course(state): return False
+    _clear_practice_sites(state)
     from .entities import Item
     loan_ids=set(state.tutorial.get('loan_ids',()))
     baseline=state.tutorial['loan_baseline']
@@ -301,7 +461,8 @@ def finish_loans(state):
     for key,value in dict(quiet_step_charges=0,quiet_step_until=0,echo_ward_until=0,
                           masked_step_until=0,sound_bearing_until=0,buzzing_echo_enabled=True,
                           ash_memory_settled=[],heard_sound_clues=[],delayed_sounds=[],delayed_fuel=[],
-                          drug_debts=[],drug_debt_version=0,modem_boost_until=0,modem_recovery_until=0,item_grant_counts={}).items():
+                          drug_debts=[],drug_debt_version=0,modem_boost_until=0,modem_recovery_until=0,item_grant_counts={},
+                          dissolution=0).items():
         baseline.setdefault(key,value)
     elapsed = max(0, state.time - state.tutorial.get('loan_started_time', state.time))
     for deadline in ('modem_boost_until', 'modem_recovery_until'):
@@ -432,6 +593,84 @@ def control(state,operation):
             cell.liquid=24; cell.liquid_kind='水'; cell.aggregate_variant='粗糙聚合物'
         state._reset_material_index()
         return ActionResult(True,tr('F 区两份有限液体样本已备好。'))
+    if operation=='event':
+        state.events[:] = [e for e in state.events if e.event_id != _PRACTICE_EVENT_ID]
+        state._spawn_bound_events({'events':[{'event_id':_PRACTICE_EVENT_ID,
+                                             'x':_PRACTICE_EVENT[0],'y':_PRACTICE_EVENT[1]}]})
+        state.tutorial['practice_event_keys']=[_PRACTICE_EVENT_ID]
+        return ActionResult(True,tr('事件练习已备好：A 区出现一处异常地点；相邻回应后读完选项再决定。'))
+    if operation=='plants':
+        from ..materials.plants import PLANT_KINDS
+        mint=next(plant.code for plant in PLANT_KINDS if plant.key=='plant.mint')
+        state.set_plant(*_PRACTICE_PLANT_TALL[0],2)
+        state.set_plant(*_PRACTICE_PLANT_TALL[1],2)
+        state.set_plant(*_PRACTICE_PLANT_RARE,mint)
+        state.tutorial['plant_setup']={f'{x},{y}':2 for x,y in _PRACTICE_PLANT_TALL}
+        state.tutorial['mint_before']=sum(item.quantity for item in state.inventory
+                                          if item.definition_id=='mint_dew')
+        return ActionResult(True,tr('植物练习已备好：E 区有高丛与一株稀有植株，走过去踩踏或站上去拔起。'))
+    if operation=='reaction':
+        water=state.cell(*_PRACTICE_REACTION_WATER)
+        water.liquid=24; water.liquid_kind='水'
+        ink=state.cell(*_PRACTICE_REACTION_INK)
+        ink.liquid=20; ink.liquid_kind='湿墨'
+        state._reset_material_index()
+        state.tutorial['reaction_ready']=True
+        return ActionResult(True,tr('材料反应样本已备好：E 区有水与湿墨；用容器盛水，走到墨池上倒出。'))
+    if operation=='drug':
+        if not any(item.definition_id=='espresso_shot' for item in state.inventory):
+            _add_loan_item(state,'espresso_shot')
+        state.tutorial['drug_ready']=True
+        state.tutorial['drug_seen']=None
+        return ActionResult(True,tr('练习药已借出：使用浓缩咖啡因后查看账单，再等待两回合分期扣款。'))
+    if operation=='anomaly':
+        uid=state.tutorial.get('practice_anomaly_uid')
+        if uid:
+            state.enemies[:]=[enemy for enemy in state.enemies if enemy.id!=uid]
+        enemy=state.add_defined_enemy(_PRACTICE_ANOMALY_ID,*_PRACTICE_ANOMALY)
+        enemy.move_time=99999; enemy.attack_time=99999; enemy.vision=0
+        enemy.alert_state='未察觉'
+        state.tutorial['practice_anomaly_uid']=enemy.id
+        state.tutorial['anomaly_kills_before']=state.run_stats.get('kills',0)
+        state.tutorial['anomaly_drop_before']=sum(item.quantity for item in state.inventory
+                                                  if item.definition_id=='folded_projectile')
+        return ActionResult(True,tr('异象练习已备好：E 区出现一只普通异象；可读详情，也可以击破它。'))
+    if operation=='spark':
+        if 'spark' not in state.abilities:
+            state.abilities.append('spark')
+        state.tutorial['spark_ready']=True
+        state.tutorial['construct_seen']=False
+        return ActionResult(True,tr('练习构想已借出：火花只在本层生效；施放后等待两回合观察它留下的场。'))
+    if operation=='circuit':
+        from ..materials.logic import MECHANISM_PLATFORM, REVEAL_OBELISK
+        platform, obelisk = _PRACTICE_CIRCUIT
+        _clear_managed_items_at(state,*platform)
+        for (x,y),kind in ((platform,MECHANISM_PLATFORM),(obelisk,REVEAL_OBELISK)):
+            _restore_practice_cell(state,x,y)
+            cell=state.cell(x,y)
+            cell.solid=True; cell.wall_kind=kind; cell.height=1; cell.integrity=70
+        state.link_logic_nodes([platform,obelisk])
+        _practice_item(state,'clear_glass',*platform)
+        state._logic_energized=set()
+        state.tutorial['circuit_armed']=True
+        return ActionResult(True,tr('机关电路已备好：取走机关石台上的练习物，信号会沿电线传到显影方尖。'))
+    if operation=='trap':
+        from ..materials.logic import TRAP_PLATFORM
+        _clear_managed_items_at(state,*_PRACTICE_TRAP)
+        _restore_practice_cell(state,*_PRACTICE_TRAP)
+        cell=state.cell(*_PRACTICE_TRAP)
+        cell.solid=True; cell.wall_kind=TRAP_PLATFORM; cell.height=1; cell.integrity=70
+        state.trap_scenarios['%d,%d' % _PRACTICE_TRAP]='false_alarm'
+        _practice_item(state,'clear_glass',*_PRACTICE_TRAP)
+        state.tutorial['trap_armed']=True
+        return ActionResult(True,tr('陷阱练习已备好：另一张石台外观相同；取走其上的练习物，读实际触发结果。'))
+    if operation=='magazine':
+        gun=next((item for item in state.inventory if item.definition_id=='nail_gun'),None)
+        if gun is None: gun=_add_loan_item(state,'nail_gun')
+        from .firing_sources import ensure_magazine
+        ensure_magazine(gun)
+        state.tutorial['magazine_item']=gun.instance_id
+        return ActionResult(True,tr('弹匣练习已借出：把钉枪放上联想盘源位并确认成句，再发射与换弹。'))
     if operation=='accept':
         if state.tutorial['practice_quest'] not in ('none','abandoned'):
             return ActionResult(False,tr('这项练习委托已经接取。'))
@@ -440,18 +679,18 @@ def control(state,operation):
         state.world_items.append(WorldItem(item,14,18))
         state.tutorial['practice_quest']='active'
         note(state,'practice_accepted')
-        return ActionResult(True,tr('练习委托：取回物品区的练习玻璃杯，交给出口纸偶。无正式奖励。'))
+        return ActionResult(True,tr('练习委托：取回物品区的练习玻璃瓶，交给出口纸偶。无正式奖励。'))
     if operation=='deliver':
         # UI proximity is insufficient: commands and stale submissions share this gate.
         guide=next((enemy for enemy in state.enemies
                     if enemy.npc_kind=='npc.origin_greeter' and enemy.integrity>0
                     and max(abs(enemy.x-state.player.x), abs(enemy.y-state.player.y))<=1),None)
         if guide is None:
-            return ActionResult(False,tr('请把练习玻璃杯带回出口纸偶旁边再交付。'))
+            return ActionResult(False,tr('请把练习玻璃瓶带回出口纸偶旁边再交付。'))
         uid=state.tutorial.get('practice_item_uid')
         item=next((i for i in state.inventory if i.instance_id==uid),None)
         if state.tutorial['practice_quest']!='active' or item is None:
-            return ActionResult(False,tr('请先接取委托，并取回物品区的练习玻璃杯。'))
+            return ActionResult(False,tr('请先接取委托，并取回物品区的练习玻璃瓶。'))
         state.inventory.remove(item)
         state.tutorial['practice_quest']='done'
         note(state,'practice_delivered')
@@ -478,6 +717,11 @@ def observe_ui(app):
         facts.append('exit_read')
         if state.tutorial['practice_quest']=='active': facts.append('practice_log_seen')
     if app.panel_mode=='insights': facts.append('insight_seen')
+    if (app.panel_mode == 'equipment' and getattr(app, '_panel_subpage_id', lambda: '')() == 'memory'
+            and 'lighthouse_keeper_memory' in state.memory_fragments):
+        facts.append('memory_seen')
+    if app.panel_mode=='event_dialog' and state.pending_event() is not None:
+        facts.append('event_dialog_seen')
     if app.panel_mode in ('pause_settings','home_settings'): facts.append('settings_opened')
     if app.controls_help_open: facts.append('help_opened')
     if app._self_audit_visible():
@@ -509,7 +753,9 @@ def observe_ui(app):
         if state.is_visible(x,y) and state.cell(x,y).flame>0: facts.append('fire_observed')
         if state.is_visible(x,y) and 33<=x<=35 and 28<=y<=30 and 'phase_changed' in state.tutorial['facts']:
             facts.append('phase_detail_seen')
-    if app.anomaly_detail_target is not None: facts.append('enemy_detail_opened')
+    if app.anomaly_detail_target is not None:
+        facts.append('enemy_detail_opened')
+        facts.append('anomaly_detail_seen')
     if app.item_menu_target is not None: facts.append('item_detail_opened')
     if app.qol_searching: facts.append('searched')
     if app.inventory_filter!='全部': facts.append('filtered')
@@ -519,12 +765,12 @@ def observe_ui(app):
     if getattr(app,'_aim_assist_pos',None) is not None: facts.append('aim_assisted')
     if getattr(app,'_aim_free_cursor',None) is not None: facts.append('aim_free')
     target=getattr(app,'_aim_free_cursor',None) or getattr(app,'_aim_assist_pos',None)
-    if app.aiming and target is not None and state.is_visible(*target):
+    if app.aiming and target is not None and state.inside_board(*target):
         from .throwing import flight_path
         path=flight_path((state.player.x,state.player.y),target)
         if any(state.is_visible(x,y) and state.cell(x,y).solid for x,y in path): facts.append('blocked_aim')
         from ..equipment.runtime import condition_matches
-        for row in state.equipment.formation().rows:
+        for row in state.equipment.formation().rows if state.is_visible(*target) else ():
             if row.condition and row.condition.kind=='conductive' and row.status=='ready':
                 matches=condition_matches(row.condition,state,cell=target)
                 facts.append('condition_on' if matches else 'condition_off')
@@ -569,6 +815,22 @@ def action_result(state,command,args,result,before):
         note(state,'memory_practiced')
     data=result.data or {}
     if any(key in data for key in ('throw_aim','fire_once_aim')): return
+    # 进阶练习（J1-J10）的成功动作证据。
+    if (command=='choose_event_option' and state.tutorial.get('practice_event_keys')
+            and (data.get('event')==_PRACTICE_EVENT_ID
+                 or data.get('dialogue_closed')==_PRACTICE_EVENT_ID)):
+        note(state,'event_choice_made')
+    if command=='reload_weapon_step':
+        gun=next((item for item in state.inventory
+                  if item.instance_id==state.tutorial.get('magazine_item')),None)
+        if gun is not None and not getattr(gun,'reload_steps',0):
+            note(state,'magazine_reloaded')
+    if command in ('take_from','pickup','collect_items','collect_here'):
+        position=data.get('position')
+        if position and tuple(position)==_PRACTICE_TRAP:
+            note(state,'trap_triggered')
+        if data.get('item')=='folded_projectile':
+            note(state,'anomaly_rewarded')
     simple={'move':'moved','wait':'waited','toggle_light':'light_toggled','pickup':'picked_up',
             'collect_items':'picked_up','take_from':'picked_up','container_fill':'filled',
             'container_pour':'poured','commit_board':'board_committed',
@@ -598,6 +860,8 @@ def action_result(state,command,args,result,before):
     if len(state.abilities)>before.get('abilities',len(state.abilities)): note(state,'ability_learned')
     if command=='choose_npc_option':
         option=before.get('option',{})
+        if option and not option.get('cost') and not option.get('gift_set') and not option.get('tutorial_control'):
+            note(state, 'npc_talked')
         if option.get('cost') and option.get('gain'): note(state,'trade_done')
         if data.get('gift'): note(state,'gift_done')
     if command.startswith('fire') and 'fired_hit' in state.tutorial_events: note(state,'clear_shot')

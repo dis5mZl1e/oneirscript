@@ -30,6 +30,29 @@ def asset_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "assets" / "fonts"
 
 
+# (路径, mtime_ns, 大小) -> 内容 sha256。
+_digest_cache: dict[tuple[str, int, int], str] = {}
+
+
+def _file_digest(path: Path) -> str:
+    """校验用内容哈希，按文件版本缓存。
+
+    随包统一字体有 15.36 MB，读全文 + sha256 实测 14.05 ms/次。图像栅格每遇到
+    一个新字形都要重新解析候选字体（``bundled_font_path`` -> ``active_font_face``
+    -> ``unified_font_face``），于是这 14 ms 在场景入口（16 次 = 225 ms）和长途
+    探索途中被反复支付——真机按住移动里 in-game `image_frame` 的最大值 412 ms
+    就是这么来的（缓存后同轮次口径 55.66 ms）。以 (mtime_ns, 大小) 为键：任何
+    改写文件的调用仍会重新校验，同一版本文件的重复校验只剩两次 stat。
+    """
+    info = path.stat()
+    key = (str(path), info.st_mtime_ns, info.st_size)
+    digest = _digest_cache.get(key)
+    if digest is None:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        _digest_cache[key] = digest
+    return digest
+
+
 def unified_font_face(directory: Path | None = None) -> FontFace | None:
     """读取并校验候选 manifest；缺失、损坏或哈希不符都视为不可用。"""
     directory = directory or asset_dir()
@@ -50,8 +73,7 @@ def unified_font_face(directory: Path | None = None) -> FontFace | None:
     path = directory / filename
     if not path.is_file():
         return None
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != data.get("sha256"):
+    if _file_digest(path) != data.get("sha256"):
         return None
     return FontFace(family=family, file=filename, path=path, unified=True,
                     default=data.get("default") is True,

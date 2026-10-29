@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import weakref
 
 from .board import PIECE_SPECS, PRIORITY_VECTORS, ROOT_ENDPOINTS
 from .grammar import board_signature, compile_board, semantics_of_placement
@@ -28,6 +29,209 @@ BLANK_GATE_DEFAULT = 10
 CONDUCTIVE_LIQUIDS = frozenset({"水", "导电液态记忆"})
 
 ENDPOINT_IDS = tuple(endpoint[0] for endpoint in ROOT_ENDPOINTS)
+
+# ---------------------------------------------------------------------------
+# 真实结算的视觉旁路（2026-10-26，ASCII 动画扩展 Task 7 / 设计 §5.6）
+#
+# 这里只把**已经发生**的成功结果抄成不可变事实：不改数值、不消耗游戏 RNG、
+# 不写存档。队列与去重表都挂在模块级弱引用上，不往 state 上新增字段，避免
+# 进入存档或改变玩法快照。
+# ---------------------------------------------------------------------------
+
+# opcode/piece -> (合并 family, visual_key)。family 相同的同根、同目标效果
+# 只登记一个主动画；后续来源作为 parent_id 指向主事件的子事件登记署名。
+FEEDBACK_VISUALS: dict[str, tuple[str, str]] = {
+    "spark": ("equipment.arc", "circuit.arc"),
+    "ember": ("equipment.explosion", "fx.explosion"),
+    "ignite": ("equipment.explosion", "cast.flame_nova"),
+    "blast": ("equipment.explosion", "fx.explosion"),
+    "shock": ("equipment.arc", "cast.fault_ring"),
+    "conduct": ("equipment.arc", "circuit.arc"),
+    "strike": ("equipment.cut", "fx.impact"),
+    "surge": ("equipment.flow", "default"),
+    "voice": ("equipment.sound", "boss.core_cry"),
+    "buffer": ("equipment.store", "fx.memory"),
+    "cover": ("equipment.store", "fx.memory"),
+    "imprint": ("equipment.store", "fx.memory"),
+    "echo_cell": ("equipment.store", "fx.memory"),
+    "buffer_release": ("equipment.release", "fx.impact"),
+    "imprint_release": ("equipment.release", "fx.impact"),
+    "echo_release": ("equipment.release", "fx.impact"),
+}
+
+# 只有真实作用效果才合并主动画；储存/兑现各自独立，不能被合并吞掉。
+MERGE_FAMILIES = frozenset({
+    "equipment.arc", "equipment.explosion", "equipment.cut", "equipment.flow",
+})
+
+_VISUAL_STATE: dict[int, tuple] = {}
+
+
+def _purge_visual_state(key: int) -> None:
+    _VISUAL_STATE.pop(key, None)
+
+
+def _visual_state(state) -> dict:
+    key = id(state)
+    entry = _VISUAL_STATE.get(key)
+    if entry is not None and entry[0]() is state:
+        return entry[1]
+    data = {"root": "", "groups": {}, "stores": {}}
+    try:
+        _VISUAL_STATE[key] = (weakref.ref(state), data)
+        weakref.finalize(state, _purge_visual_state, key)
+    except TypeError:  # pragma: no cover - 极少数不可弱引用的测试假状态
+        _VISUAL_STATE[key] = (lambda bound=state: bound, data)
+    return data
+
+
+def visual_root_id(state, endpoint: str, action_id=None) -> str:
+    """一次真实根事件的稳定视觉 root；读档后不补播历史事件。"""
+    if action_id is None:
+        frame = getattr(state, "_equipment_root_frame", None)
+        action_id = (frame.action_id if frame is not None
+                     else getattr(state, "action_seq", 0))
+    return f"equipment.{endpoint}:{int(action_id or 0)}"
+
+
+def emit_equipment_visual(state, *, endpoint: str, opcode: str, outcome: str,
+                          source, targets=(), paths=(), affected_cells=(),
+                          source_id=None, parent_store_key=None, store_key=None,
+                          facts=(), merged_allowed=True, visual_key=None):
+    """登记一次已完成的装备反馈；只入视觉旁路队列，不改世界。
+
+    parent_store_key 用于「储存 → 兑现」两个事件的父子关联；关联表只是
+    运行期弱引用，不进入世界状态或存档。同根同目标同 family 的第二条以后
+    只登记署名子事件，避免同一次结算画两个主爆炸。
+    """
+    from ..core.visual_events import emit_visual
+    from ..data.visual_catalog import recipe_for
+
+    family, key = FEEDBACK_VISUALS.get(opcode, (f"equipment.{opcode}", "default"))
+    if visual_key is not None:
+        key = visual_key
+    data = _visual_state(state)
+    root_id = visual_root_id(state, endpoint)
+    if data["root"] != root_id:
+        # 新根动作开始：主效果合并表按根重置；储存关联跨回合保留。
+        data["root"] = root_id
+        data["groups"] = {}
+    target_key = (tuple(targets) or tuple(affected_cells)
+                  or ((source,) if source is not None else ()))
+    group = (family, target_key)
+    main = data["groups"].get(group) if merged_allowed and family in MERGE_FAMILIES else None
+    parent_id = data["stores"].get(parent_store_key) if parent_store_key is not None else None
+    extra: tuple = ()
+    if main is not None:
+        # 同类主效果已经登记：这一条只作为署名子事件，不重复画主动画。
+        parent_id = main.event_id
+        key = "fx.impact"
+        outcome = "attribution"
+        extra = (("merged", True), ("main_event", main.event_id))
+    recipe = recipe_for(key)
+    event = emit_visual(
+        state,
+        kind=family,
+        outcome=outcome,
+        source=source,
+        targets=targets,
+        paths=paths,
+        affected_cells=affected_cells,
+        visual_key=key,
+        tier=recipe.tier,
+        theme=recipe.theme,
+        root_id=root_id,
+        parent_id=parent_id,
+        source_id=source_id,
+        facts=tuple(facts) + extra,
+        layer_key="equipment",
+    )
+    if main is None and merged_allowed and family in MERGE_FAMILIES:
+        data["groups"][group] = event
+    if store_key is not None:
+        data["stores"][store_key] = event.event_id
+    return event
+
+
+def forget_equipment_store(state, store_key) -> None:
+    """兑现后清掉运行期父子关联；世界与存档不受影响。"""
+    if store_key is None:
+        return
+    _visual_state(state)["stores"].pop(store_key, None)
+
+
+def _feedback_visual(state, path, event: RootEvent, result: FeedbackResult):
+    """把一条已成功结算的线路反馈登记成视觉事实。"""
+    piece = path.terminal_piece or ""
+    detail = result.detail or {}
+    source = event.cell
+    targets: tuple = ()
+    affected: tuple = ()
+    paths: tuple = ()
+    extra_facts: list = []
+    parent_key = None
+    store_key = None
+    kind_opcode = piece
+    if piece == "spark":
+        cell = detail.get("cell") or event.cell
+        source = event.cell
+        targets = (cell,) if cell else ()
+        affected = targets
+        extra_facts.append(("damage", int(detail.get("damage", 1))))
+    elif piece == "ember":
+        cell = detail.get("cell") or event.cell
+        source = cell or event.cell
+        targets = (cell,) if cell else ()
+        affected = targets
+        extra_facts.append(("strength", int(detail.get("strength", EMBER_STRENGTH))))
+    elif piece == "surge":
+        to = detail.get("to")
+        targets = (to,) if to else ()
+        affected = targets
+        if event.cell and to:
+            # 真实结算出来的源格 -> 目的格；单段真实位移，不是按半径扩的环。
+            paths = ((event.cell, to),)
+        extra_facts.append(("amount", int(detail.get("amount", 0))))
+        if detail.get("kind"):
+            extra_facts.append(("liquid", str(detail.get("kind"))))
+    elif piece == "voice":
+        cell = detail.get("cell") or event.cell
+        source = cell
+        affected = (cell,) if cell else ()
+        extra_facts.append(("reached", int(detail.get("reached", 0))))
+    elif piece == "buffer":
+        source = (state.player.x, state.player.y)
+        extra_facts.append(("kind", str(detail.get("kind", "any"))))
+        store_key = ("buffer", str(detail.get("kind", "any")))
+    else:
+        targets = (event.cell,) if event.cell else ()
+        affected = targets
+    facts = list(extra_facts)
+    visual_key = None
+    if event.derived:
+        # 兑现与「储存」分属两个事件；兑现使用实际效果的 visual_key。
+        kind_opcode = "echo_release"
+        _, visual_key = FEEDBACK_VISUALS.get(piece, ("", "default"))
+        parent_key = ("echo", str(event.endpoint), int(event.action_id),
+                      tuple(event.cell) if event.cell else None)
+    facts.extend((("piece", piece), ("opcode", piece),
+                  ("root_event", str(event.endpoint)),
+                  ("derived", bool(event.derived))))
+    return emit_equipment_visual(
+        state,
+        endpoint=event.endpoint,
+        opcode=kind_opcode,
+        outcome="release" if event.derived else "hit",
+        source=source,
+        targets=targets,
+        paths=paths,
+        affected_cells=affected,
+        parent_store_key=parent_key,
+        store_key=store_key,
+        facts=tuple(facts),
+        merged_allowed=not event.derived,
+        visual_key=visual_key,
+    )
 
 
 @dataclass
@@ -157,7 +361,9 @@ def _try_spark(state, path: ReactPath, event: RootEvent) -> FeedbackResult:
     if target.integrity <= 0:
         return FeedbackResult("spark", False, "目标已不存在")
     target.integrity -= 1
-    return FeedbackResult("spark", True, detail={"target": target.label, "damage": 1})
+    return FeedbackResult("spark", True,
+                          detail={"target": target.label, "damage": 1,
+                                  "cell": (target.x, target.y)})
 
 
 def _drain_liquid(state, cell, kind: str, amount: int) -> int:
@@ -278,7 +484,15 @@ def consume_buffer(state, kind: str) -> int:
         return 0
     if data.get("kind") not in ("any", kind):
         return 0
+    store_kind = str(data.get("kind", "any"))
     state.board_buffer = {}
+    # 兑现缓冲：独立于「储存」事件登记；只观察已经发生的减伤。
+    emit_equipment_visual(
+        state, endpoint="hurt", opcode="buffer_release", outcome="release",
+        source=(state.player.x, state.player.y), targets=(),
+        parent_store_key=("buffer", store_kind),
+        facts=(("piece", "buffer"), ("kind", str(kind)), ("amount", 1)))
+    forget_equipment_store(state, ("buffer", store_kind))
     return 1
 
 
@@ -341,6 +555,8 @@ def _run_feedback(state, path: ReactPath, event: RootEvent) -> FeedbackResult | 
     state.board_cooldowns[piece_id] = state.time + spec.cooldown
     state.board_feedback_round += 1
     state.messages.append(_feedback_message(state, piece_id, result))
+    # 旁路登记：只抄已经发生的成功结果，不改数值/冷却/回合。
+    _feedback_visual(state, path, event, result)
     return result
 
 
@@ -429,6 +645,15 @@ def _store_pending(state, path: ReactPath, event: RootEvent) -> FeedbackResult |
     state.board_feedback_round += 1
     result = FeedbackResult(piece_id, True, detail={"due": record["due"]})
     state.messages.append(_feedback_message(state, piece_id, result))
+    # 储存是独立的一次真实反馈；兑现（release_pending）另发一个事件。
+    store_key = ("echo", str(event.endpoint), int(event.action_id),
+                 tuple(event.cell) if event.cell else None)
+    emit_equipment_visual(
+        state, endpoint=event.endpoint, opcode=piece_id, outcome="store",
+        source=tuple(path.terminal) if path.terminal else event.cell,
+        visual_key="fx.memory", store_key=store_key,
+        facts=(("piece", piece_id), ("due", int(record["due"])),
+               ("budget", int(record.get("budget", 0)))))
     return result
 
 

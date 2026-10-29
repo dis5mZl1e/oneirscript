@@ -6,6 +6,12 @@ from typing import Any
 
 from .migration import held_event_ids
 
+#: 每层异常地点的上限。**结构自带事件与随机零散事件共用这一个名额**（2026-10-27）：
+#: 盖章期结构先占额（见 ``mapgen/forms.generate_solid_mask_with_vaults``），
+#: 随机投放只在余额内补位（见 ``core/generation._seed_layer_contents``）。
+#: 深层边界 28–30 由 ``mapgen/epilogue.py`` 整层接管，不受此约束。
+EVENT_MAX_PER_LAYER = 2
+
 EVENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {"event_id": "event.coffee_ring", "name": "桌上的咖啡环", "description": "圆环里藏着一条没有写完的路线。", "reward_id": "warm_coffee", "catalog_id": "event.coffee_ring", "insight_id": "路线依赖",
      "kind": "compound",
@@ -168,6 +174,9 @@ EVENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
      "dialogue": ["最深处的第一声啼哭还悬在原地。"],
      "options": [
       {"label": "接住那滴晨露", "reward_id": "morning_dew"},
+      {"label": "从回声里拎出那台脚步机", "reward_id": "expansion.sound.e13"},
+      {"label": "拆下错接在一起的两只传声筒", "reward_id": "expansion.sound.e14"},
+      {"label": "捡起回声里那把聚光把手", "reward_id": "expansion.light.e13"},
       {"label": "对着深渊听回声", "dissolution": 4, "mind": 4},
       {"label": "退出这片寂静", "leave": True}],
     },
@@ -185,6 +194,10 @@ EVENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
      "dialogue": ["画框里空着，标题写着你的名字。"],
      "options": [
       {"label": "取下无光灯笼", "reward_id": "night_lantern"},
+      {"label": "从空画框后抽出乐池的指挥棒", "reward_id": "expansion.sound.e15"},
+      {"label": "搬走最后一排那张空椅", "reward_id": "expansion.sound.e16"},
+      {"label": "扶起画框下那盏不肯熄灭的灯芯架", "reward_id": "expansion.light.e15"},
+      {"label": "扯下画框上蒙着的那块黑披布", "reward_id": "expansion.light.e16"},
       {"label": "在标题下签名", "dissolution": 6, "lucidity": 2},
       {"label": "把画翻过去", "leave": True}],
     },
@@ -194,6 +207,7 @@ EVENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
      "dialogue": ["潮水涨起时，无数名字浮出水面又沉下去。"],
      "options": [
       {"label": "捞起那杯茶", "reward_id": "deep_thought_tea"},
+      {"label": "从退潮处捡起那件沉箱工作服", "reward_id": "expansion.terrain.e14"},
       {"label": "念出一个名字", "dissolution": 4, "mind": 3},
       {"label": "等潮水退去", "leave": True}],
     },
@@ -229,6 +243,7 @@ EVENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
      "options": [
       {"label": "取走那卷底片", "reward_id": "double_frame"},
       {"label": "再拍一张", "dissolution": 5, "imagination": 3},
+      {"label": "从逆光的底片中取出裁纸刀", "reward_id": "expansion.light.e14"},
       {"label": "走出幕布", "leave": True}, {"label": "✦ 随机易逝物（稀有度随机）", "random_option": {"pool": "易逝物", "rarities": ["常见", "少见", "非常稀有"]}}],
     },
     {"event_id": "event.wardrobe_door", "name": "衣柜后的门", "description": "衣柜背面有一圈门铰链的印子。", "reward_id": "bent_hook", "catalog_id": "event.wardrobe_door", "insight_id": "疾行拾荒",

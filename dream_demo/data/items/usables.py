@@ -31,10 +31,12 @@ ITEMS = {
         "container": {"medium": "liquid", "multi": False, "cap": 12},
     },
     "guestbook_page": {
+        # 2026-10-26（平衡审计 §11.4）：恢复心智 5 → 6。5 低于「单资源 6–12」
+        # 标尺下限；文案不含数字，无需同步英文描述。
         "name": "留言板签名", "category": "易逝物",
         "rarity": "少见",
         "description": "在梦的留言板上签个名：「到此一游」。写完心里踏实一点。",
-        "color": "bright_yellow", "effect": "restore_mind", "power": 5, "max_stack": 2,
+        "color": "bright_yellow", "effect": "restore_mind", "power": 6, "max_stack": 2,
     },
 }
 

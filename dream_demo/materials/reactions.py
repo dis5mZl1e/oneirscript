@@ -509,3 +509,13 @@ def mix_pair(kinds: list[str] | tuple[str, ...], table: dict[frozenset, str]) ->
         if pair <= present:
             return product
     return ""
+
+
+def reaction_key(recipe: "ReactionDef") -> str:
+    """一条配方的稳定键（洞察「留意产物」的账用它做唯一标识）。
+
+    反应物**按名字排序**，所以同一对材料不论谁先谁后、也不论产物是液是气，
+    键都一样——这条账认的是「这一对东西」而不是某一次结算。
+    """
+    first, second = sorted((str(recipe.reactant_a), str(recipe.reactant_b)))
+    return f"{first}|{second}|{str(recipe.product)}"

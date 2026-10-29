@@ -121,6 +121,21 @@ def recent_action_times(state: Any, limit: int = 10) -> tuple[ActionTimeRecord, 
 
 def record_settlement(state: Any, result: SettlementResult) -> SettlementResult:
     _history(state).append(result)
+    # Presentation consumes actual trauma facts, never net resource deltas (which
+    # also include costs, healing and cap changes). Enemy attacks already publish
+    # their own directed strike events after their multi-resource settlement.
+    if (result.resource in ("mind", "lucidity") and result.applied < 0
+            and result.reason in (REASON_ENVIRONMENT, REASON_COMBAT)):
+        enemy_attack = (not getattr(state, "_presentation_indirect_trauma", False)
+                        and result.reason == REASON_COMBAT and result.source and any(
+                            result.source in (enemy.id, getattr(enemy, "label", None))
+                            for enemy in getattr(state, "enemies", ())))
+        player = getattr(state, "player", None)
+        if player is not None and not enemy_attack:
+            from .hit_events import note_damage
+            note_damage(state, target=player, amount=-result.applied, resource=result.resource,
+                        origin=result.channel or result.source or result.reason,
+                        damage_type=result.resource)
     return result
 
 
@@ -161,6 +176,16 @@ def settle_delta(
             resource=resource,requested=float(delta),applied=0.0,before=before,after=before,
             reason=reason,source=source,channel=channel,blocked='stasis',
             world_time=int(getattr(state,'time',0)),action_seq=int(getattr(state,'action_seq',0))))
+    if resource == "lucidity" and delta < 0 and reason in (REASON_COMBAT, REASON_ENVIRONMENT):
+        from ..equipment.expansion_runtime import reduce_lucidity_trauma
+        delta, _guarded = reduce_lucidity_trauma(state, delta, source=source)
+    if delta < 0:
+        # 记忆碎片的缓冲：一次只由一条碎片替这一下受伤付款（同通道不叠付）。
+        # 只压幅度、不改符号——缓冲多过这一下时，剩下的额度留给下一次。
+        from . import memory_buffers
+        absorbed = memory_buffers.spend(state, f"{resource}:{reason}")
+        if absorbed:
+            delta = min(0.0, float(delta) + absorbed)
     after = before + float(delta)
     capped = False
     blocked = ""

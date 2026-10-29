@@ -101,13 +101,16 @@ _CONTRACT_ENDINGS = {
 
 
 def contract_ending(effect: str, opcode: str = "", *, power: int = 0, secondary: int = 0) -> str:
+    from ..i18n import tr
+
     if effect == 'blank_edge' and power > 0:
-        return f'想象力不超过 {secondary} 时，每回合多回流 {power} 点想象力'
+        return tr('想象力不超过 {threshold} 时，每回合多回流 {power} 点想象力',
+                  threshold=secondary, power=power)
     if effect in _CONTRACT_ENDINGS:
-        return _CONTRACT_ENDINGS[effect]
+        return tr(_CONTRACT_ENDINGS[effect])
     if opcode == "cover":
-        return "护持一直都在"
-    return "那份效果一直都在"
+        return tr("护持一直都在")
+    return tr("那份效果一直都在")
 
 
 def continuous_word(definition_id: str) -> str:
@@ -144,9 +147,13 @@ def action_form(definition_id: str, *, switched: bool = False) -> tuple[str, str
 def role_text(definition_id: str, response) -> str:
     """Explain the selected reading, including its actual effect or action."""
     kind = equipment_kind(definition_id)
-    name = ITEM_DEFINITIONS.get(definition_id, {}).get("name", definition_id)
+    definition = ITEM_DEFINITIONS.get(definition_id, {})
+    name = definition.get("name", definition_id)
     meaning = response.meaning
     mode = response.reading
+    if (definition.get("expansion_catalog_id")
+            and response.role in ("modifier", "verb", "complement")):
+        return meaning
     if response.role == "excluded":
         return meaning
     if mode == "attribution" and response.role == "modifier":

@@ -35,7 +35,10 @@ ITEMS = {
         "effect_description": "占五格；持续使用时点燃强度增加 1。“地”关联发射时，命中后尝试点燃已有燃料，成功另付 1 点想象力，点燃反馈冷却 6 回合。",
     },
     "carbon_copy_knife": {
-        "name": "复写刻刀", "category": "携带意象", "slot": "手中意象", "rarity": "少见",
+        # 2026-10-26 平衡审计：这是 T3 池里唯一的「少见」件（其余 12 件都是稀有以上），
+        # 位置本身就不成立；伤害线 订书机 +2（少见·R1）< 本件 +3 < 初啼之牙 +4
+        # （非常稀有·R3）已经成立，缺的只是稀有度标签。升为「稀有」。
+        "name": "复写刻刀", "category": "携带意象", "slot": "手中意象", "rarity": "稀有",
         "color": "#a8a0bc", "effect": "weapon_damage", "power": 3,
         "melee": {"time": 1.1},
         "description": "沿旧刻痕再划一遍：近战创伤 +3，基础攻击耗时 1.1。稳妥而略显迟缓。",
@@ -56,8 +59,11 @@ ITEMS = {
         "name": "无门之环", "category": "携带意象", "slot": "依附物", "rarity": "非常稀有", "color": "#c8d8e8",
         # 2026-10-07 档位平衡：+2 比 T1 磨亮的硬币（+3）还弱，非常稀有件
         # 反向垫底；升为 +4。
-        "description": "没有门框的环。戴着它，每一次崩解都推得更深（崩解推进 +4）。",
-        "effect": "coin_bonus", "power": 4,
+        # 2026-10-26 平衡审计：+4 与 R2 稀有的压扁的四叶草（+4）同值、比 R3 的
+        # 命运硬币（+5）还低 1，崩解线在 R3+ 断成倒挂（残差 z=−2.51，全库最大）。
+        # 升为 +6，让 硬币 3 < 四叶草 4 < 命运硬币 5 < 无门之环 6 严格递增。
+        "description": "没有门框的环。戴着它，每一次崩解都推得更深（崩解推进 +6）。",
+        "effect": "coin_bonus", "power": 6,
     },
     "corridor_candle": {
         "name": "回廊烛台", "category": "易逝物", "rarity": "稀有", "color": "#f0e2c0",
@@ -118,8 +124,10 @@ ITEMS = {
         "description": "受击时向相邻的攻击者反打一记传导冲击。", "effect": "shock_aura", "power": 1,
     },
     "metronome_pendant": {
+        # 2026-10-26 平衡审计：原 power 1（−0.1）与 R1 常见的磨薄的袖套同效同值，
+        # 2 区少见件完全没换来任何东西；升为 2（−0.2），与同区域的速写手套同档。
         "name": "停摆的节拍器", "category": "携带意象", "slot": "依附物", "rarity": "少见", "color": "#c8a860",
-        "description": "戴着它，攻击耗时 −0.1。", "effect": "swift_strike", "power": 1,
+        "description": "戴着它，攻击耗时 −0.2。", "effect": "swift_strike", "power": 2,
     },
     "surveyor_compass": {
         "name": "刻度磨损的指南针", "category": "携带意象", "slot": "依附物", "rarity": "常见", "color": "#a89070",
@@ -216,9 +224,11 @@ ITEMS = {
         "color": "#d8c8a0", "effect": "swift_strike", "power": 2,
     },
     "gravestone_wristband": {
+        # 2026-10-26 平衡审计：稀有件只给 −1/−1，是同稀有度里最弱的一件（同为稀有的
+        # 铅衬围裙 −2/−2、无光斗篷 −3/−3），落到 T1 的数值。升为 −2/−2，与稀有档基线对齐。
         "name": "碑文护腕", "category": "携带意象", "slot": "依附物·一", "rarity": "稀有",
-        "description": "刻着一整圈墓志铭的旧表带：读得越熟，越分不清自己是不是碑里的人。心智创伤与清醒创伤各 −1。",
-        "color": "#9ab8ff", "effect": "dual_armor", "power": 1,
+        "description": "刻着一整圈墓志铭的旧表带：读得越熟，越分不清自己是不是碑里的人。心智创伤与清醒创伤各 −2。",
+        "color": "#9ab8ff", "effect": "dual_armor", "power": 2,
     },
     "hourglass_pendant": {
         "name": "逆行的沙漏", "category": "携带意象", "slot": "依附物·二", "rarity": "稀有",
@@ -239,7 +249,7 @@ ITEMS = {
         "name": "喷水枪", "category": "携带意象", "slot": "手中意象", "rarity": "稀有",
         "description": "枪管里晃着半管来路不明的水。发射液态记忆：淋在墙上淌成滩，浇在意识体上留一层。有装液体的容器就抽容器，没有就只能喷少量清水；每次发射耗费一点想象力。",
         "color": "bright_cyan", "effect": "spray_liquid",
-        "spray": {"medium": "liquid", "amount": 12, "builtin_kind": "水", "builtin_amount": 6, "cost": 2},
+        "spray": {"medium": "liquid", "amount": 12, "builtin_kind": "水", "builtin_amount": 3, "builtin_cost": 3, "cost": 2},
     },
     "hair_dryer": {
         "name": "吹风机", "category": "携带意象", "slot": "手中意象", "rarity": "稀有",
@@ -494,8 +504,11 @@ ITEMS = {
         "effect": "throw_master", "power": 1,
     },
     "focus_ring": {
+        # 2026-10-26 平衡审计：同为「少见」的蜡封图章是穿透 +2，本件只有 +1，
+        # 同档 2 倍跨度。穿透线本就该是 常见+1 / 少见+2 / 稀有+3 的三级阶梯，
+        # 本件是缺掉的那一级——降到「常见」，数值不动。
         "name": "调焦环", "category": "携带意象", "slot": "惯用物",
-        "rarity": "少见", "color": "#c8d8f0",
+        "rarity": "常见", "color": "#c8d8f0",
         "description": "套在指间旋动的黄铜环，替你的眼睛校准弹道：弹体穿透 +1。",
         "effect": "pierce_up", "power": 1,
     },
@@ -507,14 +520,18 @@ ITEMS = {
     },
     # ---- 梦中梦·千禧园（2026-10-10）----
     "unread_99": {
-        "name": "未读消息 99+", "category": "携带意象", "slot": "惯用物", "rarity": "少见", "color": "#e06060",
+        # 2026-10-26 平衡审计：崩解 +1 是全库最低，却挂着「少见」——同为少见的
+        # 磨亮的硬币是 +3，同档 3 倍跨度。崩解线应为 常见1 < 少见3 < 稀有4 <
+        # 非常稀有5/6，本件是该线的入口，降到「常见」，数值不动。
+        "name": "未读消息 99+", "category": "携带意象", "slot": "惯用物", "rarity": "常见", "color": "#e06060",
         "description": "永远清不完的红点。焦虑推着你往前：崩解推进 +1。",
         "effect": "coin_bonus", "power": 1,
     },
     "crystal_charm": {
+        # 2026-10-26 平衡审计：同碑文护腕——稀有件却只给 T1 的 −1/−1。升为 −2/−2。
         "name": "水晶机箱挂饰", "category": "携带意象", "slot": "依附物", "rarity": "稀有", "color": "#a0e0f0",
-        "description": "机箱前面板上的亚克力小水晶。晃一晃，静电都绕着走（心智与清醒的伤口都浅一点）。",
-        "effect": "dual_armor", "power": 1,
+        "description": "机箱前面板上的亚克力小水晶。晃一晃，静电都绕着走（心智创伤 −2、清醒创伤 −2）。",
+        "effect": "dual_armor", "power": 2,
     },
     "broadband_grail": {
         "name": "宽带圣杯", "category": "携带意象", "slot": "惯用物", "rarity": "非常稀有", "color": "#f0d060",

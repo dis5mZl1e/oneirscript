@@ -61,8 +61,8 @@ EN_CONTENT: dict[str, str] = {
     "自动走到 ◈": "Auto-walk to the ◈",
     "按 N 下潜": "Press N to dive",
     "这里是所有梦开始的地方。": "This is where every dream begins.",
-    "左侧是梦境本身；右侧是意识面板——心智、清醒度与想象力，事件记录与七个页签都在那边。":
-        "The dream itself is on the left; the mind panels are on the right — mind, lucidity and imagination, plus the event log and seven tabs.",
+    "左侧是梦境本身；右侧是意识面板——心智、清醒度与想象力，事件记录与六个页签都在那边。":
+        "The dream itself is on the left; the mind panels are on the right — mind, lucidity and imagination, plus the event log and six workspaces.",
     "用方向键或小键盘移动。WASD 被派给了面板选位，不负责走路。":
         "Move with the arrow keys or the numpad. WASD belongs to panel selection, not walking.",
     "走到亮起的 ◇ 上。每走一步，世界便流过一回合。": "Walk onto the lit ◇. Every step lets one turn flow past.",
@@ -130,7 +130,7 @@ EN_CONTENT: dict[str, str] = {
     "梦的起始在你身后合拢。": "The Origin of Dreams closes behind you.",
     "✦ {current}/{total} · {title}": "✦ {current}/{total} · {title}",
     "▸ {key} — {goal}": "▸ {key} — {goal}",
-    "Esc 跳过此步 · n 随时下潜离开": "Esc skips this step · n dives out anytime",
+    "Delete 跳过此步 · Esc 返回/暂停 · n 随时下潜离开": "Delete skips this step · Esc returns/pauses · n dives out anytime",
     "你离开了梦的起始——它在你身后合拢。": "You left the Origin of Dreams — it closed behind you.",
     "起点已经合拢，回不去了。": "The origin has closed. There is no going back.",
     "散开的纸屑慢慢浮起——玩偶意识体重新叠好了自己。":
@@ -304,6 +304,7 @@ EN_CONTENT: dict[str, str] = {
         "The arc bolt lands in conductive medium, charging {count} tiles of electric field.",
     "{name}在火里烧尽了。": "{name} burns away in the fire.",
     "想象力不足（喷射需要 2 点）。": "Not enough imagination (spraying costs 2).",
+    "想象力不足（喷射需要 {cost} 点）。": "Not enough imagination (spraying costs {cost}).",
     "喷射方向无效。": "Invalid spray direction.",
     "喷射。": "Sprayed.",
     "喷射弹药": "Spray Ammo",
@@ -340,7 +341,7 @@ EN_CONTENT: dict[str, str] = {
     "灵感咖啡": "Inspiration Coffee",
     "苦到灵魂发抖的一小杯，喝完的瞬间脑子里多出三个没写过的开头。想象力 +16。": "A tiny cup bitter enough to shiver the soul; the instant you finish it, three unwritten openings appear. Imagination +16.",
     "安眠含片": "Sleep Lozenge",
-    "含一片，梦替你把没做完的事做完一半。清醒度 +5。": "Let one dissolve and the dream finishes half of what you left undone. Lucidity +5.",
+    "含一片，梦替你把没做完的事做完一半。清醒度 +6。": "Let one dissolve and the dream finishes half of what you left undone. Lucidity +6.",
     "高压水泵": "High-Pressure Pump",
     "给喷水枪加装的第二级压水膛：每次喷射的材料量 +6。": "A second pressure chamber for the water gun: +6 material per spray.",
     "聚气喷嘴": "Air Concentrator Nozzle",
@@ -792,8 +793,8 @@ EN_CONTENT: dict[str, str] = {
         "The Abyss of No-Thought swallows memory: bag items cannot be used or equipped, and their names all become question marks.",
     "流动月光替你照亮四周：视野范围翻倍。":
         "Flowing moonlight lights your surroundings: vision doubled.",
-    "身体被放大：无法穿过 1 格宽的缝隙和门，受到的心智创伤减半。":
-        "Your body is enlarged: you cannot squeeze through 1-cell gaps or doors, and mind trauma taken is halved.",
+    "身体被放大：挤过 1 格宽的缝隙时移动耗时翻倍，仍然挤不过门，受到的心智创伤减半。":
+        "Your body is enlarged: squeezing through a 1-cell gap doubles that move's time, doors still refuse you, and mind trauma taken is halved.",
     "看见所有意象的位置与形态——每个失控意识的位置与种类都如实显形（连伪装也看穿），代价是它们也同时看见了你的位置。":
         "See the position and form of every image — each stray consciousness is revealed exactly as it is, disguise included — at the cost of them seeing your position too.",
     "蜂蜜裹住伤口：每 2 回合恢复 1 点清醒度（每层上限 6）；上方生物移速减半。":
@@ -1095,6 +1096,9 @@ EN_CONTENT: dict[str, str] = {
 
 # Bounded material residue, combat FX rebalance (2026-10-08).
 EN_CONTENT.update({
+    'X → 方向键 → Enter': 'X → arrows → Enter',
+    '按 X 观察，用方向键移动 ? 辅助选中区，按 Enter 前往可达位置。\n直接左键点远处也可寻路；行走中任意键取消，该按键只刹停。':
+        'Press X, move the observation cursor with arrows, then Enter walks to a reachable tile.\nA left click also starts navigation. Any key while walking only stops the route.',
     '电痉挛': 'Electric spasm',
     '被连通电场击中': 'Struck by a connected electric field',
     '短促电流绊住关节：移动额外耗时 +0.8，仅维持 1 回合。': 'A short current locks the joints: move time +0.8 for only 1 round.',
@@ -1264,8 +1268,8 @@ EN_CONTENT.update({
     "永远清不完的红点。焦虑推着你往前：崩解推进 +1。":
         "The red badge you can never clear. Anxiety pushes you forward: dissolution +1.",
     "水晶机箱挂饰": "Crystal Case Charm",
-    "机箱前面板上的亚克力小水晶。晃一晃，静电都绕着走（双防 +1）。":
-        "An acrylic trinket from a case front panel. Give it a swing and static steers clear (dual guard +1).",
+    "机箱前面板上的亚克力小水晶。晃一晃，静电都绕着走（心智创伤 −2、清醒创伤 −2）。":
+        "An acrylic trinket from a case front panel. Give it a swing and static steers clear (mind trauma −2, lucidity trauma −2).",
     "留言板签名": "Guestbook Signature",
     "在梦的留言板上签个名：「到此一游」。写完心里踏实一点。":
         "Sign the dream's guestbook: 'was here'. Signing it settles the heart a little.",
@@ -1362,9 +1366,8 @@ EN_CONTENT.update({
     '胶液拖住脚底：每步多耗时 0.15 回合；各种迟滞合计最多多耗时 0.5 回合。': 'Glue holds your soles: each step takes 0.15 rounds longer. Combined slowing adds at most 0.5 rounds per step.',
 })
 
-# 疗养院药品的形象介绍，数值与限制保留在独立作用行。
+# 疗养院药品的形象介绍；作用说明另起一段，不再带前缀。
 EN_CONTENT.update({
-    '作用：': 'Effect: ',
     '一小瓶淡金色的露，摇过以后，液面仍很平静。闻起来像晒过的枕头。': 'A small bottle of pale gold dew. Its surface stays still after shaking; it smells like a pillow dried in sunlight.',
     '蓬松的白糖团，拆开包装就缓缓鼓起，像还在呼吸。': 'A fluffy white lump of sugar. Once unwrapped, it slowly swells as if still breathing.',
     '细粒在舌尖化开，几个忘掉的颜色先后浮上来。': 'The grains dissolve on your tongue, bringing back several forgotten colours one after another.',
@@ -1453,4 +1456,10 @@ EN_CONTENT.update({
         "To go deeper, finish this floor's paperwork: read an old library card, read the annotation-covered desk corner, and set one catalog mechanism in order.",
     '旧梦痕的 0 层仍是已退役的十二步教学图（教程 v{old}）：新版「梦的起始」课程不接管这一张图，旧步骤与进度不映射到新的子目标，也不按新地图伪造完成；本层地形、持有与掉落原样保留。要上新课程请开一局新梦，提示前的梦痕已备份。':
         "This save's layer 0 is still the retired twelve-step teaching map (tutorial v{old}). The new Origin course does not take over this map: old steps and progress are not mapped onto the new objectives, and nothing is credited as though the new map had been used. This layer's terrain, possessions and drops are kept exactly as they are. To take the new course, start a new dream; the dream trace was backed up before this notice.",
+})
+
+EN_CONTENT.update({
+    '按 Alt+1 打开行囊。Tab 循环切换行动、行囊、构筑、自身、环境、日志；各菜单还可点击顶部文字按钮打开。':
+        'Press Alt+1 for the pack. Tab cycles Act, Pack, Build, Self, Env and Log; the top buttons also open each workspace.',
+    'Alt+1': 'Alt+1',
 })

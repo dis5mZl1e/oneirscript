@@ -67,6 +67,7 @@ from ..styles import CARRIED_IMAGE_STYLE
 from ..styles import GAME_FRAME_SECONDS
 from ..styles import HOME_PANEL_MODES
 from ..styles import LAYER_LABEL_STYLE
+from ..styles import RIGHT_PANEL_MODES
 from ..widgets import (
     CodexListView,
     HistoryListView,
@@ -96,16 +97,26 @@ from ..board_editor import (
 class NavigationMixin:
     """导航动作族：action_*、楼层过渡、主页/存档/新游戏/暂停菜单、按钮分发。"""
 
-    def _modal_menu_open(self) -> bool:
-        """全屏暂停菜单（或它打开的设置页）、联想盘编辑器是否正在遮挡世界。
+    def _modal_menu_open(self, *, allow_inspection: bool = False) -> bool:
+        """全屏模态覆盖层是否正在遮挡世界。
 
-        on_key 的 pause / board_editor 分支挡得住键盘；但 q 是 priority 绑定
-        （先于 on_key）、底栏键位点击根本不经过 on_key——这些入口各自需要这道
-        卫兵。编辑器开着时更要拦死：整理布局时顺手走一步／发射一次是设计方案
-        §8.4 明确禁止的。
+        涵盖：暂停菜单（或它打开的设置页/图鉴覆盖层/旧梦回忆覆盖层）、联想盘
+        编辑器、装备三选一、篡改编辑器与观察检视。on_key 的模态分支挡得住
+        键盘；但 q 是 priority 绑定（先于 on_key）、Tab 走 Screen 的 priority
+        绑定、底栏键位点击根本不经过 on_key——这些入口各自需要这道卫兵。
+        图鉴覆盖层 pause_codex 2026-10-24 补进名单（键位治理 A3：此前它开着
+        时 Tab 仍会切换右栏工作区、底栏按钮也能穿透）；home_history 同批补进
+        （键位治理 B7 的游戏内旧梦回忆覆盖层与主页共用该 panel_mode，主页
+        语义由 not self.home_mode 排除）。
         """
-        return self._inspection_active() or (self._active_tamper_editor() is not None or bool(getattr(self, 'equipment_choice', None))) or (not self.home_mode and self.panel_mode in (
-            "pause", "pause_settings", "board_editor",
+        side_tamper = (getattr(self, 'world_tamper_editor', None) is not None
+                       and getattr(self.world_tamper_editor, 'host', 'map') == 'side'
+                       and self.panel_mode == 'actions'
+                       and self._panel_subpage_id() == 'tamper')
+        return (self._inspection_active() and not allow_inspection) or ((self._active_tamper_editor() is not None and not side_tamper
+                    and not (allow_inspection and getattr(self, "world_tamper_editor", None) is not None))
+                    or bool(getattr(self, 'equipment_choice', None))) or (not self.home_mode and self.panel_mode in (
+            "pause", "pause_settings", "pause_codex", "board_editor", "home_history",
         ))
 
     def action_assist_action(self) -> None:
@@ -215,6 +226,10 @@ class NavigationMixin:
                 old_viewport = None
         result = (self._apply(command, ignore_dissolution=True) if ignore_dissolution
                   else self._apply(command))
+        if self.tutorial_session and (self.session.state.run_over
+                or not self.session.state.tutorial.get('active')):
+            self._finish_tutorial_session()
+            return result
         if result.changed and old_frame is not None and not self.home_mode:
             try:
                 self._start_floor_transition(old_frame, old_viewport, old_image)
@@ -469,6 +484,22 @@ class NavigationMixin:
             return True
         return False
     def _return_home(self) -> None:
+        if self._transition_timer is not None:
+            self._transition_timer.stop()
+            self._transition_timer = None
+        self._floor_transition = None
+        if self.aiming:
+            self.cancel_aim()
+        self._fx_waves.clear()
+        self._fx_hits.clear()
+        self._fx_flashes.clear()
+        self._fx_frame_digest = self._fx_quick_key = None
+        try:
+            map_view = self.query_one('#map', MapView)
+            map_view.set_intent_marks({})
+            map_view.update_image_effects({}, {}, force=True, fog_styles={})
+        except Exception:
+            pass
         self.sentence_aim = None
         self.equipment_choice = None
         self.aim_action_choice = None
@@ -480,6 +511,9 @@ class NavigationMixin:
         self._home_started = None
         self.home_mode = True
         self.panel_mode = "home"
+        # 退出存档回主页＝锁定解除（玩家规则：只有退出存档重进或手动 ~ 才解除）。
+        self.panel_locked = False
+        self._locked_panel_page = None
         self.home_view = "menu"
         # 回主页后存档页默认回到普通槽位；测试存档只能从「⚙ 测试模式」入口再进。
         self.saves_test = False
@@ -544,7 +578,9 @@ class NavigationMixin:
         if self._home_timer is not None:
             self._home_timer.pause()
         self.home_mode = False
-        self.panel_mode = "world"
+        self.panel_locked = False
+        self._locked_panel_page = None
+        self.panel_mode = self._default_panel_mode()
         # [SFX挂点] 音乐·进入游戏（读档/新开局）：play_music("theme") 淡入循环，
         # 建议 梦境音乐\snow_theme_loop.ogg 改名 theme.ogg 覆盖占位资源。
         # 主页里 Enter 由按钮绑定消费时不经过底栏，可能留下未消耗的标记；
@@ -599,6 +635,11 @@ class NavigationMixin:
         """
         if self.sentence_aim is not None:
             self._cancel_sentence_aim()
+        # 2026-10-26：从任意右侧工作区打开的暂停菜单，继续时回到原来的页面
+        # （选中项与滚动位置本来就不清），而不是一律丢回事件记录页。
+        self._pause_return_mode = (self.panel_mode
+                                   if self.panel_mode in RIGHT_PANEL_MODES
+                                   else self._default_panel_mode())
         self.pause_cursor = 0
         self.panel_mode = "pause"
         self.set_focus(None)
@@ -607,8 +648,13 @@ class NavigationMixin:
         self.refresh_view()
 
     def close_pause_menu(self) -> None:
-        """「继续」：收起菜单回到世界（不消耗回合，世界本来就是静止的）。"""
-        self.panel_mode = "world"
+        """「继续」：收起菜单回到世界（不消耗回合，世界本来就是静止的）。
+
+        2026-10-26：从右侧工作区打开时回到原页，保留原选中项。
+        """
+        self.panel_mode = (getattr(self, "_pause_return_mode", None)
+                           or self._default_panel_mode())
+        self._pause_return_mode = None
         self._hide_pause_views()
         self.query_one("#layout").styles.display = "block"
         self.refresh_view()
@@ -686,6 +732,8 @@ class NavigationMixin:
         """光标所在的主页选项 id（与 compose() 里的控件 id 一致）。"""
         if self.home_view == "menu":
             return self.HOME_MENU_ITEMS[self.menu_index]
+        if self.home_row == self.session.manager.SLOT_COUNT and not self.saves_test:
+            return 'home-tutorial'
         return self.HOME_ROWS[self.home_row][self.home_column]
 
     def _sync_home_cursor(self) -> None:
@@ -734,13 +782,15 @@ class NavigationMixin:
             count = len(self.HOME_MENU_ITEMS)
             self.menu_index = (self.menu_index + (vertical or 0) + (horizontal or 0)) % count
             self._sync_home_cursor()
-            self.refresh_view()
+            self._refresh_home_menu_selection()
+            self._refresh_tutorial_coach()
             return
         if vertical:
-            self.home_row = (self.home_row + vertical) % self.session.manager.SLOT_COUNT
-            self.home_column = min(self.home_column, len(rows[self.home_row]) - 1)
+            self.home_row = (self.home_row + vertical) % (self.session.manager.SLOT_COUNT + (not self.saves_test))
+            self.home_column = (min(self.home_column, len(rows[self.home_row]) - 1)
+                                if self.home_row < self.session.manager.SLOT_COUNT else 0)
         if horizontal:
-            width = len(rows[self.home_row])
+            width = len(rows[self.home_row]) if self.home_row < self.session.manager.SLOT_COUNT else 1
             self.home_column = (self.home_column + horizontal) % width
         self._sync_home_cursor()
         self.refresh_view()
@@ -762,6 +812,39 @@ class NavigationMixin:
         """主页槽位/删档/开局用的 SaveManager（按当前存档页决定目录）。"""
         return SaveManager(self._saves_root())
 
+    # ---- 读档预取（2026-10-26 第二轮读档提速）-------------------------
+    # 打开存档页后玩家通常要看几百毫秒再按 Enter；这段时间把可安全读取的槽位
+    # 在后台线程解码好，点击瞬间只剩换会话 + 首帧。实现与安全边界见
+    # ui/app/save_prefetch.py（不写玩家存档；需迁移的旧档一律不预取）。
+    def _get_save_prefetcher(self):
+        prefetcher = getattr(self, "_save_prefetcher", None)
+        if prefetcher is None:
+            from .save_prefetch import SavePrefetcher
+            prefetcher = self._save_prefetcher = SavePrefetcher()
+        return prefetcher
+
+    def _save_prefetch_enabled(self) -> bool:
+        if getattr(self, "_save_prefetch_disabled", False):
+            return False
+        from ...env_compat import get as env_get
+        raw = str(env_get("SAVE_PREFETCH", "1")).strip().lower()
+        return raw not in ("0", "off", "false", "no")
+
+    def _start_save_prefetch(self) -> None:
+        """存档页显示后后台预取现有槽位（只读；失败静默，不影响页面）。"""
+        if not self._save_prefetch_enabled():
+            return
+        try:
+            root = self._saves_root()
+            manager = SaveManager(root)
+            slots = [slot for slot in range(1, manager.SLOT_COUNT + 1)
+                     if manager.for_slot(slot).slot_exists()]
+            if slots:
+                self._get_save_prefetcher().start(root, slots)
+        except Exception:
+            # 预取是纯加速路径：任何异常都回落正常读档，不能影响打开存档页。
+            pass
+
     def _open_saves(self, slot: int | None = None, *, test: bool = False) -> None:
         """进入存档槽选择/删除页（可带初始槽位）；test=True 时操作用测试存档目录。"""
         self.saves_test = test
@@ -778,6 +861,8 @@ class NavigationMixin:
         self.set_focus(None)
         self._sync_home_cursor()
         self.refresh_view()
+        # 页面已排好刷新，再启动后台预取：不抢首页这一帧的合成时间。
+        self._start_save_prefetch()
 
     def _close_saves(self) -> None:
         """存档槽页 → 回主菜单。"""
@@ -796,12 +881,16 @@ class NavigationMixin:
         self.set_focus(None)  # 同 _open_saves。
         self._sync_home_cursor()
         self.refresh_view()
+        self._start_save_prefetch()
 
     def _activate_home_item(self, item_id: str) -> bool:
         """激活主页上的一个选项（存档槽 / 删除 / 图鉴 / 设置 / 退出）。
 
         键盘 Enter 与鼠标点击共用这一条路径，返回是否认领了该 id。
         """
+        if item_id == 'home-tutorial' and not self.saves_test:
+            self._start_tutorial_session()
+            return True
         if item_id == "home-enter":
             # 入梦：主页不直接摆存档，进入存档槽选择/删除页（2026-09-23 改版）。
             self._open_saves()
@@ -843,21 +932,43 @@ class NavigationMixin:
     def _load_slot(self, slot: int, *, test: bool = False) -> None:
         root = self._test_save_dir() if test else self.base_save_dir
         manager = SaveManager(root).for_slot(slot)
-        try:
-            state = manager.load()
-        except OutdatedSaveError as exc:
-            # 旧格式**明确拒绝**（重构方案 §12.2）：留在主页并把原因说出来。
-            # 不能像坏档那样默默转去新开局——那会让玩家以为存档凭空消失了。
-            self.show_toast(str(exc))
-            return
-        except FileNotFoundError:
-            self._open_newgame(slot, test=test)
-            return
-        self._adopt_slot_session(state, manager, slot, test_mode=test)
+        # 2026-10-26 第二轮：存档页打开后已后台解码过的状态直接复用，点击瞬间
+        # 不再付 JSON 解析 + 状态解码；take() 会按主档 stat 校验，文件变过即作废。
+        state = None
+        if self._save_prefetch_enabled():
+            try:
+                state = self._get_save_prefetcher().take(root, slot)
+            except Exception:
+                state = None
+        migrated = False
+        if state is None:
+            try:
+                state = manager.load()
+            except OutdatedSaveError as exc:
+                # 旧格式**明确拒绝**（重构方案 §12.2）：留在主页并把原因说出来。
+                # 不能像坏档那样默默转去新开局——那会让玩家以为存档凭空消失了。
+                self.show_toast(str(exc))
+                return
+            except FileNotFoundError:
+                self._open_newgame(slot, test=test)
+                return
+            migrated = bool(getattr(manager, "load_migrated", False))
+        # 2026-10-26 读档性能：磁盘上本来就是这份状态，普通读档不需要在
+        # GameSession 构造时立刻整局重编码写盘（玩家实测卡顿 95–160ms）。
+        # 只有本次 load() 真做了旧档迁移（persist-decode 提供的 load_migrated）
+        # 才立即落盘，保留「迁移后马上写回」的语义；预取命中的状态必然未迁移。
+        self._adopt_slot_session(state, manager, slot, test_mode=test,
+                                 persist_initial=migrated)
 
-    def _adopt_slot_session(self, state, manager, slot: int, *, test_mode: bool = False) -> None:
-        """载入/新建共用的收尾：换会话、记槽位、光标归位、离开主页。"""
-        self.session = GameSession(state, manager)
+    def _adopt_slot_session(self, state, manager, slot: int, *, test_mode: bool = False,
+                            persist_initial: bool = True) -> None:
+        """载入/新建共用的收尾：换会话、记槽位、光标归位、离开主页。
+
+        参数 persist_initial：构造 GameSession 时是否立即写盘。新开局/重试必须
+        保持 True；普通读档传 False，避免把刚读出的状态原样重写一遍。
+        """
+        self.session = GameSession(state, manager, persist_initial=persist_initial)
+        self.tutorial_session = False
         self.test_mode = bool(test_mode)  # 测试存档带调试面板
         self.selected_slot = slot
         # [SFX挂点] 读取存档·进入游戏瞬间：建议 descend 或 teleport_in（下潜入梦境的语义）。
@@ -868,6 +979,31 @@ class NavigationMixin:
         self.save_disabled = False
         self._leave_home()
 
+    def _start_tutorial_session(self) -> None:
+        """A fresh practice world with persistence disabled at the session boundary."""
+        if not self.tutorial_session:
+            self._tutorial_home_session = (self.session, self.save_disabled)
+        self._return_home()
+        state = GameState.new(seed=20261023, tutorial=True)
+        state.tutorial['coach_version'] = 1
+        self._coach_hidden = self._coach_directory = False
+        self._coach_drag_position = None
+        self._coach_content_key = self._coach_card_geometry = None
+        self.session = GameSession(state, SaveManager(self.base_save_dir),
+                                   persist_initial=False, persistence_enabled=False)
+        self.tutorial_session = True
+        self.save_disabled = True
+        self.test_mode = False
+        self.ending_shown = False
+        self._leave_home()
+
+    def _finish_tutorial_session(self) -> None:
+        self.tutorial_session = False
+        self._return_home()
+        self.session, self.save_disabled = self._tutorial_home_session
+        self._tutorial_home_session = None
+        self._open_saves()
+
     # ---- 开局选项页：调律 → 身份与梦性 → 择碎片 → 入梦 ----
 
     def _retry_finished_run(self, *, tutorial: bool = False) -> bool:
@@ -876,6 +1012,9 @@ class NavigationMixin:
         if (self.test_mode or self.save_disabled or not previous.run_over
                 or not previous.run_start_choices):
             return False
+        if tutorial:
+            self._start_tutorial_session()
+            return True
         state = retry_state(previous, seed=new_run_seed(), tutorial=tutorial)
         manager = self.session.manager
         state.catalog = manager.merge_catalogs(previous.catalog, manager.load_catalog())
@@ -884,7 +1023,7 @@ class NavigationMixin:
         return True
 
     def _open_newgame(self, slot: int, *, test: bool = False) -> None:
-        """空存档槽：打开开局选项页（默认中等；三层信息/黑暗探索默认开启）。"""
+        """空存档槽：打开开局选项页（默认中等；三层信息恒开、不占选项）。"""
         from ...core.run_options import default_selection
 
         selection = default_selection()
@@ -1024,7 +1163,7 @@ class NavigationMixin:
         entered_seed = seed is not None
         manager = SaveManager(root).for_slot(slot)
         state = GameState.new(
-            seed=seed if entered_seed else new_run_seed(), tutorial=not bool(self.config.get('skip_tutorial')),
+            seed=seed if entered_seed else new_run_seed(), tutorial=False,
             run_options=self._newgame_selection(),
             dream_type=self.newgame_dream_type,
             starting_memory=fragment,
@@ -1086,16 +1225,30 @@ class NavigationMixin:
         self.handle_button_press(event.button)
 
     def handle_button_press(self, button: Button) -> None:
-        if self._inspection_active():
+        sidebar_button = bool(button.id and button.id.startswith(('nav-', 'section-', 'sidebar-')))
+        if sidebar_button:
+            self._select_input_region('panel')
+        if self._inspection_active() and not sidebar_button:
             return
         if getattr(self,"layer_observation",None) is not None:
             return
         # Win32 mouse dispatch calls this entry directly, bypassing Pressed.
-        if self._active_tamper_editor() is not None:
+        # 右栏与左编辑器相互独立（2026-10-25 定稿，见 test_independent_sidebar_261025）：
+        # 地图浮层／对话篡改开着时仍可点导航切右栏；右栏宿主切页会结束这次右栏编辑，
+        # 地图浮层继续存在。右栏面板内容本身的点击仍由 tamper_host 模态吞掉。
+        side_tamper = (getattr(self, 'world_tamper_editor', None) is not None
+                       and getattr(self.world_tamper_editor, 'host', 'map') == 'side')
+        if (self._active_tamper_editor() is not None and not side_tamper
+                and not (getattr(self, 'world_tamper_editor', None) is not None
+                         and (button.id or '').startswith(('nav-', 'section-', 'sidebar-')))):
             return
         if button.disabled:
             return
         button_id = button.id
+        if button_id and button_id.startswith('settings-category-'):
+            if self.panel_mode in ('home_settings', 'pause_settings'):
+                self._select_settings_category(button_id.removeprefix('settings-category-'))
+            return
         if self.handle_sidebar_tool(button_id):
             return
         if self._qol_button(button_id):

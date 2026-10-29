@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ..data.perception import CONFIRMED_SOURCE_RETENTION, LISTEN_REALM_TURNS
 
-KNOWN_GLYPH = "!"
+KNOWN_GLYPH = "·"
 DIRECTION_GLYPH = "?"
 CONFIRMED_GLYPH = "*"
 LISTEN_GLYPH = "+"
@@ -20,7 +20,9 @@ DIRECTION_OFFSET = 2
 
 
 def marker_glyph(glyph: str, *, ascii_mode: bool = False) -> str:
-    """ASCII 档只把非 ASCII 的选中标记退回 @，其余标记本就是 ASCII。"""
+    """ASCII 档把声源点退回 .，选中标记退回 @。"""
+    if ascii_mode and glyph == KNOWN_GLYPH:
+        return '.'
     return ASCII_SELECTED_GLYPH if ascii_mode and glyph == SELECTED_GLYPH else glyph
 
 

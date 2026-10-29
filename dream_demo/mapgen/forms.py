@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections import deque
 import random
 
-from .layout import MAP_FORMS, normalize_map_form
+from .layout import EPILOGUE_DEPTHS, MAP_FORMS, normalize_map_form
+from ..data.events import EVENT_DEFINITIONS, EVENT_MAX_PER_LAYER
+from ..data.npcs import NPC_MAX_PER_LAYER
+from ..data.quests import STRUCTURE_NPC_BINDING
 from .vaults import (
     FORM_VAULT_POOLS,
     POST_VAULTS,
     EXCLUSIVE_VAULTS,
     PRE_VAULTS,
     ROOM_DECOR_VAULTS,
+    Vault,
     VaultPlacement,
     pick_by_rarity,
     stamp_vault_in_room,
@@ -1126,6 +1130,86 @@ def generate_solid_mask(seed: int, width: int, height: int, map_form: str, modif
     return mask
 
 
+# ---------------------------------------------------------------------------
+# 每层「结构自带事件 / NPC」的余额（2026-10-27）
+# ---------------------------------------------------------------------------
+# 一座结构可以自带一个异常地点（``event``）与一位稳定意识（``npc_id`` 或
+# ``STRUCTURE_NPC_BINDING``）。过去这些绑定完全不计数：一层若盖了前置大厅、
+# 后置电路厅、装饰模板各带一组，再加上随机零散投放（事件 0–2、NPC 0–2），
+# 同层就能冒出四五处台子、三四位稳定意识，直接越过每层上限。
+#
+# 现在的口径：**结构与随机共用每层名额**。盖章时先问余额——先盖的占额、
+# 后盖的让路；余额见底时不再挑「自带绑定」的模板，同池里没有无绑定候选就
+# 放弃这次盖章（宁可少盖一栋，也不越限）。随机投放侧在
+# ``core/generation`` 里按同一余额补位。
+#
+# 深层边界 28–30 由 ``mapgen/epilogue.py`` 整层接管，不走本函数，保持原样。
+_SCENE_EVENT_IDS = frozenset(
+    entry["event_id"] for entry in EVENT_DEFINITIONS if entry.get("scene")
+)
+
+
+def vault_bound_event(vault: Vault) -> str:
+    """该结构落地时真的会生成一个「异常地点」的事件 id（不占额时返回空串）。
+
+    ``scene`` 型事件（青灯入口一类）交给 ``core.scenes.install_bound_scene``
+    安装成设施，不落成 ``WorldEvent``，因此不占事件余额。
+    """
+    if not vault.event or vault.event in _SCENE_EVENT_IDS:
+        return ""
+    return vault.event
+
+
+def vault_bound_npc(vault: Vault) -> str:
+    """该结构自带的稳定意识 id（显式 ``npc_id`` 优先，其次 id 级绑定表）。"""
+    return vault.npc_id or STRUCTURE_NPC_BINDING.get(vault.vid, "")
+
+
+class _StructureBudget:
+    """本层结构自带事件/NPC 的剩余名额。"""
+
+    def __init__(
+        self,
+        events: int = EVENT_MAX_PER_LAYER,
+        npcs: int = NPC_MAX_PER_LAYER,
+    ) -> None:
+        self.events = events
+        self.npcs = npcs
+
+    def allows(self, vault: Vault) -> bool:
+        if vault_bound_event(vault) and self.events <= 0:
+            return False
+        if vault_bound_npc(vault) and self.npcs <= 0:
+            return False
+        return True
+
+    def take(self, vault: Vault) -> None:
+        if vault_bound_event(vault):
+            self.events -= 1
+        if vault_bound_npc(vault):
+            self.npcs -= 1
+
+
+def _pick_vault(
+    pool: "list[Vault] | tuple[Vault, ...]",
+    rng: random.Random,
+    budget: "_StructureBudget | None" = None,
+) -> "Vault | None":
+    """按余额筛一遍候选，再按稀有度加权抽一个；筛空返回 ``None``。"""
+    if not pool:
+        return None
+    if budget is not None:
+        pool = [vault for vault in pool if budget.allows(vault)]
+        if not pool:
+            return None
+    return pick_by_rarity(pool, rng)
+
+
+def _take_budget(budget: "_StructureBudget | None", vault: Vault) -> None:
+    if budget is not None:
+        budget.take(vault)
+
+
 def generate_solid_mask_with_vaults(
     seed: int,
     width: int,
@@ -1139,6 +1223,9 @@ def generate_solid_mask_with_vaults(
 
     core 生成格子时用它做两件事：按模板覆写墙种（石台/木桌子/玻璃幕墙等）、
     把稀有物品投放到 loot=True 模板中央的石台上。
+
+    结构自带事件/NPC 走本层的**共享余额**（结构先占额、随机补位，见
+    ``_StructureBudget``）：``depth`` 落在深层边界（28–30）时不设限。
     """
     map_form = normalize_map_form(map_form)
     try:
@@ -1155,14 +1242,19 @@ def generate_solid_mask_with_vaults(
     # 保护罩：任何模板盖章后其区域入列——connect/braid 不凿、后置不叠盖。
     protected: list[tuple[int, int, int, int]] = []
     pre_range, generic_range, form_range = vault_count_profile(map_form, ancient)
+    # 结构自带事件/NPC 的余额：深层边界（28–30）保持原样，其余层共用每层名额。
+    budget = None if depth in EPILOGUE_DEPTHS else _StructureBudget()
 
     # 专属层保底（电路逻辑/梦中梦入口）：10 层必盖「灯塔之厅」。
     exclusive = [v for v in EXCLUSIVE_VAULTS if v.available_at(depth, realm_id)]
     for vault in exclusive:
+        if budget is not None and not budget.allows(vault):
+            continue
         placement = stamp_vault_near_open(mask, vault, vault_rng, attempts=40, avoid=protected)
         if placement is not None:
             placements.append(placement)
             protected.append(placement.region)
+            _take_budget(budget, vault)
 
     def stamp_post_vaults(generic_range: tuple[int, int], form_range: tuple[int, int], pool=None) -> None:
         """先盖公用池（整图随机），再保底盖层型专属池（锚定开放格）。
@@ -1172,17 +1264,24 @@ def generate_solid_mask_with_vaults(
         """
         candidates = post_pool if pool is None else pool
         for _ in range(vault_rng.randint(*generic_range)):
-            if candidates:
-                placement = try_stamp_vault(mask, pick_by_rarity(candidates, vault_rng), vault_rng, avoid=protected)
-                if placement is not None:
-                    placements.append(placement)
-                    protected.append(placement.region)
+            vault = _pick_vault(candidates, vault_rng, budget)
+            if vault is None:
+                break
+            placement = try_stamp_vault(mask, vault, vault_rng, avoid=protected)
+            if placement is not None:
+                placements.append(placement)
+                protected.append(placement.region)
+                _take_budget(budget, vault)
         if form_pool:
             for _ in range(vault_rng.randint(*form_range)):
-                placement = stamp_vault_near_open(mask, pick_by_rarity(form_pool, vault_rng), vault_rng, avoid=protected)
+                vault = _pick_vault(form_pool, vault_rng, budget)
+                if vault is None:
+                    break
+                placement = stamp_vault_near_open(mask, vault, vault_rng, avoid=protected)
                 if placement is not None:
                     placements.append(placement)
                     protected.append(placement.region)
+                    _take_budget(budget, vault)
 
     # PRE：按层型档位盖若干栋。只从放得下的模板里挑，再多次尝试位置——
     # 旧实现固定单次盖章，长廊/小型层上大模板永远越界，一次失败整层就没
@@ -1194,14 +1293,18 @@ def generate_solid_mask_with_vaults(
         # 生成，不会因为常见模板的权重优势而永远轮不到。
         rare_fitting = [v for v in fitting if v.rarity in ("稀有", "非常稀有")]
         for index in range(pre_events):
-            if index == 0 and rare_fitting:
-                pre = pick_by_rarity(rare_fitting, vault_rng)
-            else:
-                pre = pick_by_rarity(fitting, vault_rng)
+            pool = rare_fitting if index == 0 and rare_fitting else fitting
+            pre = _pick_vault(pool, vault_rng, budget)
+            if pre is None and pool is rare_fitting:
+                # 稀有候选被余额筛空（都自带绑定）时，退回全池找无绑定的。
+                pre = _pick_vault(fitting, vault_rng, budget)
+            if pre is None:
+                break
             placement = try_stamp_vault(mask, pre, vault_rng, attempts=16, avoid=protected)
             if placement is not None:
                 placements.append(placement)
                 protected.append(placement.region)
+                _take_budget(budget, pre)
 
     if map_form in ("整齐的房间", "破碎的房间", "居民区"):
         # 房间内装饰：优先按 room_rects 放进房间内部；居民区没有登记的
@@ -1218,24 +1321,34 @@ def generate_solid_mask_with_vaults(
                 for rect in rects:
                     if decor_count <= 0:
                         break
-                    vault = pick_by_rarity(decor_pool, vault_rng)
+                    vault = _pick_vault(decor_pool, vault_rng, budget)
+                    if vault is None:
+                        break
                     placement = stamp_vault_in_room(mask, vault, rect, vault_rng, avoid=protected)
                     if placement is not None:
                         placements.append(placement)
                         protected.append(placement.region)
+                        _take_budget(budget, vault)
                         decor_count -= 1
             else:
                 for _ in range(decor_count):
-                    placement = stamp_vault_near_open(mask, pick_by_rarity(decor_pool, vault_rng), vault_rng, avoid=protected)
+                    vault = _pick_vault(decor_pool, vault_rng, budget)
+                    if vault is None:
+                        break
+                    placement = stamp_vault_near_open(mask, vault, vault_rng, avoid=protected)
                     if placement is not None:
                         placements.append(placement)
                         protected.append(placement.region)
+                        _take_budget(budget, vault)
             # 居民区等没有登记房间矩形时，专属模板再保底一次。
             if form_pool and not rects:
-                placement = stamp_vault_near_open(mask, pick_by_rarity(form_pool, vault_rng), vault_rng, avoid=protected)
-                if placement is not None:
-                    placements.append(placement)
-                    protected.append(placement.region)
+                vault = _pick_vault(form_pool, vault_rng, budget)
+                if vault is not None:
+                    placement = stamp_vault_near_open(mask, vault, vault_rng, avoid=protected)
+                    if placement is not None:
+                        placements.append(placement)
+                        protected.append(placement.region)
+                        _take_budget(budget, vault)
 
         stamp_post_vaults(generic_range, (0, 0), pool=[v for v in post_pool if v.circuit])
         _connect_open_components(mask, protected)

@@ -45,6 +45,7 @@ class Contract:
     secondary: int = 0
     condition: Predicate | None = None
     row: int = 0
+    profile: tuple[tuple[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,11 @@ def _compile_row(index: int, voices: tuple[Voice, ...]) -> RowSentence:
             return replace(row, reason="缺少真实载体或效果载荷")
         definition = ITEM_DEFINITIONS.get(carrier.definition_id, {})
         if vr.opcode in ("cover", "maintain"):
-            if is_weapon(definition) or carrier.response.consumes_source:
+            runtime_contract_gear = bool(
+                definition.get("runtime_primary_effect")
+                or definition.get("runtime_feedback_effect"))
+            if ((is_weapon(definition) and not runtime_contract_gear)
+                    or carrier.response.consumes_source):
                 return replace(row, reason="这个载体不能形成持续契约")
             natural = resolve_role(carrier.definition_id, "verb")
             if natural is None or natural.kind != "contract":
@@ -196,13 +201,17 @@ def _compile_row(index: int, voices: tuple[Voice, ...]) -> RowSentence:
                     voice.instance_id, voice.definition_id, value)
         if vr.kind == "contract":
             effect = voice.response.effect
-            if effect and not is_weapon(definition) and (
+            runtime_contract_gear = bool(
+                definition.get("runtime_primary_effect")
+                or definition.get("runtime_feedback_effect"))
+            if effect and (not is_weapon(definition) or runtime_contract_gear) and (
                 voice.instance_id == verb.instance_id
                 or voice.response.kind in ("carrier", "payload", "modifier", "supplement")
             ):
                 contracts[(voice.instance_id, effect)] = Contract(
                     voice.instance_id, voice.definition_id, effect,
-                    voice.response.power, voice.response.secondary, predicate, index)
+                    voice.response.power, voice.response.secondary, predicate, index,
+                    voice.response.profile)
         elif (vr.kind == "action" and voice.x in (2, 3)
               and voice.instance_id != verb.instance_id
               and voice.response.kind == "modifier"
@@ -223,7 +232,7 @@ def _compile_row(index: int, voices: tuple[Voice, ...]) -> RowSentence:
     if vr.kind == "contract" and vr.effect:
         contracts[(verb.instance_id, vr.effect)] = Contract(
             verb.instance_id, verb.definition_id, vr.effect,
-            vr.power, vr.secondary, predicate, index)
+            vr.power, vr.secondary, predicate, index, vr.profile)
     if vr.kind == "action" and vr.opcode in ("strike", "fire") and payload == "heat":
         feedback.append("ignite")
     elif vr.kind == "action" and vr.opcode in ("strike", "fire") and payload == "electric":

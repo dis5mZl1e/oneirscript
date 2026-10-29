@@ -172,8 +172,13 @@ class IdentityMixin:
                     lucidity += extra
         previous = self.mind + self.lucidity
         source_id = enemy.id if enemy is not None else ''
-        self._lose_mind(mind, combat=True, source_id=source_id)
-        self._suffer_lucidity(lucidity, source_id=source_id)
+        previous_indirect = getattr(self, '_presentation_indirect_trauma', False)
+        self._presentation_indirect_trauma = previous_indirect or not direct
+        try:
+            self._lose_mind(mind, combat=True, source_id=source_id)
+            self._suffer_lucidity(lucidity, source_id=source_id)
+        finally:
+            self._presentation_indirect_trauma = previous_indirect
         actual = max(0, previous - self.mind - self.lucidity)
         if (hostile and actual > 0 and self._identity() == 'mirror'
                 and self._identity_ready('borrowed_strike')):

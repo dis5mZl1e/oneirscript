@@ -8,7 +8,8 @@
   光标，不改变玩家位置，因此不改变方位参照；
 - 身份使用稳定的对象引用（WorldSlot.enemy / 坐标），显示文本不参与查找；
 - 同名异象跨方位用方位区分；同方位多只再分近处/远处，仍不能区分时用稳定
-  编号（①②…，仅限本次草稿，按距离与坐标排序，不随面板刷新跳号）。
+  编号（普通数字 1、2、3…，仅限本次草稿，按距离与坐标排序，不随面板刷新跳号；
+  2026-10-28 用户要求：句子里的编号不要用 ①② 这类圈号，统一普通数字）。
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ from ..i18n import tr
 # 角度扇区：0°=东，逆时针为正（屏幕上方为北）。顺序从正北开始便于稳定排序。
 _SECTOR_NAMES = ("北", "东北", "东", "东南", "南", "西南", "西", "西北")
 _SECTOR_ORDER = {name: index for index, name in enumerate(_SECTOR_NAMES)}
-_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩"
+#: 句子里的稳定编号用普通数字（用户 2026-10-28：圈号 ①② 不像句子里的编号）。
+_NUMBERS = tuple(str(index) for index in range(1, 11))
 
 
 def _sector(dx: int, dy: int) -> str:

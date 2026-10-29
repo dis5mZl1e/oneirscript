@@ -22,6 +22,12 @@ GAME_FONT_FILE = LEGACY_FILE
 FONT_FALLBACK_CHAIN = ("NSimSun", "Segoe UI Emoji")
 
 _force_unified = False
+_fallback_reason: str | None = None
+
+
+def fallback_reason() -> str | None:
+    """本次推荐终端交接失败的一行摘要（成功或明确要求兼容模式时为 None）。"""
+    return _fallback_reason
 
 
 def set_unified_font(enabled: bool = True) -> None:
@@ -41,18 +47,27 @@ def bundled_font_path() -> Path | None:
 
 def prefer_wezterm(argv:list[str],directory:Path) -> bool:
     """Use the private/supported terminal when available; never download at startup."""
+    global _fallback_reason
     if UNIFIED_FONT_FLAG in argv:
         argv.remove(UNIFIED_FONT_FLAG)
         set_unified_font(True)
     if any(flag in argv for flag in
             ('--compat-terminal','--wezterm-attached','--serif-terminal','--smoke')):
+        _fallback_reason = None
         return False
-    from .wezterm_setup import child_command, launch
+    from .wezterm_setup import child_command, launch, last_failure
+    reason: str | None = None
     try:
         if launch(directory,child_command(argv)) is not None:
+            _fallback_reason = None
             return True
+        reason = last_failure() or 'WezTerm 没有启动，原因未知。'
     except (OSError,ValueError) as error:
-        print(f'推荐终端未启动，改用兼容模式：{error}',file=sys.stderr)
+        reason = str(error)
+    # Keep the in-game notice to one readable line; the full stderr tail is
+    # printed below and saved next to the terminal config.
+    _fallback_reason = reason.splitlines()[0][:200]
+    print(f'推荐终端未启动，已改用兼容模式：{reason}',file=sys.stderr)
     if sys.platform=='win32':
         ensure_windows_font()
     return False
@@ -60,6 +75,25 @@ def prefer_wezterm(argv:list[str],directory:Path) -> bool:
 
 _font_installed: str | None | bool = False  # False=未尝试；None=失败；str=族名
 _font_installed_file: str | None = None
+
+
+def _stage_font_file(source: Path, target: Path) -> Path | None:
+    """把内置字体就位到用户字体目录，返回真正可用的文件（失败 None）。
+
+    ``%LOCALAPPDATA%\\Microsoft\\Windows\\Fonts`` 下的字体一旦被任何进程加载，
+    系统就以「允许读取、禁止改写」的方式把它映射住——之后 ``os.replace`` 会
+    稳定报 ``PermissionError [WinError 5]``。旧实现把这个异常当成安装失败，
+    于是 ``ensure_windows_font`` 返回 None、Windows Terminal 的 profile 退回
+    ``NSimSun``，玩家看到的就是「Windows 终端找不到字体」。
+
+    正确口径是：**能被 GDI 认出来的字体就是可用字体**。刷新失败时沿用磁盘上
+    已经装好的同一族文件（族名相同），只在文件确实不在时才判定失败。
+    """
+    try:
+        copy_asset(source, target)
+        return target
+    except OSError:
+        return target if target.is_file() else None
 
 
 def ensure_windows_font() -> str | None:
@@ -77,9 +111,10 @@ def ensure_windows_font() -> str | None:
         return None
     import ctypes
     user_dir = Path(os.environ["LOCALAPPDATA"]) / "Microsoft" / "Windows" / "Fonts"
-    target = user_dir / face.file
+    target = _stage_font_file(source, user_dir / face.file)
+    if target is None:
+        return None
     try:
-        copy_asset(source, target)
         added = ctypes.windll.gdi32.AddFontResourceExW(str(target), 0, None)
         if added <= 0:
             return None
@@ -165,6 +200,12 @@ def install_profile(command: list[str], directory: Path,
                     local_app_data: Path | None = None) -> Path:
     """幂等写入单一 fragment；command 已包含防重入标记。"""
     directory = directory.resolve()
+    # 从 Windows Terminal 拉起的是 %LOCALAPPDATA%\\Oneirscript\\runtime\\<hash>
+    # 里的解包副本，不带 --game-directory 时它会把「exe 所在目录」认作解包目录：
+    # 存档写进 runtime\\<hash>\\save、vendor/wezterm 也找不到（实测 2026-10-22
+    # 有一份 889 KB 的 run.json 就这么留在了 runtime 下）。这里统一补齐。
+    if "--game-directory" not in command:
+        command = [*command, "--game-directory", str(directory)]
     local_app_data = local_app_data or Path(os.environ["LOCALAPPDATA"])
     path = local_app_data / "Microsoft" / "Windows Terminal" / "Fragments" / "Oneirscript" / "profile.json"
     serif_font = ensure_windows_font()

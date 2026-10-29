@@ -1,7 +1,7 @@
 """Presentation-only item identities. Authored definition icons always win.
 
-Families describe an object's silhouette, never its rarity. Abstract memories
-instead describe their actual endurance, attribute, or recovery effect.
+Families describe an object's silhouette or a memory's concrete imagery, never
+its rarity or numeric effect.
 """
 
 # Source characters are single OFL Noto outlines, imported only under PUA keys.
@@ -75,6 +75,30 @@ ITEM_FAMILIES = {
     'bone': (0xE281, '🦴', '⌁ ', '骨形器具'),
     'syringe': (0xE282, '💉', '╱ ', '针具'),
     'filter': (0xE283, '🕸', '⊞ ', '过滤与网膜家族'),
+    'envelope': (0xE284, '✉', '✉', '信封'),
+    'umbrella': (0xE285, '☔', '☔', '雨伞'),
+    'gear': (0xE286, '⚙', '⚙', '齿轮'),
+    'radio': (0xE287, '📻', '📻', '收音机'),
+    'window': (0xE288, '🪟', '🪟', '窗户'),
+    'tape': (0xE289, '📼', '📼', '磁带'),
+    'paint': (0xE28A, '🖌', '🖌', '刷子'),
+    'lung': (0xE28B, '🫁', '🫁', '肺叶'),
+    'heart': (0xE28C, '❤', '❤', '心脏'),
+    'dust': (0xE28D, '🕸', '🕸', '蛛网与积尘'),
+    'pet': (0xE28E, '🐾', '🐾', '宠物足迹'),
+    'leaf': (0xE28F, '🌿', '🌿', '草叶'),
+    'drum': (0xE290, '🥁', '🥁', '鼓点'),
+    'car': (0xE291, '🚘', '🚘', '车灯'),
+    'flashlight': (0xE292, '🔦', '🔦', '手电'),
+    'chair': (0xE293, '🪑', '🪑', '座椅'),
+    'bus': (0xE294, '🚌', '🚌', '候车与车窗'),
+    'bed': (0xE295, '🛏', '🛏', '床与被窝'),
+    'shoe': (0xE296, '👞', '👞', '鞋印'),
+    'rain': (0xE297, '🌧', '🌧', '雨水'),
+    'fire': (0xE298, '🔥', '🔥', '灼痕'),
+    'fist': (0xE299, '✊', '✊', '掌心'),
+    'mirror': (0xE29A, '🪞', '🪞', '镜面'),
+    'sponge': (0xE29B, '🧽', '🧽', '气泡与海绵'),
 }
 
 _GROUPS = {
@@ -125,15 +149,42 @@ _GROUPS = {
 }
 ITEM_ICON_KEYS = {item: 'item.' + family for family, items in _GROUPS.items() for item in items.split()}
 
-# Kept independent from the aggregated item table, avoiding a content import cycle.
-from .items.memories import ITEMS as _MEMORIES
-from .memory import MEMORY_FRAGMENT_EFFECTS as _EFFECTS
-for _item, _definition in _MEMORIES.items():
-    _kind = _EFFECTS.get(_definition.get('memory_effect'), {}).get('kind', '')
-    _family = 'attribute' if _kind == 'stat' else 'recovery' if _kind in ('regen', 'recovery', 'restore') else 'endurance'
-    ITEM_ICON_KEYS[_item] = 'item.memory.' + _family
+# Memory imagery is authored per identity; a stat bonus does not make an object
+# a chart, and environmental resistance does not make it a shield.
+_MEMORY_IMAGES = {
+    'page': 'lighthouse_keeper_memory draft_margin_memory choir_note',
+    'envelope': 'frost_letter_memory', 'paint': 'paint_smell_memory',
+    'umbrella': 'shared_umbrella_memory', 'gear': 'rain_machine_memory plastic_gear_memory',
+    'radio': 'rain_machine_memory_2', 'bulb': 'model_room_memory',
+    'flute': 'unfinished_song_memory', 'dust': 'attic_dust',
+    'lung': 'wide_lung', 'heart': 'calm_pulse', 'battery': 'deep_reserve',
+    'bus': 'last_window', 'lens': 'salt_crust', 'glove': 'dry_gloves',
+    'fire': 'burn_scar', 'bone': 'leaden_marrow', 'step': 'walker_habit',
+    'tooth': 'first_cry_memory', 'tape': 'tape_hiss_memory usb_drive_memory',
+    'pet': 'pixel_pet_memory', 'sponge': 'bubble_wrap_memory',
+    'bell': 'doorbell_memory', 'leaf': 'grass_slip_memory',
+    'bottle': 'poison_vial_memory', 'ring': 'echo_ring_memory',
+    'phone': 'dial_tone_memory', 'keycap': 'elevator_memory',
+    'pen': 'scribe_ink_memory', 'bolt': 'circuit_hum_memory',
+}
+ITEM_ICON_KEYS.update({item: 'item.' + family
+                      for family, items in _MEMORY_IMAGES.items() for item in items.split()})
+
+from .expansion.catalog import ENTRIES as _EXPANSION_ENTRIES
+EXPANSION_ITEM_ICON_KEYS = {
+    entry['id']: entry['icon_key'] for entry in _EXPANSION_ENTRIES
+}
+
+# Expansion entries use their individually reviewed, stable PUA slots. Physical
+# likeness, a scene image or a documented mechanism metaphor are all valid.
+# A few legacy objects previously inherited an unrelated broad family.
+ITEM_ICON_KEYS.update({
+    'unfinished_editor': 'item.pen', 'broken_tooth_thimble': 'item.syringe',
+    'bottled_sunrise': 'item.bottle', 'thermal_residue': 'item.drink',
+})
 
 
 def item_icon(definition_id, definition):
     """Literal authored glyphs retain their original font fallback path."""
-    return str(definition.get('icon') or ITEM_ICON_KEYS.get(definition_id, ''))
+    return str(definition.get('icon') or ITEM_ICON_KEYS.get(definition_id)
+               or EXPANSION_ITEM_ICON_KEYS.get(definition_id, ''))

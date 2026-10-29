@@ -13,7 +13,7 @@ from ...core.entities import ActionResult
 from ...core.tutorial import tutorial_skip_step
 from ...materials import PORTENT_DEFINITIONS, TABLE_KINDS, wall_def
 from .._native import _trace_native
-from ..styles import MOVE_REPEAT_MIN_SECONDS, HOLD_RELEASE_TIMEOUT, RIGHT_PANEL_MODES
+from ..styles import RIGHT_PANEL_MODES
 from ..panels import MEMORY_FOOTER_ITEM_ROWS, TAMPER_ENTRY_ROW
 from ..widgets import EventPanel, MapView
 
@@ -85,7 +85,7 @@ class KeyRoutingMixin:
     # 视野也不重算。视野外的东西同样看不全（与悬停一致）。
 
     def toggle_observe(self) -> None:
-        """进入 / 退出观察模式（x 键或底栏「观察」，Enter/Q/Esc 也可退出）。"""
+        """X 进入/退出观察；Enter 前往选中格，Q/Esc 仅退出。"""
         self._panel_enter_mode = None
         self.assist_path = []
         self.observe_walk_path = []
@@ -150,6 +150,11 @@ class KeyRoutingMixin:
         map_view.update_interaction()
         self.refresh_hover_only()
         self._refresh_signal_status()
+        if self._coach_enabled():
+            from ...core.origin_course import observe_ui, pump
+            observe_ui(self)
+            pump(self.session.state)
+            self._refresh_tutorial_coach()
     def _observe_walk_to(self, target: tuple[int, int]) -> None:
         """观察模式的点击寻路：无视障碍，直接走最短格子。
 
@@ -175,13 +180,8 @@ class KeyRoutingMixin:
     def _handle_observe_key(self, key: str, character: str | None) -> None:
         """观察模式下的按键：只挪 ? 或退出，绝不落地任何世界行动。
 
-        三条硬约束：时间不动（没有任何 ``session.apply``）、视野不重算、
-        自己不挪步。能做的只有「挪 ?」「切界面」「退出观察」。
-
-        ``x``/``q``/``Esc``/``Enter`` 都是「结束观察」——行动键在此没有可做的
-        行动，但也不能毫无反馈。这几个键同时标记为「已在 on_key 处理」，否则
-        紧跟其后的底栏绑定（x 观察 / Esc 保存并退出 / Enter 行动）会把刚退出的
-        观察模式再翻回来、或直接存档退出。
+        移动辅助选中区不推进时间；Enter 确认可达位置并交给真实寻路。
+        X/Q/Esc 只退出观察。退出和确认都消费本次输入，不穿透到底栏绑定。
         """
         if key in ("enter", "return"):
             self._mark_key_handled("enter")
@@ -235,24 +235,17 @@ class KeyRoutingMixin:
             self._refresh_assist_path(self.observe_cursor)
         self._refresh_cursor_only()
 
-    def _clear_held(self) -> None:
-        """清除按住状态（松开/切换界面/被阻挡时）。"""
-        self._held_key = None
-        self._held_direction = None
-        self._hold_repeats = 0
     # 面板光标移动键（三套键位共用一套映射）：
     #   - 竖轴：↑↓ 上下移动选中/滚动；
     #   - 横轴：←→ 在界面之间切页。
     #
-    # 🔴 键位分工（2026-09-16 第三次定稿，玩家拍板「上下左右和 WASD 功能互换」）：
-    #   · **方向键（上下左右）→ 地图移动**（无论锁定与否——锁定时按下面板分支）。
-    #     原因：NumLock 关闭时 Windows 把小键盘 2/4/6/8 直接当成方向键发送
-    #     （终端字节层面与真方向键完全相同、无法区分），方向键归移动，
-    #     小键盘 2468 才能随时走地图；1/3/7/9（Home/End/PgUp/PgDn）本来就
-    #     落到移动分支出斜向，NumLock 开关都能用。
-    #   · **WASD → 面板选取**（「随时」：解锁也动面板，锁定同样动面板）。
-    #   · 小键盘数字（NumLock 开时是数字字符）→ 地图移动。
-    #   · 锁定（~ / `）后三套全部只动面板。
+    # 🔴 键位分工（2026-10-24 第四次定稿，取代 09-16 的「方向键/WASD 互换」）：
+    #   · **方向键（上下左右）与小键盘数字 → 始终地图移动**，与 `/` 区域、
+    #     `~` 锁定都无关。NumLock 只决定小键盘发来的是方向键还是数字字符，
+    #     两条编码都归地图，所以不需要检测数字锁定。
+    #   · **WASD → 右栏面板**：map / panel 区域都控右栏（默认如此）；只有 `/`
+    #     把焦点交给左侧浮层（overlay）时，WASD 才改在浮层内移动，永不控地图。
+    #   · 锁定（~ / `）只把 WASD 留在面板——方向键与数字键照常走地图。
     #
     # ⚠️ 小键盘的真实键名（2026-09-16 实测，别照着手册猜）：
     #   Textual 的按键表里**根本没有** num8/kp8 这类名字（已核对
@@ -277,11 +270,14 @@ class KeyRoutingMixin:
         "kp7": ("v", -1), "kp9": ("v", -1), "kp1": ("v", 1), "kp3": ("v", 1),
     }
 
-    # 「面板键」子集：即使没开锁定，它们也移动面板光标（2026-09-16 玩家拍板：
-    # WASD 与方向键互换——WASD 随时管面板选取，方向键随时管地图移动）。
-    # 注意只放 WASD 这四个**主键位**；方向键绝不能进来（否则 NumLock 关时
-    # 小键盘 2468 又会被面板占走，回到玩家投诉的状态）。
+    # WASD 主键位（2026-10-24 玩家定稿）：恒控右栏面板；只有 `/` 把焦点
+    # 交给左侧面板（overlay）时，WASD 才改在左面板内移动。
+    # 注意只放 WASD 这四个**主键位**——方向键与数字键始终移动角色，绝不进
+    # 面板键表（`LOCKED_MOVE_KEYS` 里的方向/数字条目只服务左浮层光标）。
     WASD_PANEL_KEYS = frozenset({"w", "a", "s", "d"})
+
+
+
 
     # 左侧覆盖面板：打开时**默认锁定**（三套键位都动光标），且只能「先退出、
     # 再行动」——第一下按键/左键地图只关面板，第二下才落到游戏上。
@@ -348,34 +344,39 @@ class KeyRoutingMixin:
         }.get(active, lambda: None)()
         return True
 
-    def _should_move_map_with_keys(self) -> bool:
-        """没开锁定时方向键/小键盘是否应该直接移动地图。
+    def _panel_owns_arrows(self) -> bool:
+        """方向键是否归右栏：恒为 False（2026-10-24 玩家定稿）。
 
-        右侧面板（事件记录/行囊/携带意象/征兆/洞察/观测/操作）不再隐式锁键：
-        玩家可以从这些界面直接用方向键/小键盘走过去（2026-09-16 互换后 WASD
-        随时管面板选取，方向键管移动）。感知类面板（征兆/观测）会在移动时
-        自动回到事件记录——它们没有选中项，留在原地也没有意义。
+        方向键与数字键始终移动角色；WASD 恒控右栏，只有 `/` 把焦点交给
+        左侧面板（overlay）时才改为在左面板内移动。焦点边框与提示改由
+        cursor_zone 判断（见 _focused_pane_selector），不再依赖方向键归属。
         """
-        if self.panel_locked or self.observe_mode or self.home_mode:
-            return False
-        if self._active_left_overlay() is not None:
-            return False
-        return True
+        return False
+
+    def _should_move_map_with_keys(self) -> bool:
+        """方向键/小键盘数字是否应该直接移动地图：现在**只**排除观察与主页。
+
+        （2026-10-24 玩家定稿）方向键与数字键始终控制地图——不再因为 `/`
+        焦点在右栏或 `~` 锁定就改道面板，也不必区分 NumLock 开关（开关只改变
+        小键盘发来的是方向键还是数字字符，两条路都归地图）。
+        """
+        return not (self.observe_mode or self.home_mode)
 
     def _prepare_map_move_from_panel(self) -> None:
         """从右侧面板发起地图移动前的界面切换。
 
-        2026-09-19 修订：征兆/观测/构想页获得真实选中项后，方向键移动不再
-        把界面拉回事件记录——保留原界面，选中状态原样保留。
+        2026-10-24：只清掉「Enter 属于面板」的临时意图，不再改 panel_mode——
+        右栏停在哪一页、选中哪一项都保留，Esc/焦点切换回来时上下文还在。
         """
         self._panel_enter_mode = None
-        if self.panel_mode in ("catalog",):
-            self.panel_mode = "world"
-            self.panel_selection = 0
-            self.panel_scroll = 0
 
     def toggle_cursor_lock(self) -> None:
-        """切换面板光标锁定（键盘反引号 / 波浪号，或底栏「锁定」按钮）。
+        """切换右侧固定（~ / 键盘反引号 / 底栏「锁定」按钮）。
+
+        新语义（2026-10-26 玩家定稿）：锁定只把右栏**当前页冻结**——所在页不因
+        世界行动回跳、攻击确认、瞄准/投掷、对话/教程自动开页等任何原因自动切换，
+        只能手动键鼠切页。锁定不再拦截/改道 WASD、方向键与 Esc，也不会被它们
+        自动解除；Esc 在锁定时直接打开暂停菜单，继续后仍保持锁定。
 
         这两个键由 :meth:`on_key` 归一成同一个键，见那里的注释。
         """
@@ -383,46 +384,295 @@ class KeyRoutingMixin:
             self.release_cursor_lock()
             return
         self.panel_locked = True
+        self._lock_panel_page()
         self.refresh_view()
 
-    def release_cursor_lock(self) -> None:
-        """解锁面板光标——**解锁的唯一出口**，三条通道（~ / ` 切换、Esc、点击地图）都走这里。
+    def release_cursor_lock(self, *, keep_page: bool = False) -> None:
+        """解除右侧固定（~ / ` 或底栏「锁定」按钮；退出存档时由 _return_home 重置）。
 
-        锁定时 ←→ 会在「世界 → 六个界面」之间来回切页，解锁时面板可能正停在
-        背包/携带意象/观测之类的界面上，玩家解锁后既看不见事件记录、也容易以为界面坏了。
-        因此解锁一律把面板切回事件记录界面（world），方便立刻继续移动。
-        主页模式没有面板可锁，保持原样。
+        新语义（2026-10-26）：解锁**只**解除页面冻结，不改右栏所在页、选中项，
+        也不动光标区域与焦点——玩家手动切到哪一页就停在哪一页。
+        ``keep_page`` 参数仅为旧调用点兼容保留（旧行为已弃用）。
         """
         self.panel_locked = False
-        if not self.home_mode:
-            self.panel_mode = "world"
-            self.panel_selection = 0
+        self._clear_locked_panel_page()
+        self._panel_enter_mode = None
         self.refresh_view()
-    # 光标焦点区域（/ 键，2026-10-12）：同屏键盘焦点在「地图 ↔ 右侧面板 ↔
-    # 左侧浮层」之间强制切换。锁定态（~）仍旧全局生效——它本来就是「全部
-    # 归面板」，zone 只在解锁态给方向键一个明确的去处。
+
+    def _route_wasd_key(self, key: str) -> bool:
+        """WASD 恒控右栏面板（2026-10-24 玩家定稿）。
+
+        返回 True 表示按键已被消费。四键不再因为当前 zone 是地图就跳栏，
+        也不再在行最左把焦点丢回地图：W/S 上下选中/滚动，A/D 切子标签或
+        收藏区路由，到端停住（_locked_panel_key 不再触发焦点跳转）。
+        地图移动只由方向键/小键盘数字承担（始终地图，与区域无关）。
+        """
+        return self._locked_panel_key(key)
+
+    def _left_panel_open(self) -> bool:
+        return ((getattr(self, 'world_tamper_editor', None) is not None
+                 and getattr(self.world_tamper_editor, 'host', 'map') == 'map')
+                or self._active_left_overlay() is not None or self._inspection_active()
+                or bool(getattr(self, 'lens_offer_scene', ''))
+                or any(getattr(self, name, None) is not None for name in
+                       ('container_index', 'mirror_index', 'spray_select')))
+
+    def _select_input_region(self, zone: str) -> None:
+        """Mouse actions select their region and discard keyboard-only dedup state."""
+        self._keys_handled_in_on_key.clear()
+        self._dismiss_transient()
+        self.set_focus(None)
+        self._panel_enter_mode = self.panel_mode if zone == 'panel' else None
+        if self.cursor_zone != zone:
+            self.cursor_zone = zone
+            self._refresh_focus_style()
+
+    def _dismiss_left_panel(self) -> bool:
+        """Dismiss browsing/selection UI without committing an unfinished choice."""
+        if self._left_overlay_blocks_interrupt():
+            return False
+        changed = self._left_panel_open()
+        if self._self_audit_visible():
+            self._close_self_audit(refresh=False)
+        if self._layer_info_visible():
+            self._close_layer_info(refresh=False)
+        if self.signal_detail_open:
+            self.close_signal_detail()
+        self._close_active_left_overlay()
+        self.container_index = self.mirror_index = None
+        if self.spray_select is not None:
+            self.spray_select = None
+            self.aim_action_choice = None
+        if self.lens_offer_scene:
+            self._clear_lens_offer()
+        if self.cursor_zone == 'overlay':
+            self.cursor_zone = 'map'
+        if changed:
+            self.set_focus(None)
+            self.refresh_view()
+        return changed
+
+    def _prepare_left_panel_key(self, event) -> bool:
+        """Only keys used by the selected left pane belong to that pane."""
+        if (not self._left_panel_open() or self.home_mode or self.layer_observation is not None
+                or self._modal_menu_open(allow_inspection=True)):
+            return False
+        from ...controls import PANEL_SHORTCUTS
+        shortcut = next((entry for entry in PANEL_SHORTCUTS
+                         if self.config.get(entry.setting) == event.key.lower()), None)
+        if shortcut is not None:
+            if shortcut.action in ('self', 'signals'):
+                return False
+            if shortcut.action in ('inventory', 'equipment', 'portents', 'insights', 'nearby',
+                                   'actions', 'tasks', 'workspace_prev', 'workspace_next'):
+                return self._handle_panel_shortcut(event)
+            if shortcut.action in ('detail', 'layers', 'elevation', 'display') and not self._inspection_active():
+                return False
+        if event.key in ('f2', 'f3') and not self._inspection_active():
+            return False
+        if event.key in ('tilde', 'grave_accent', 'grave', 'backtick', 'backslash', 'bracket_right', ']'):
+            return False
+        if self._right_panel_key(event):
+            return True
+        if getattr(self, 'world_tamper_editor', None) is not None:
+            return False  # Local editor keys are handled by its own controller.
+        # 容器的数字操作与镜面的选择键先交给各自处理器；它们不是关闭浮层后
+        # 移动角色的世界命令。右栏明确认领的键已在上方处理。
+        if ((self.mirror_index is not None or self.container_index is not None)
+                and self._left_panel_uses_key(event.key)):
+            return False
+        if self._left_overlay_blocks_interrupt():
+            return False
+        key = event.key
+        if key in ('escape', 'q'):
+            self._dismiss_left_panel()
+        elif (self.item_menu_target is not None and self.cursor_zone != 'panel'
+              and (key == 'u' or self._item_menu_action_for(key) is not None)
+              and key not in self.WASD_PANEL_KEYS):
+            self.activate_item_menu(key)
+        elif self.cursor_zone != 'overlay' and key in self.WASD_PANEL_KEYS:
+            self._route_wasd_key(key)
+        elif self.cursor_zone == 'overlay':
+            move = {'w': 'up', 's': 'down', 'a': 'left', 'd': 'right'}.get(key, key)
+            navigation = {'up', 'down', 'left', 'right', 'pageup', 'pagedown', 'home', 'end'}
+            if self._self_audit_visible() and self._self_audit_key(move):
+                pass
+            elif self._layer_info_visible() and move in navigation:
+                pane = self.query_one('#layer-info-pane')
+                pane.scroll_relative(y=(-1 if move in ('up', 'left', 'pageup', 'home') else 1)
+                                     * (pane.content_size.height if move in ('pageup', 'pagedown') else 1),
+                                     animate=False)
+            elif self.signal_detail_open and (move in navigation or key in ('l', '1', '2', '3', '4', '5', '6', '7', '8', '9')):
+                self._signal_key(move)
+            elif self.item_menu_target is not None and key in ('enter', 'return', 'space'):
+                rows = self._menu_rows
+                row = self._menu_hover_row
+                action = rows[row] if row is not None and 0 <= row < len(rows) else None
+                if not isinstance(action, str):
+                    action = next((value for value in rows if isinstance(value, str)), None)
+                if action is not None:
+                    self.activate_item_menu(action)
+            elif (key in ('tab', 'shift+tab')
+                  or key in {str(self.config.get('key_subtab_prev') or '-').lower(),
+                              str(self.config.get('key_subtab_next') or '=').lower(),
+                              'minus', 'underscore', 'equals_sign', 'plus'}):
+                # 2026-10-28：焦点在左浮层时，Tab 与本界面分层键先归浮层——
+                # 只关浮层，不再继续切右栏大标签/子路由。旧实现 return False
+                # 会让 Tab 在同一拍把右栏切到下一个工作区。
+                self._dismiss_left_panel()
+                self._mark_key_handled(key)
+                event.stop()
+                getattr(event, 'prevent_default', lambda: None)()
+                return True
+            elif self._left_panel_uses_key(key):
+                return False
+            else:
+                self._dismiss_left_panel()
+                return False
+        else:
+            # A world command must work on this event, including assist and
+            # movement. Closing a reading pane is not a separate required input.
+            self._dismiss_left_panel()
+            return False
+        self._mark_key_handled(key)
+        event.stop()
+        getattr(event, 'prevent_default', lambda: None)()
+        return True
+
+    def _left_panel_uses_key(self, key: str) -> bool:
+        """Claim only controls implemented by this particular selection pane."""
+        vertical = {'up', 'w', '8', 'num8', 'kp8', 'down', 's', '2', 'num2', 'kp2'}
+        pages = {'pageup', '9', 'num9', 'kp9', 'pagedown', '3', 'num3', 'kp3'}
+        confirm = {'enter', 'return', 'space'}
+        if self.container_index is not None:
+            return key in {'1', 'num1', 'kp1', '2', 'num2', 'kp2'}
+        if self.mirror_index is not None or self.spray_select is not None or self.lens_offer_scene:
+            return key in (vertical | confirm)
+        if self.item_menu_target is not None:
+            return (key in self.LOCKED_MOVE_KEYS or key in self.MENU_ACTION_KEYS
+                    or self._item_menu_action_for(key) is not None)
+        if self.cell_detail_target is not None or self.anomaly_detail_target is not None:
+            return key in (vertical | pages | {'enter', 'backslash'})
+        if self.pickup_target is not None:
+            return key in (vertical | pages | confirm | {'a', 'g', 'G'})
+        return False
+
+    def _inventory_selection_index(self) -> int | None:
+        """行囊/携带意象页当前选中项的真实行囊下标。
+
+        鼠标悬停选择与键盘 WASD/方向键选择都写同一个 ``panel_selection``，
+        Q/D/U/W 等「对物品操作」的快捷键必须按它定位，不能固定拿第一件。
+        携带意象页的 ``panel_selection`` 是列表序号，要换算成真实下标。
+        """
+        state = self.session.state
+        if self.panel_mode == "equipment":
+            indices = [i for i, item in enumerate(state.inventory) if item.slot]
+            if 0 <= self.panel_selection < len(indices):
+                return indices[self.panel_selection]
+            return None
+        if self.panel_mode == "inventory":
+            if self.panel_selection in self._inventory_visible_indices():
+                return self.panel_selection
+        return None
+
+    def _right_panel_key(self, event) -> bool:
+        """Give the selected sidebar its keys before a left overlay claims them."""
+        if (not (self._left_panel_open() or getattr(self, 'world_tamper_editor', None) is not None)
+                or not self._sidebar_navigation_allowed()):
+            return False
+        key = event.key
+        if key == 'slash' and not self.observe_mode:
+            self.cycle_cursor_zone()
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
+            return True
+        if self.cursor_zone != 'panel':
+            return False
+        if self._world_tamper_side_active():
+            return False
+        if key in self.WASD_PANEL_KEYS:
+            self._route_wasd_key(key)
+        elif key in ('enter', 'return'):
+            self._activate_panel_selection()
+        elif key in ('tab', 'shift+tab'):
+            self._move_panel_tab(-1 if key == 'shift+tab' else 1)
+        elif key == str(self.config.get('key_subtab_prev')).lower():
+            self._cycle_sidebar_subtab(-1)
+        elif key == str(self.config.get('key_subtab_next')).lower():
+            self._cycle_sidebar_subtab(1)
+        elif key in ('pageup', 'pagedown'):
+            self._scroll(1 if key == 'pageup' else -1)
+        else:
+            return False
+        self._mark_key_handled(key)
+        event.stop()
+        event.prevent_default()
+        return True
+
+    def _cycle_sidebar_subtab(self, delta: int) -> None:
+        """-/= 在当前右栏工作区的子标签之间切换（2026-10-24 键位治理 A1）。
+
+        门槛：非主页、_sidebar_navigation_allowed 为真。行囊工作区没有子路由，
+        它的「子标签」就是行囊分类筛选（全部/携带意象/摄入物/…），-/= 直接
+        循环筛选（2026-10-24 玩家优化 3：此前行囊里按 -/= 毫无反应，筛选只能
+        靠点击页签）；其余工作区在子路由间切换，**到头回绕**（2026-10-24
+        玩家优化 3：不再卡死在一侧，末尾再按 = 回到第一个）。当前页不在
+        子路由表里（兼容模式页面）同样不动。
+        """
+        if self.home_mode or not self._sidebar_navigation_allowed():
+            return
+        if self.sidebar_workspace == 'inventory':
+            from ..styles import PANEL_SUBPAGES
+            ids = PANEL_SUBPAGES.get('inventory', ())
+            if len(ids) < 2:
+                return
+            index = ids.index(self._panel_subpage_id()) if self._panel_subpage_id() in ids else 0
+            self.set_panel_subpage(ids[(index + delta) % len(ids)])
+            return
+        from ..sidebar_workspaces import ROUTES
+        routes = [route for route in ROUTES.get(self.sidebar_workspace, ())
+                  if not route.mode.startswith('@')]
+        if len(routes) < 2:
+            return
+        index = next((i for i, route in enumerate(routes)
+                      if route.mode == self.panel_mode
+                      and (not route.subpage or route.subpage == self._panel_subpage_id())), None)
+        if index is None:
+            return
+        target = (index + delta) % len(routes)
+        if target != index:
+            self.open_sidebar_route(routes[target].key)
+
+
+    # 光标焦点区域（/ 键，2026-10-24 定稿）：只决定 **WASD** 的控制目标。
+    # map 与 panel 都控右栏（默认右栏，不切到地图控制）；overlay 让 WASD 进
+    # 左浮层。方向键与数字键始终移动角色，与区域无关。
     CURSOR_ZONE_LABELS = {
-        "map": "光标区域：地图（方向键移动，WASD 动面板）",
-        "panel": "光标区域：右侧面板（方向键/WASD 都动面板，←→ 切页）",
-        "overlay": "光标区域：左侧浮层",
+        "map": "光标区域：地图（方向键/数字移动；WASD 仍控制右栏）",
+        "panel": "光标区域：右侧面板（WASD 选择切页；方向键/数字移动）",
+        "overlay": "光标区域：左侧浮层（WASD 在浮层内选择）",
     }
 
     def cycle_cursor_zone(self) -> None:
-        """在「地图 → 右侧面板 →（浮层，若开着）」之间循环切换键盘焦点区域。
+        """在「地图 → 右侧面板 →（浮层，若开着）」之间循环切换 WASD 的控制目标。
 
-        切换本身只改 zone 状态与提示；方向键的去向由 on_key 的分流读取
-        （zone == "panel" 时方向键与 WASD 一样只动面板光标）。浮层关闭后
-        overlay 不再是合法区域，循环时自动归位 map。
+        2026-10-24 玩家定稿：方向键与数字键**始终**移动角色，不再跟随区域；
+        区域只决定 WASD 去哪——map/panel 都控右栏（默认就是右栏），只有
+        overlay 让 WASD 改在左浮层内移动。浮层关闭后 overlay 不再合法，
+        循环时自动归位 map。
         """
         if self.home_mode:
             return
         zones = ["map", "panel"]
-        if self._active_left_overlay() is not None:
+        if self._left_panel_open():
             zones.append("overlay")
         current = getattr(self, "cursor_zone", "map")
         if current not in zones:
             current = "map"
         self.cursor_zone = zones[(zones.index(current) + 1) % len(zones)]
+        # 2026-10-26：锁定只冻结右栏页面，不再参与 WASD 改道/解锁——`/` 切到
+        # 左浮层时保持锁定，右栏仍停在原页。
         self._panel_enter_mode = None
         self.show_toast(tr(self.CURSOR_ZONE_LABELS[self.cursor_zone]))
         self.refresh_view()
@@ -441,7 +691,10 @@ class KeyRoutingMixin:
         axis, delta = move
         if axis == "h":
             if self.panel_mode == 'inventory':
+                # 2026-10-24 玩家定稿：横轴到端**停住**，不再把焦点丢回地图。
+                # 区域切换只由 / 键承担，移动与点击都不再改 zone。
                 self.cycle_panel_subpage(delta)
+                self._panel_enter_mode = self.panel_mode
                 return True
             from ..sidebar_workspaces import ROUTES
             routes = [route for route in ROUTES.get(self.sidebar_workspace, ()) if not route.mode.startswith('@')]
@@ -449,27 +702,14 @@ class KeyRoutingMixin:
                           if route.mode == self.panel_mode and (not route.subpage or route.subpage == self._panel_subpage_id())), None)
             if index is not None:
                 target = max(0, min(len(routes) - 1, index + delta))
-                self.open_sidebar_route(routes[target].key)
+                if target != index:
+                    self.open_sidebar_route(routes[target].key)
             return True
-        if self.panel_mode == 'journal_log':
+        if self.panel_mode in ('world', 'journal_log'):
             self._scroll(-delta)
             return True
         self._move_panel_selection(delta)
         return True
-
-
-    def _handle_locked_keys(self, key: str, character) -> bool:
-        """锁定态按键总入口：返回 True 表示按键已被锁定层消费。
-
-        （` / ~ 的锁定与解锁由 on_key 归一处理、底栏按钮走同一条 action，
-        不经过这里——两处都切会互相抵消。）
-        """
-        if key in ("escape",):
-            # Esc 在锁定态只解锁（吃掉保存退出那次绑定触发）。
-            self._mark_key_handled("escape")
-            self.release_cursor_lock()
-            return True
-        return self._locked_panel_key(key)
 
     def _open_container_overlay(self, index: int) -> None:
         """打开容器 overlay（左侧浮层）：盛装/倒出完成后留在行囊界面。"""
@@ -520,12 +760,16 @@ class KeyRoutingMixin:
             return
         if self.path:
             # 与「寻路中任意按键先刹停」一致：只停止，不额外行动。
+            from ...core.origin_course import note
+            note(self.session.state, 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.pickup_goal = None
             self.refresh_view()
             return
-        panel_intent = (self.panel_locked or self.cursor_zone == 'panel'
+        # 2026-10-26：~ 锁定只冻结右栏页面，不再改变 Enter 的按键归属——
+        # 锁定与否都只看焦点区域/临时 Enter 意图，和未锁定时完全一致。
+        panel_intent = (self.cursor_zone == 'panel'
                         or getattr(self, '_panel_enter_mode', None) == self.panel_mode)
         explicit_modes = ('world', 'inventory', 'equipment', 'build_overview', 'self_overview', 'self_stats', 'nearby', 'sidebar_detail')
         if (self.panel_mode not in explicit_modes or panel_intent):
@@ -591,7 +835,8 @@ class KeyRoutingMixin:
         if self.panel_mode == "actions":
             page = self._panel_subpage_id()
             if page == "fire":
-                return 0
+                from ...core.firing_sources import collect_firing_sources
+                return len(collect_firing_sources(self.session.state))
             if page == "tamper":
                 return 1
             context = len(self._actions_for(self.context_menu_target)) if self.context_menu_target else 0
@@ -613,7 +858,7 @@ class KeyRoutingMixin:
             self._follow_list_selection()
         elif self.panel_mode == "actions":
             self._follow_actions_selection()
-        self.refresh_view()
+        self._refresh_navigation_selection()
     def _move_equipment_selection(self, delta: int) -> None:
         """装备盘页移动选中；记忆碎片分层页 ↑↓ 滚该页（整页只读）。"""
         if self._panel_subpage_id() == "memory":
@@ -621,19 +866,19 @@ class KeyRoutingMixin:
             viewport = max(1, self._portent_viewport_rows() - 1)
             self.panel_scroll = max(0, min(max(0, total - viewport),
                                           self.panel_scroll + delta))
-            self.refresh_view()
+            self._refresh_navigation_selection()
             return
         count = self._panel_item_count()
         if count:
             self.panel_selection = (self.panel_selection + delta) % count
             self._follow_list_selection()
-        self.refresh_view()
+        self._refresh_navigation_selection()
     def _scroll_memory(self, delta: int) -> None:
         """滚动底部记忆碎片独立滚动区（delta>0 向下看更后面的碎片）。"""
         total = len(self.session.state.memory_fragments)
         max_scroll = max(0, total - MEMORY_FOOTER_ITEM_ROWS)
         self.memory_scroll = min(max_scroll, max(0, self.memory_scroll + delta))
-        self.refresh_view()
+        self._refresh_navigation_selection()
 
     def _memory_region_row_at(self, event) -> bool:
         """滚轮悬停判定：鼠标当前落在记忆碎片区行（row_index == -2）上。"""
@@ -726,7 +971,7 @@ class KeyRoutingMixin:
         modes = [row[0] for row in WORKSPACES]
         if self.sidebar_workspace not in modes:
             return
-        index = max(0, min(len(modes) - 1, modes.index(self.sidebar_workspace) + delta))
+        index = (modes.index(self.sidebar_workspace) + delta) % len(modes)
         if self.open_sidebar_workspace(modes[index]):
             self._panel_enter_mode = self.panel_mode
 
@@ -784,10 +1029,18 @@ class KeyRoutingMixin:
         elif self.panel_mode == "actions":
             page = self._panel_subpage_id()
             if page == "fire":
-                self.show_toast(tr("发射页只读：按 F 进入发射瞄准。"), self._selected_panel_row_screen_y())
+                options = self._firing_source_options()
+                selected_key = key_hint.removeprefix('firing:') if key_hint else None
+                option = (next((o for o in options if o.get('source_key') == selected_key), None)
+                          if selected_key else options[self.panel_selection]
+                          if 0 <= self.panel_selection < len(options) else None)
+                if option is not None:
+                    self._begin_equipment_aim(option)
+                    self.refresh_view()
                 return
             if page == "tamper":
-                if self.open_world_tamper_editor():
+                # 2026-10-24：这一页的 Enter 就地开右栏简版编辑器，不再转入左侧浮层。
+                if self.open_world_tamper_editor(host='side'):
                     self.refresh_view()
                 return
             # 定位口径统一走**条目键**（"ability:xxx" / "action:n"），不再按
@@ -874,7 +1127,7 @@ class KeyRoutingMixin:
                 self.observe_walk_path.clear()
                 self._apply("reset_puzzle")
                 self.context_menu_target = None
-                self.panel_mode = "world"
+                self.panel_mode = self._default_panel_mode()
         self.refresh_view()
 
     def _direction_map(self) -> dict[str, tuple[int, int]]:
@@ -1073,14 +1326,18 @@ class KeyRoutingMixin:
                 self.settings_page.capture(self.config, key if '+' in key else character or key)
             self.refresh_view()
             return
-        if key in ("q", "escape"):
+        if key in ('tab', 'shift+tab'):
+            self._select_settings_category(delta=-1 if key == 'shift+tab' else 1)
+        elif key in ("q", "escape"):
             self._settings_back()
         elif key in ("up", "w", "8", "num8", "kp8"):
             self.settings_page.move(-1, self.config.registry)
             self.refresh_view()
+            self.call_after_refresh(self._scroll_settings_cursor)
         elif key in ("down", "s", "2", "num2", "kp2"):
             self.settings_page.move(1, self.config.registry)
             self.refresh_view()
+            self.call_after_refresh(self._scroll_settings_cursor)
         elif key in ("left", "a", "4", "num4", "kp4"):
             self.settings_page.adjust(self.config, -1, self.config.registry)
             self._sync_equipment_syntax()
@@ -1094,6 +1351,9 @@ class KeyRoutingMixin:
             self._sync_equipment_syntax()
             self.refresh_view()
     def on_key(self, event) -> None:
+        self._note_activity()
+        if getattr(self, '_coach_handle_key', lambda _event: False)(event):
+            return
         key = event.key
         character = getattr(event, "character", None)
         aliases = set(getattr(event, "aliases", ()))
@@ -1107,13 +1367,32 @@ class KeyRoutingMixin:
         # 旧位置（分支之后）会让这些键留着气泡不散。Tab 由 Textual 的 Screen 绑定
         # 先吃掉，走不到 on_key，另由 DreamApp.action_focus_next 补收。
         self._dismiss_transient()
-        # R must not act after this same event dismisses a left overlay.
+        if self._empty_aim_key(key):
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
+            return
+        # R must not act after this same event dismisses a left overlay. 标记必须
+        # 在 _prepare_left_panel_key 之前：该函数可能在本次事件里关掉浮层并返回
+        # False，之后再查 LEFT_OVERLAY_ATTRS 就晚了，底栏 R 绑定会把「关浮层」
+        # 顺手变成一次换弹（2026-10-26）。
         if key == 'r' and any(getattr(self, attr, None) is not None for attr in self.LEFT_OVERLAY_ATTRS):
             self._mark_key_handled(key)
+        if self._prepare_left_panel_key(event):
+            return
         if self._handle_panel_shortcut(event):
+            return
+        if self._right_panel_key(event):
             return
         if self._self_audit_visible():
             self._self_audit_key(key)
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
+            return
+        # 层详情面板（2026-10-24 玩家优化 6）：只读悬浮层，任意键关闭并消费。
+        if self._layer_info_visible():
+            self._close_layer_info()
             self._mark_key_handled(key)
             event.stop()
             event.prevent_default()
@@ -1181,6 +1460,16 @@ class KeyRoutingMixin:
         if self.sentence_aim is not None and self._sentence_aim_key(key):
             self._mark_key_handled(key)
             event.stop()
+            return
+        if (key in ('tab', 'shift+tab') and self._sidebar_navigation_allowed()
+                and self._active_left_overlay() is None):
+            # 左侧浮层打开时 Tab 不参与右栏导航（2026-10-24 键位治理：浮层先
+            # 消费，它认领的键右栏不反应）——物品菜单/拾取面板等的「其余按键
+            # 只关面板」分支在更后面，不拦这里的话 Tab 会先切走大标签。
+            self._move_panel_tab(-1 if key == 'shift+tab' else 1)
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
             return
         if self.equipment_choice is not None:
             pending = self.equipment_choice
@@ -1269,7 +1558,7 @@ class KeyRoutingMixin:
             self._mark_key_handled("escape")
             self.throw_item_index = None
             self.aiming = False
-            self.panel_mode = "world"
+            self.panel_mode = self._default_panel_mode()
             self.refresh_view()
             return
         # 容器浮层（玻璃瓶/试管/气球/理想气体容器）：1 盛装、2 倒出、Esc 收起。
@@ -1290,7 +1579,7 @@ class KeyRoutingMixin:
                 self._apply("container_pour", index)
                 self.refresh_view()
                 return
-            return
+            # 其余按键只被浮层吞掉（既不行动也不关面板），想行动得再按一次。
             return
         # 篡改编辑中（规格 §4.4）：所有按键都归篡改控制器——数字与 Enter 不再
         # 触发对话交易，Esc 按「预览 → 位置 → 词表 → 收面板」逐级退。
@@ -1337,6 +1626,8 @@ class KeyRoutingMixin:
             return
         if key in ("backslash",) or character == "\\":
             self.details_expanded = not self.details_expanded
+            # 少字模式默认收起，但玩家亲手按过 \ 后以玩家选择为准。
+            self._terse_details_manual = True
             if self.cell_detail_target is not None:
                 # 格子详情里 \ 只管「介绍行」的收放：整个面板的内容不受影响。
                 self.cell_detail_intros = not self.cell_detail_intros
@@ -1366,12 +1657,25 @@ class KeyRoutingMixin:
                         index = self.panel_selection
                     self._open_item_menu(index)
                 return
-        # [ 键：携带意象页直接打开联想盘编辑器（§8.4「从原列表装配」的键盘入口，
-        # 空手进去，可以只整理线材与插片）。] 已被「武装下一次左键」占用，
-        # 这里刻意选它的配对键，不用 Tab（行囊快捷键）也不用 F1–F12。
+        # [ 键：随时打开联想盘编辑器（§8.4「从原列表装配」的键盘入口，
+        # 空手进去，可以只整理线材与插片）。2026-10-24 玩家优化 4：不再要求
+        # 先进装备页——任何游戏内界面按 [ 都能开（主页/模态/瞄准/观察等由
+        # _sidebar_navigation_allowed 统一挡下）；编辑器关闭后本来就会落回
+        # 装备页（close_board_editor），于是「点联想盘也能进装备页面」。
+        # ] 已被「武装下一次左键」占用，这里刻意选它的配对键，不用 Tab
+        # （行囊快捷键）也不用 F1–F12。
         if key in ("[", "left_square_bracket", "bracket_left"):
-            if self.panel_mode == "equipment" and not self.home_mode:
+            if self._sidebar_navigation_allowed():
                 self._mark_key_handled("[")
+                self.open_board_editor()
+            return
+        # m 键：联想盘的**专属单键**（2026-10-24 玩家优化 4 补充：用户要求一个
+        # 不与任何功能冲突的按键；m/M 此前全表未占用——地图显示是 alt+m 组合键，
+        # 不冲突；候选 e 已被「回应/交谈」占用，弃用）。与 [、alt+b、页签行
+        # 「盘」按钮同一条入口，门槛同一把尺子。
+        if key == "m":
+            if self._sidebar_navigation_allowed():
+                self._mark_key_handled("m")
                 self.open_board_editor()
             return
         # ] 键武装下一次面板左键：只切换该条展开/收起（原 Shift+左键语义）。
@@ -1540,7 +1844,7 @@ class KeyRoutingMixin:
                 # 面板已回世界）会顺手打开暂停菜单，一次按键干两个动作。
                 self._mark_key_handled(key)
                 self._close_event_dialog_state()
-                self.panel_mode = "world"
+                self.panel_mode = self._default_panel_mode()
                 self.refresh_view()
                 return
             if key in ("enter", "return"):
@@ -1595,11 +1899,6 @@ class KeyRoutingMixin:
                 return
             self.close_cell_detail()
             return
-        if self.panel_locked and self.item_menu_target is None and self.anomaly_detail_target is None and self.cell_detail_target is None:
-            # 面板锁定：三套键位（方向键 / WASD / 小键盘）只移动面板光标，
-            # 绝不动游戏/地图。覆盖面板打开时先处理面板自身按键（菜单优先于锁定）。
-            if self._handle_locked_keys(key, character):
-                return
         # 测试模式调试面板（2026-09-18）：面板打开时它是模态的，吃掉所有键。
         # ⚠️ 位置必须在「观察模式」之前（2026-09-21）：调试面板的执行键是**小写 l**，
         # 而观察模式会把所有按键收进 _handle_observe_key——排在其后的话，
@@ -1636,14 +1935,25 @@ class KeyRoutingMixin:
         # ⚠️ 这里**不设**「下次才生效」的标记：关面板就 return 掉了，本次按键
         # 已经被消耗，第二次按自然落到下面的行动分发——不需要额外状态。
         active_overlay = self._active_left_overlay()
-        if active_overlay is not None and not self.panel_locked:
+        if active_overlay is not None:
             if self._left_overlay_blocks_interrupt():
                 if key not in ("q", "escape"):
                     self.refresh_view()
                     return
-            elif key in self.LOCKED_MOVE_KEYS:
+            elif str(getattr(self, "cursor_zone", "map")) == "overlay" and key in self.WASD_PANEL_KEYS:
+                # `/` 把焦点交给左浮层：**只有 WASD** 在浮层内移动光标；
+                # 方向键/数字始终走地图（2026-10-24 第四次定稿）。
                 self._locked_panel_key(key)
                 return
+            elif key in self.WASD_PANEL_KEYS:
+                # 焦点不在左栏：WASD 照常控制右栏，左浮层保持打开。
+                # （2026-10-24 玩家定稿：WASD 永不控地图，只在右栏/左浮层之间切。）
+                self._route_wasd_key(key)
+                return
+            elif key in self.LOCKED_MOVE_KEYS:
+                # 方向键/数字始终移动角色（2026-10-24 定稿）：浮层保持打开，
+                # 交给后面的地图移动分支处理，而不是被当作「任意键关闭面板」。
+                pass
             else:
                 # Esc 在这里只负责关面板：标记已处理，否则底栏 Esc 绑定随后
                 # 触发取消链——面板刚被这里收掉，链一路走空会顺手打开暂停菜单，
@@ -1659,8 +1969,11 @@ class KeyRoutingMixin:
         if self.path:
             # 鼠标寻路是连续动作；任意按键只负责立即刹停，不额外移动或消耗回合。
             # Esc 同上：刹停就是刹停（角色静止），暂停菜单要再按一次才开。
-            if key == "escape":
-                self._mark_key_handled("escape")
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
+            from ...core.origin_course import note
+            note(self.session.state, 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.pickup_goal = None
@@ -1677,6 +1990,22 @@ class KeyRoutingMixin:
             # 的键一律不再给世界：顺手标记防底栏动作重复触发。
             self._handle_codex_key(key)
             self._mark_key_handled(key)
+            return
+        if not self.home_mode and self.panel_mode == "home_history":
+            # 游戏内旧梦回忆覆盖层（2026-10-24 键位治理 B7）：与主页同一套
+            # 键位（↑↓ 翻列表、Enter 开详情）。Esc/Q 逐层退（详情 → 列表 →
+            # 暂停菜单，_close_ingame_history）；到达这里的键一律不再给世界，
+            # 顺手标记防底栏动作重复触发。_handle_history_key 的列表级
+            # Esc/Q 会把 panel_mode 写成 home（主页语义），所以在这里先截下。
+            self._mark_key_handled(key)
+            if key in ("escape", "q"):
+                if self.history_page["detail"] is not None:
+                    self._close_history_detail()
+                else:
+                    self._close_ingame_history()
+                return
+            self._handle_history_key(key)
+            self._refresh_history_view()
             return
         if self.home_mode and self.panel_mode == "home_newgame":
             # 开局选项页同样在 q/escape 早退之前路由（q 是 priority 绑定，
@@ -1761,15 +2090,6 @@ class KeyRoutingMixin:
                 self._open_settings()
                 return
             self.refresh_view()
-            return
-            if key in ("1", "num1", "kp1") and index is not None:
-                self._apply("container_fill", index)
-                self.refresh_view()
-                return
-            if key in ("2", "num2", "kp2") and index is not None:
-                self._apply("container_pour", index)
-                self.refresh_view()
-                return
             return
         if key == "L" and self.test_mode and not self.home_mode:
             # 大写 L：调试面板开关（与放置分离）。
@@ -1865,38 +2185,41 @@ class KeyRoutingMixin:
         if selected_panel:
             self._toggle_panel(selected_panel)
             return
-        if not self.panel_locked and key in self.WASD_PANEL_KEYS and key not in directions:
-            # 兜底：config 把某个 WASD 键重映射成方向键后（它已不在 directions 里），
-            # WASD 的「随时面板」职责也不能丢（2026-09-16 互换）。锁定态由上面的
-            # _handle_locked_keys 处理，不会走到这里。
-            if self._locked_panel_key(key):
+        if key in self.WASD_PANEL_KEYS:
+            # WASD 恒控右栏（2026-10-24 第四次定稿）：即使 config 把某个 WASD
+            # 键当成方向键（它因此也进了 directions），区域也只决定 WASD 的
+            # 去向、不决定方向键去向——所以必须在 directions 分支之前拿走，
+            # 否则默认的 key_up="w" 会把 W 当上移、面板永远收不到。
+            # 2026-10-26：~ 锁定只冻结右栏页面，与按键归属无关，这里不再判断。
+            if self._route_wasd_key(key):
                 return
+        # -/= 切右栏子标签（2026-10-24 键位治理 A1）：右栏面板按键永远挂在
+        # 分发链最末段——上面的模态（篡改编辑器/调试面板/暂停菜单/联想盘等）
+        # 与左侧浮层分支先消费，它们认领的键走不到这里。键名读实际绑定
+        # （key_subtab_prev/next，与 key_tamper 同一读法）；minus/underscore、
+        # equals_sign/plus 是 '-'/'_'、'='/'+' 在 Textual 里的键名，一并归一。
+        subtab_prev = str(self.config.get("key_subtab_prev") or "-").lower()
+        subtab_next = str(self.config.get("key_subtab_next") or "=").lower()
+        if (subtab_prev in (key, character)
+                or (subtab_prev == "-" and (key in ("minus", "underscore") or character in ("-", "_")))):
+            self._cycle_sidebar_subtab(-1)
+            return
+        if (subtab_next in (key, character)
+                or (subtab_next == "=" and (key in ("equals_sign", "plus") or character in ("=", "+")))):
+            self._cycle_sidebar_subtab(1)
+            return
         if key in directions:
             if self.aiming and self.aim_key(key, directions):
                 self._mark_key_handled(key)
                 return
             direction = directions[key]
-            # 分工（见 WASD_PANEL_KEYS 上方的大注释，2026-09-16 玩家拍板互换）：
-            #   · 方向键（含 NumLock 关的小键盘 2468）→ 默认走地图移动；
-            #   · WASD → 随时走面板选取（解锁也动面板）；
-            #   · 锁定后三套都走面板。
-            # 2026-10-12 补充：/ 键切到 zone=panel 时，方向键也与 WASD 同权——
-            # 只动面板光标（←→ 切页、↑↓ 滚记录/选取），绝不动游戏。
-            # 右侧面板不再隐式锁键：在行囊/携带意象等界面上按方向键/数字会直接
-            # 走过去（感知类面板会先自动回到事件记录，那里才有可移动的选中项）。
-            # 2026-09-19：征兆/观测/构想页方向键/小键盘在面板内移动选中项，
-            # 不再触发地图移动、也不再把界面拉回事件记录。
-            if self.panel_mode in ("portents", "catalog", "actions") and key in (
-                "up", "down", "num8", "kp8", "num2", "kp2",
-            ):
-                move = {"up": -1, "num8": -1, "kp8": -1, "down": 1, "num2": 1, "kp2": 1}.get(key)
-                self._move_panel_selection(move)
-                return
-            zone = getattr(self, "cursor_zone", "map")
-            if (key in self.WASD_PANEL_KEYS or self.panel_locked
-                    or (zone == "panel" and key in self.LOCKED_MOVE_KEYS)):
-                if self._locked_panel_key(key):
-                    return
+            # 键位分工（2026-10-24 玩家定稿，取代 09-16 的「方向键/WASD 互换」）：
+            #   · 方向键与小键盘数字 → **始终**移动角色。NumLock 只决定小键盘
+            #     发来的是方向键还是数字字符，两条编码都归这里，不需要检测锁定。
+            #   · WASD → 恒控右栏（上方兜底分支已处理）；`/` 把焦点交给左侧
+            #     面板（overlay）时改在左面板内移动（见左侧浮层分支）。
+            # 所以这里不再按 zone / `~` 锁定把方向键改道面板——提示与行为只有
+            # 一套说法：看见方向键就想到「角色会走」。
             if not self._should_move_map_with_keys():
                 return
             self._prepare_map_move_from_panel()
@@ -1904,11 +2227,17 @@ class KeyRoutingMixin:
             # 只作为“按键仍被按住”的证据（终端不发送释放事件，靠超时判定松开）；
             # 移动由 30fps 帧定时器按固定节拍执行，与渲染同步、逐格呈现。
             now = time.monotonic()
-            if key == self._last_move_key and now - self._last_move_time < MOVE_REPEAT_MIN_SECONDS:
+            if key == self._last_move_key:
+                # 同方向重复事件：只作为「仍按住」的证据，不当场走步；
+                # 后续移动统一由帧回调消费 MoveCadence 的截止点。
+                # 截止点为空（例如刚撞墙被清理）时在这里补建，避免长按卡死。
                 self._held_key = key
                 self._held_direction = direction
                 self._last_hold_event = now
                 self._hold_repeats += 1
+                cadence = getattr(self, "_move_cadence", None)
+                if cadence is not None and not cadence.active:
+                    cadence.begin(now)
                 return
             self._last_move_key = key
             self._last_move_time = now
@@ -1919,6 +2248,10 @@ class KeyRoutingMixin:
             self._held_direction = direction
             self._last_hold_event = now
             self._hold_repeats = 0
+            cadence = getattr(self, "_move_cadence", None)
+            if cadence is not None:
+                # 转向立即响应，并从当前时刻重建截止点。
+                cadence.begin(now)
             self._move_player(*self.facing)
         elif character in ("。",) or (
             key in ("num5", "kp5", "numpad5", "5")
@@ -1932,21 +2265,35 @@ class KeyRoutingMixin:
         elif key == "e":
             self.path.clear(); self._apply_interact()
         elif key == "q":
-            # 快捷投掷只「打开投掷选择」，不沿当前朝向立即扔出（§14 I3）。
-            self.path.clear(); self.begin_throw_aim(0)
+            # 死分支说明（2026-10-24 键位治理 B8）：q 是 priority 绑定，
+            # action_context_q 先于 on_key 触发并吃掉按键——快捷投掷（§14 I3
+            # 「只打开投掷选择，不沿当前朝向立即扔出」）只在绑定层发生，
+            # 走不到这里。保留空分支只为 elif 链形状稳定，勿在此加逻辑。
+            pass
         elif key in ("D", "shift+d"):
-            self.path.clear(); self._apply("drop", 0)
+            # 2026-10-26：行囊/携带意象页里 D 放下的必须是当前选中项（鼠标悬停
+            # 与键盘选择同源），不再固定拿第 0 件。
+            self.path.clear()
+            selected = self._inventory_selection_index()
+            self._apply("drop", selected if selected is not None else 0)
         elif key in ("W", "shift+w"):
-            self.path.clear(); self._apply("equip", 0)
+            self.path.clear()
+            selected = self._inventory_selection_index()
+            self._apply("equip", selected if selected is not None else 0)
         elif key == "u":
             self.path.clear()
             self.observe_walk_path.clear()
             state = self.session.state
-            index = next((i for i, item in enumerate(state.inventory) if item.category in ("摄入物", "易逝物", "交互道具")), None)
-            if index is not None:
-                result = self._apply("use", index)
-                if result.data.get("container_menu") is not None:
-                    self._open_container_overlay(result.data["container_menu"])
+            if self._inventory_selection_index() is not None:
+                # 行囊里 U 的主操作与 Enter / 物品菜单一致：使用选中物、打开容器
+                # 浮层、携带意象进联想盘。不再跳过选中项去找第一件消耗品。
+                self._activate_panel_selection()
+            else:
+                index = next((i for i, item in enumerate(state.inventory) if item.category in ("摄入物", "易逝物", "交互道具")), None)
+                if index is not None:
+                    result = self._apply("use", index)
+                    if result.data.get("container_menu") is not None:
+                        self._open_container_overlay(result.data["container_menu"])
             # 2026-10-21：U 只使用物品；没有可用物品时不生成发射许可。
         elif key == "n":
             self._mark_key_handled(key)  # 底栏「下潜」绑定紧随其后，吃掉那次重复
@@ -2008,6 +2355,15 @@ class KeyRoutingMixin:
             self._clear_lens_offer()
             self.refresh_view()
             return True
+        if not self.home_mode and self.panel_mode == "home_history":
+            # 游戏内旧梦回忆覆盖层（B7）：Esc 逐层退（详情 → 列表 → 暂停菜单）。
+            # 键盘路径已在 on_key 标记处理，这里兜的是底栏 Esc 点击（不经过 on_key）。
+            if self.history_page["detail"] is not None:
+                self._close_history_detail()
+                self.refresh_view()
+            else:
+                self._close_ingame_history()
+            return True
         if not self.home_mode and self.panel_mode == "pause":
             # 暂停菜单本身开着：Esc = 继续（键盘路径在 on_key 里已标记处理，
             # 这里兜的是底栏 Esc 点击——它不经过 on_key）。
@@ -2058,25 +2414,18 @@ class KeyRoutingMixin:
             self.close_anomaly_detail()
             return True
         if self.path:
+            from ...core.origin_course import note
+            note(self.session.state, 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.refresh_view()
             return True
-        # 右侧面板打开时，Esc 仅关闭面板（顺带取消瞄准）。
-        if self.panel_mode in RIGHT_PANEL_MODES:
-            self._sidebar_transition('world', refresh=False)
-            if self.aiming:
-                self.aiming = False
-                self.aim_action_choice = None
-                self.throw_item_index = None
-                self.fire_once_index = None
-                self.spray_source = None
-                self._aim_assist_pos = None
-                self._clear_held()
-            if getattr(self, "spray_select", None) is not None:
-                self.spray_select = None
-                self.aim_action_choice = None
-            self.refresh_view()
+        # ~ 锁定态（2026-10-26 玩家定稿）：Esc 不再解锁，直接打开暂停菜单并
+        # 保持锁定。⚠️ 只有「真的能开菜单」时才消费这次按键；还有左浮层/瞄准/
+        # 寻路等可取消状态时**不要 return**，让后面的取消分支（以及连锁到
+        # action_cancel_ui 的兜底）继续处理，下一次 Esc 才开菜单。
+        if not self.home_mode and self.panel_locked and self._can_open_pause_menu():
+            self.open_pause_menu()
             return True
         # 瞄准态（发射悬停）：它不是「界面」而是持续状态，取消链原来的走法
         # 是直接放行——现在按「Esc = 返回」的语义先撤掉它，干净了才轮得到
@@ -2091,13 +2440,6 @@ class KeyRoutingMixin:
             self.spray_source = None
             self._aim_assist_pos = None
             self._clear_held()
-            self.refresh_view()
-            return True
-        # 教程卡是 escape 链的最底层：没有别的界面可关时，Esc = 跳过当前引导步。
-        if self.session.state.tutorial.get("active") and not self.home_mode:
-            message = tutorial_skip_step(self.session.state)
-            if message:
-                self.show_toast(message, self._player_row_screen_y())
             self.refresh_view()
             return True
         if self.home_mode:
@@ -2127,7 +2469,9 @@ class KeyRoutingMixin:
         """
         if self.home_mode or self.session.state.run_over:
             return False
-        if self.panel_mode != "world":
+        # 2026-10-26 玩家定稿：右侧任意工作区都能直接开暂停菜单；只有左侧
+        # 浮层/瞄准/寻路等「可取消状态」才要求先按一次 Esc 返回。
+        if self.panel_mode not in RIGHT_PANEL_MODES and self.panel_mode != "world":
             return False
         # o 目标辅助是常开偏好：不拦开菜单（2026-09-20 用户拍板）。
         if self.observe_mode or self.aiming:
@@ -2150,8 +2494,6 @@ class KeyRoutingMixin:
             return False
         state = self.session.state
         if state.pending_npc_id is not None or state.pending_event_id is not None:
-            return False
-        if state.tutorial.get("active"):
             return False
         return True
 
@@ -2193,6 +2535,9 @@ class KeyRoutingMixin:
                 or self._handled_in_on_key("ctrl+q")):
             # 演出跳过已消费掉这次保存退出（on_key 先跑），原语义不再触发。
             return
+        if getattr(self, 'tutorial_session', False):
+            self._finish_tutorial_session()
+            return
         if self._floor_transition_skip():
             return
         if self.home_mode and self.panel_mode in ("home_catalog", "home_settings", "home_history"):
@@ -2209,6 +2554,10 @@ class KeyRoutingMixin:
         self._return_home()
 
     def action_context_q(self) -> None:
+        if self._inspection_active() and self._dismiss_left_panel():
+            return
+        if self._empty_aim_key('q'):
+            return
         if self._active_tamper_editor() is not None:
             if getattr(self,'world_tamper_editor',None) is not None:
                 self.handle_world_tamper_key('q')
@@ -2307,6 +2656,8 @@ class KeyRoutingMixin:
             self.close_anomaly_detail()
             return
         if self.path:
+            from ...core.origin_course import note
+            note(self.session.state, 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.refresh_view()
@@ -2325,5 +2676,8 @@ class KeyRoutingMixin:
             return
         self.path.clear()
         self.observe_walk_path.clear()
-        self.begin_throw_aim(0)
+        # 2026-10-26：行囊/携带意象页里 Q 投掷当前选中项（鼠标悬停与键盘选择
+        # 同源），不再固定投第 0 件；其它界面沿用原来的第 0 件兜底。
+        selected = self._inventory_selection_index()
+        self.begin_throw_aim(selected if selected is not None else 0)
         self.refresh_view()

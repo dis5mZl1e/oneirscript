@@ -112,3 +112,31 @@ _ENDING_LINES = {
 for ending, translations in _ENDING_LINES.items():
     for line, translation in zip(EPILOGUE_ENDINGS[ending]['lines'], translations, strict=True):
         EN_EPILOGUE[line] = translation
+
+
+# ---------------------------------------------------------------------------
+# 「出院与归档」：28 层归档门的定向交付（2026-10-25）
+#
+# 标签与提示里带物品名，属于**动态拼接**的句子；``tr`` 只做整串查表，
+# 所以既登记模板（生成时按当前语言一次落地），也按目录真源逐件登记具体
+# 词条（中文存档/中途切语言时仍能译出）。与上面「承担（{profile}）」同一做法。
+# ---------------------------------------------------------------------------
+
+from .data.expansion.catalog import BY_ID as _EXPANSION_BY_ID  # noqa: E402
+
+EN_EPILOGUE['在归档处领走{name}'] = 'Take the {name} from the archive desk'
+EN_EPILOGUE['归档员在册子上划掉一行，把{item}推过桌面。'] = (
+    'The archivist crosses out a line and slides the {item} across the desk.')
+EN_EPILOGUE['归档处没有这一份。'] = 'Nothing of that kind is kept here.'
+EN_EPILOGUE['意识行囊已满，归档处暂时无法交付。'] = (
+    'Your carried images are full; the archive desk cannot hand it over yet.')
+
+for _entry in _EXPANSION_BY_ID.values():
+    if (_entry.get('integration_status') != 'runtime'
+            or _entry.get('source_permission') != 'D'
+            or int(_entry.get('min_depth', 0) or 0) < 28):
+        continue
+    _name_zh, _name_en = _entry['name_zh'], _entry['name_en']
+    EN_EPILOGUE[f'在归档处领走{_name_zh}'] = f'Take the {_name_en} from the archive desk'
+    EN_EPILOGUE[f'归档员在册子上划掉一行，把{_name_zh}推过桌面。'] = (
+        f'The archivist crosses out a line and slides the {_name_en} across the desk.')

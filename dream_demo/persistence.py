@@ -14,6 +14,11 @@ from .core import ActionResult, Cell, Entity, GameState, ITEM_DEFINITIONS, Item,
 from .core.constants import ELEV_STEP
 from .core.vision.knowledge import (decode_hazard_memory, decode_terrain_memory,
                                     encode_terrain_memory)
+from .core.save_kernel import (decode_cells as _kernel_decode_cells,
+                               decode_compact_cell as _kernel_decode_compact_cell,
+                               encode_cells as _kernel_encode_cells)
+from .cy_kernels import enabled as _kernel_enabled
+from .env_compat import flag as _env_flag
 from .core.run_options import NEUTRAL_MODS as NEUTRAL_RUN_MODS
 from .data.anomaly_skills import SKILL_DEFINITIONS
 from .i18n import get_language, tr
@@ -156,6 +161,37 @@ def audit_legacy_elevations(state: GameState) -> dict[str, int]:
     return stats
 
 
+_JSON_KEY_TYPES = (str, int, float, bool, type(None))
+
+
+def _sanitize_json_keys(value, path='state', found=None, depth=0):
+    """把 JSON 不安全的字典键（典型是 (x, y) 元组）改成字符串键并记录路径。
+
+    2026-10-27：原生会话里两次被 `json.dumps` 的
+    "keys must be str, int, float, bool or None, not tuple" 打死——后台存档的
+    编码异常会存进 `_async_error`，随后 `wait_for_pending_async_saves()` 抛
+    OSError 直接终止 App。这里先保证「存档不因一个坏键就崩」，同时把坏键的
+    路径记下来，便于定位真正的写入方。
+    """
+    if found is None:
+        found = []
+    if depth > 64:
+        return value, found
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            safe_key = key if isinstance(key, _JSON_KEY_TYPES) else None
+            if safe_key is None:
+                safe_key = '|'.join(str(part) for part in key) if isinstance(key, tuple) else str(key)
+                found.append(f"{path}.{safe_key}")
+            out[safe_key] = _sanitize_json_keys(item, f"{path}.{safe_key}", found, depth + 1)[0]
+        return out, found
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_json_keys(item, f"{path}[{index}]", found, depth + 1)[0]
+                for index, item in enumerate(value)], found
+    return value, found
+
+
 class SaveManager:
     SLOT_COUNT = 3
 
@@ -179,15 +215,57 @@ class SaveManager:
         self._async_executor: ThreadPoolExecutor | None = None
         self._async_futures: list[Future] = []
         self._async_error: Exception | None = None
+        # UI 契约：本次 load() 是否真的执行了旧档迁移。只有 True 时调用方才需要
+        # 立刻把迁移结果落盘；普通新档为 False。读档失败路径也必须保证属性存在。
+        self.load_migrated: bool = False
+        # 图鉴读取缓存（纯进程内，不落盘、不改存档格式）：键是
+        # (文件路径, st_mtime_ns, st_size)，值是已规范化的 entries。外部改写文件
+        # 会改变 stat 键而失效；save_catalog 写盘后立即重建缓存。load_catalog
+        # 永远返回副本，调用方改返回值不会污染缓存。
+        self._catalog_cache_key: tuple[str, int, int] | None = None
+        self._catalog_cache_entries: dict[str, dict[str, Any]] | None = None
 
     def save(self, state: GameState) -> None:
-        self.wait_for_pending_async_saves()
-        payload = {"schema_version": SAVE_SCHEMA_VERSION, "state": self._encode(state)}
+        try:
+            self.wait_for_pending_async_saves()
+        except Exception as error:
+            # 上一次后台编码失败不该阻断这一次落盘：记下来，照常写新快照。
+            self._record_save_diagnostic(error, ['pending-async'])
+        payload = {"schema_version": SAVE_SCHEMA_VERSION, "state": self._encode_safe(state)}
         self.next_file.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         if self.primary.exists():
             shutil.copyfile(self.primary, self.backup)
         self.next_file.replace(self.primary)
         self.save_catalog(state.catalog)
+
+    def _encode_safe(self, state: GameState) -> dict[str, Any]:
+        """编码后先自检一次 JSON 安全性；发现元组键就隔离并记诊断，绝不抛出。
+
+        异常路径只影响这一次存档的形状（坏键变成字符串键），不影响游戏线程；
+        诊断写 `save/_save_diagnostics.log`，下一次就能定位真正的写入方。
+        """
+        encoded = self._encode(state)
+        try:
+            json.dumps(encoded, ensure_ascii=False)
+            return encoded
+        except TypeError as error:
+            fixed, paths = _sanitize_json_keys(encoded)
+            try:
+                json.dumps(fixed, ensure_ascii=False)
+            except TypeError:
+                paths = paths or ['state(未定位)']
+            self._record_save_diagnostic(error, paths)
+            return fixed
+
+    def _record_save_diagnostic(self, error, paths) -> None:
+        self.last_save_diagnostic = {'error': repr(error), 'paths': list(paths)}
+        try:
+            log = self.directory / '_save_diagnostics.log'
+            stamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            with log.open('a', encoding='utf-8') as handle:
+                handle.write(f"{stamp} {error!r} paths={list(paths)[:20]}\n")
+        except Exception:
+            pass
 
     def _write_encoded_async(self, encoded: dict[str, Any]) -> None:
         text = json.dumps({"schema_version": SAVE_SCHEMA_VERSION, "state": encoded},
@@ -216,7 +294,7 @@ class SaveManager:
     def _encode_and_write_with_lock(self, state: GameState, lock) -> None:
         """在动作锁内编码，随后在锁外写盘；主线程不再执行 _encode。"""
         with lock:
-            encoded = self._encode(state)
+            encoded = self._encode_safe(state)
             self.save_catalog(state.catalog)
         self._write_encoded_async(encoded)
 
@@ -235,7 +313,7 @@ class SaveManager:
         executor = self._ensure_async_executor()
         if lock is None:
             # 兼容旧调用/测试：编码在调用线程完成，保存调用时的确定性快照。
-            encoded = self._encode(state)
+            encoded = self._encode_safe(state)
             future = executor.submit(self._write_encoded_async, encoded)
             self._track_async_future(future)
             self.save_catalog(state.catalog)
@@ -308,10 +386,15 @@ class SaveManager:
                 item.reload_paid = False
 
     def load(self) -> GameState:
+        # UI 契约：读档一开始就定义标记；失败路径（无档/旧档拒绝/坏档跳过）也保持
+        # False，调用方用 getattr(manager, 'load_migrated', False) 读取。
+        self.load_migrated = False
         self.wait_for_pending_async_saves()
         for path in (self.primary, self.backup):
             if not path.exists():
                 continue
+            # 每个候选文件独立判定：主档坏了落到备份重试时，不能沿用上一份的标记。
+            self.load_migrated = False
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -346,13 +429,17 @@ class SaveManager:
                         shutil.copyfile(path, migration_backup)
                 state = self._decode(raw)
                 if limited_upgrade:
+                    self.load_migrated = True
                     state.messages.append(tr('限定显化物已补记本局发放记录：现有数量原样保留，丢弃或使用不会重置获取上限；载入前梦痕已备份。'))
                 if drug_upgrade:
+                    self.load_migrated = True
                     state.messages.append(tr('药物债务已改为逐份独立结算：只继承尚未支付的期数和原扣款时刻，不补收过去的账单；载入前梦痕已备份。'))
                 if environment_upgrade:
+                    self.load_migrated = True
                     state.environment_rework_version = 1
                     state.messages.append(tr('环境适配规则已更新：已有构想、洞察与记忆碎片采用新版范围、声音和条件效果；持有内容与槽位保留，旧构想残留按原剩余期限结束，载入前梦痕已备份。'))
                 if int(raw.get('system_roles_version', 0)) < 1:
+                    self.load_migrated = True
                     migration_backup = path.with_name(path.stem + '.before-system-roles-v1.json')
                     if not migration_backup.exists():
                         shutil.copyfile(path, migration_backup)
@@ -360,6 +447,7 @@ class SaveManager:
                     state.messages.append(tr('四系统规则已更新：记忆碎片改为耐受，洞察提供条件行动，构想与篡改采用新规则；原持有内容保留，迁移前梦痕已备份。'))
                     state.memory_effect_awards = list(dict.fromkeys([*state.memory_effect_awards, *state.memory_fragments]))
                 if int(raw.get('firing_sources_version', 0) or 0) < 1:
+                    self.load_migrated = True
                     migration_backup = path.with_name(path.stem + '.before-firing-sources-v1.json')
                     if not migration_backup.exists():
                         shutil.copyfile(path, migration_backup)
@@ -376,6 +464,9 @@ class SaveManager:
                             '旧结构无法可靠区分历史付费与装备许可，未额外赠送能力。物品、联想盘与构想原样保留；迁移前梦痕已备份。'))
                 SaveManager._normalize_firing_sources(state)
                 if int(raw.get('terrain_scale_version', 0) or 0) < TERRAIN_SCALE_VERSION:
+                    # 该分支一定会改写版本号（可能还追加提示），按「宁可多写一次盘」
+                    # 口径置 True；不依赖 stats['large'] 是否真的提示。
+                    self.load_migrated = True
                     stats = audit_legacy_elevations(state)
                     state.terrain_scale_version = TERRAIN_SCALE_VERSION
                     if stats['large']:
@@ -395,6 +486,7 @@ class SaveManager:
                         migration_backup = path.with_name(path.stem + '.before-origin-course-v2.json')
                         if not migration_backup.exists():
                             shutil.copyfile(path, migration_backup)
+                        self.load_migrated = True
                         state.tutorial['legacy_course_notice'] = True
                         state.messages.append(tr(
                             '旧梦痕的 0 层仍是已退役的十二步教学图（教程 v{old}）：新版「梦的起始」课程不接管这一张图，旧步骤与进度不映射到新的子目标，也不按新地图伪造完成；本层地形、持有与掉落原样保留。要上新课程请开一局新梦，提示前的梦痕已备份。',
@@ -473,25 +565,81 @@ class SaveManager:
         manager = self if slot is None else self.for_slot(slot)
         return manager.primary.exists() or manager.backup.exists()
 
-    def load_catalog(self) -> dict[str, Any]:
-        if not self.catalog_file.exists():
-            return {}
+    @staticmethod
+    def _copy_catalog_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        """返回图鉴 entries 的副本：dict 与每条 entry 的 list 都复制。
+
+        调用方（UI 面板、merge_catalogs 的输入）会改返回值；直接给出缓存对象
+        会让下一次读档读到被改脏的图鉴。
+        """
+        return {
+            key: {
+                **value,
+                "drops_seen": list(value.get("drops_seen") or []),
+                "details": list(value.get("details") or []),
+            }
+            for key, value in entries.items()
+        }
+
+    def _catalog_stat_key(self, path: Path) -> tuple[str, int, int] | None:
         try:
-            payload = json.loads(self.catalog_file.read_text(encoding="utf-8"))
+            info = path.stat()
+        except OSError:
+            return None
+        return (str(path), info.st_mtime_ns, info.st_size)
+
+    def _remember_catalog_cache(self, entries: dict[str, dict[str, Any]]) -> None:
+        """写盘后立刻用新内容重建缓存；stat 拿不到就失效（下次回源读取）。
+
+        缓存内部存的是防御性副本，不保留调用方传入的 dict/list 引用。
+        """
+        stat_key = self._catalog_stat_key(self.catalog_file)
+        if stat_key is None:
+            self._catalog_cache_key = None
+            self._catalog_cache_entries = None
+            return
+        self._catalog_cache_key = stat_key
+        # 防御性副本：调用方常把刚传给 save_catalog 的同一个 dict 赋给
+        # state.catalog 并继续原地修改（panels 的解锁全部图鉴路径）；直接存引用
+        # 会让这些运行期改动被当成「磁盘上的内容」返回，直到 stat 变化。
+        self._catalog_cache_entries = self._copy_catalog_entries(entries)
+
+    def load_catalog(self) -> dict[str, Any]:
+        path = self.catalog_file
+        if not path.exists():
+            self._catalog_cache_key = None
+            self._catalog_cache_entries = None
+            return {}
+        stat_key = self._catalog_stat_key(path)
+        if (stat_key is not None and stat_key == self._catalog_cache_key
+                and self._catalog_cache_entries is not None):
+            return self._copy_catalog_entries(self._catalog_cache_entries)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
             entries = payload.get("entries", {})
             if not isinstance(entries, dict):
                 return {}
-            return {
+            catalog = {
                 key: self._normalize_catalog_entry(key, value)
                 for key, value in entries.items()
                 if isinstance(key, str) and isinstance(value, dict)
             }
         except (OSError, ValueError, TypeError):
             return {}
+        if stat_key is not None:
+            self._catalog_cache_key = stat_key
+            self._catalog_cache_entries = catalog
+        return self._copy_catalog_entries(catalog)
 
     def save_catalog(self, catalog: dict[str, Any]) -> None:
         merged = self.merge_catalogs(self.load_catalog(), catalog)
         self.catalog_file.write_text(json.dumps({"schema_version": 1, "entries": merged}, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 刚写出的内容就是 merged：直接建缓存，省掉紧接着读档/存档时的回源解析。
+        # 外部改写由 stat 键失效兜底。
+        self._remember_catalog_cache(merged)
+
+    # 图鉴分类集合只依赖 CatalogCategory 枚举；按类缓存，避免每条 entry 都构造一次。
+    _catalog_categories_cache: frozenset[str] | None = None
 
     @staticmethod
     def _catalog_category(key: str) -> str:
@@ -513,9 +661,13 @@ class SaveManager:
         新增 carried_image 之后，存量条目每次读档都会因为「分类不认识」而被
         改回 manifestation——新分类在存档里永远留不住。改成枚举推导自动跟上。
         """
-        from .catalog_registry import CatalogCategory
+        cached = SaveManager._catalog_categories_cache
+        if cached is None:
+            from .catalog_registry import CatalogCategory
 
-        return frozenset(member.value for member in CatalogCategory)
+            cached = frozenset(member.value for member in CatalogCategory)
+            SaveManager._catalog_categories_cache = cached
+        return cached
 
     @classmethod
     def _normalize_catalog_entry(cls, key: str, value: dict[str, Any]) -> dict[str, Any]:
@@ -682,7 +834,37 @@ class SaveManager:
             while len(encoded) < 25:
                 encoded.append(defaults[len(encoded)-17])
             encoded.append(dict(cell.phase_stock))
+        if cell.plant_state:
+            # 第 27 位（索引 26）：植物的一次性／有限状态。旧的尾部块按位置写，
+            # 所以这里必须把 17–25 用真实值补齐——不能只补 0，否则 doorway
+            # 会被写成 False、phase_stock 会被写成 0。
+            defaults = [cell.plant_fuel, cell.floor_fuel, cell.item_burn_progress,
+                        dict(cell.creation), dict(cell.material_clocks),
+                        cell.light_radius, cell.light_on, cell.doorway,
+                        dict(cell.phase_stock)]
+            while len(encoded) < 26:
+                encoded.append(defaults[len(encoded)-17])
+            encoded.append(dict(cell.plant_state))
         return encoded
+
+    @staticmethod
+    def _encode_cells(rows: list, tables: dict[str, list[str]],
+                      cache: dict[str, dict[str, int]] | None = None) -> list[list[list]]:
+        """批量编码一层的紧凑格：CY-7 编译内核（默认关闭），否则用原实现。
+
+        实测（2026-10-27，1.8MB / 10800 格）：编码内核把逐格编码从约
+        12.9ms 降到 7.5ms（-5.3ms），但整条 save p50 只降约 5–6%，低于
+        「save p50 降低 ≥10%」的保留线，因此**默认不走内核**；源码与复测
+        开关 ``ONEIRSCRIPT_CY_KERNEL_SAVE_ENCODE=1`` 保留（仍受 save 总开关
+        ``ONEIRSCRIPT_CY_KERNEL_SAVE`` 约束）。
+        只有 _encode 会传入 cache；cache 为 None 时继续走逐格回退，保持
+        ``_encode_cell(cache=None)`` 的 list.index 语义不变。
+        """
+        if (cache is not None and _kernel_enabled("save")
+                and _env_flag("CY_KERNEL_SAVE_ENCODE", default=False)):
+            return _kernel_encode_cells(rows, tables, cache)
+        return [[SaveManager._encode_cell(cell, tables, cache) for cell in row]
+                for row in rows]
 
     @staticmethod
     def _encode_layer(snapshot: LayerSnapshot, tables: dict[str, list[str]],
@@ -690,10 +872,7 @@ class SaveManager:
         return {
             "depth": snapshot.depth,
             "seed": snapshot.seed,
-            "cells": [
-                [SaveManager._encode_cell(cell, tables, cache) for cell in row]
-                for row in snapshot.cells
-            ],
+            "cells": SaveManager._encode_cells(snapshot.cells, tables, cache),
             "enemies": [asdict(enemy) for enemy in snapshot.enemies],
             "world_items": [asdict(item) for item in snapshot.world_items],
             "events": [asdict(event) for event in snapshot.events],
@@ -781,6 +960,12 @@ class SaveManager:
         runtime_caches = ("_liquid_cells", "_gas_cells", "_periodic_liquid_cells", "_periodic_gas_cells", "_flame_cells", "_special_cells", "_ventilation_cells", "_exhaust_cells", "_phase_cells",
                           "_material_index_ready", "_material_index_ready_value",
                           "_sight_revision", "_visible_cache",
+                          # 本帧机械光延长表（core/vision/glow.publish_frame）：键是格坐标，
+                          # 进了 JSON 就是「keys must be ... not tuple」；视野随时可重算。
+                          "_glow_frame",
+                          # 光类装备（2026-10-25 批次二）的光照叠加表同样是运行期缓存：
+                          # 内容全部由刻痕／上盘表现算，存进存档只会留下过期副本。
+                          "_gear_light_overlay", "_gear_light_rev",
                           "last_sound_pulse", "_sound_pulse_seq",
                           "_region_proximity_turns",
                           "_kill_full_reward", "_superfluid_notified_depths", "_piezo_stacks",
@@ -803,6 +988,9 @@ class SaveManager:
                           # §12 D 残余：激活短光队列是纯演出（<1s 就衰完），
                           # 与 last_sound_pulse 同口径——读档后不该被复活。
                           "light_flashes", "_light_flash_seq",
+                          # 命中表现事件（2026-10-24 手感方案 §3.1）：读档/新局
+                          # 不补播旧命中，队列与序号都必须留在运行期。
+                          "presentation_hits", "hit_event_seq",
                           "_combat_fx_events", "_combat_fx_seq", "_cast_fx_capture",
                           # 构筑桥接组件的运行期瞬态（2026-10-08）：印记/每层一次
                           # 记账/冷却都是本层战斗内状态，跨档无意义（下潜即失效）。
@@ -851,10 +1039,7 @@ class SaveManager:
             key: SaveManager._encode_layer(snapshot, tables, cache)
             for key, snapshot in state.layer_states.items()
         }
-        data["cells"] = [
-            [SaveManager._encode_cell(cell, tables, cache) for cell in row]
-            for row in state.cells
-        ]
+        data["cells"] = SaveManager._encode_cells(state.cells, tables, cache)
         # set 无法直接进 JSON：按深度键的集合字段编码为有序列表。
         for key in ("developed_cells", "slick_cells"):
             data[key] = {
@@ -895,60 +1080,76 @@ class SaveManager:
         """格子解码：紧凑列表（新存档）或字典（旧存档迁移）。"""
         if isinstance(item, dict):
             return SaveManager._decode_cell_legacy(item)
-        return self._decode_compact_cell(item, tables or SaveManager._make_tables())
+        tables = tables or SaveManager._make_tables()
+        if _kernel_enabled("save"):
+            return _kernel_decode_compact_cell(item, tables)
+        return self._decode_compact_cell(item, tables)
 
     @staticmethod
     def _decode_compact_cell(item: list, tables: dict[str, list[str]]) -> Cell:
-        """紧凑列表格（本版本写出的存档；第 16 位植物是后加字段，旧档缺省为 0）。"""
+        """紧凑列表格（本版本写出的存档；第 16 位植物是后加字段，旧档缺省为 0）。
+
+        ⚠️ 这是每份存档最大的一笔逐格成本（1.8MB 档约 10800 格）。为了不在热路径
+        上反复做字符串表查询/方法分派，_lookup 的「越界取默认值」在这里内联成
+        局部变量，Cell 也按 dataclass 字段顺序位置传参——**语义必须与
+        scripts/probe_save_load_latency_261026.py 基线时的旧实现逐字节等价**：
+        越界下标默认值、液/气种类合法性回退、dreamcrystal cover 存气体、
+        solid+height>1 清空液气、未知墙体补定义表的硬度/高度/厚度/完整度全部保留。
+        不要改成复用 Cell 实例：material_clocks/creation/phase_stock 会被原地修改。
+        """
+        length = len(item)
         (
             floor_idx, solid_int, liquid, gas, hardness, thickness,
             integrity, cover, flame, variant_idx, wall_idx, height,
             elevation, liquid_idx, gas_idx,
         ) = item[:15]
-        plant = int(item[15]) if len(item) > 15 else 0
-        wire = int(item[16]) if len(item) > 16 else 0
+        plant = int(item[15]) if length > 15 else 0
+        wire = int(item[16]) if length > 16 else 0
         solid = bool(solid_int)
         if solid and height > 1:
             liquid = 0
             gas = 0
-        liquid_kind = SaveManager._lookup(tables, "liquids", liquid_idx)
-        gas_kind = SaveManager._lookup(tables, "gases", gas_idx)
-        liquid_kind = liquid_kind if liquid and liquid_kind in LIQUID_DEFINITIONS else DEFAULT_LIQUID if liquid else ""
-        gas_kind = gas_kind if gas and gas_kind in GAS_DEFINITIONS else DEFAULT_GAS if gas else ""
-        raw_wall_kind = SaveManager._lookup(tables, "walls", wall_idx)
+        # ---- _lookup(tables, key, index[, default]) 的内联等价实现 ----
+        liquids = tables.get("liquids") or ()
+        raw_liquid_kind = liquids[liquid_idx] if 0 <= liquid_idx < len(liquids) else ""
+        gas_table = tables.get("gases") or ()
+        raw_gas_kind = gas_table[gas_idx] if 0 <= gas_idx < len(gas_table) else ""
+        liquid_kind = (raw_liquid_kind if liquid and raw_liquid_kind in LIQUID_DEFINITIONS
+                       else DEFAULT_LIQUID if liquid else "")
+        gas_kind = (raw_gas_kind if gas and raw_gas_kind in GAS_DEFINITIONS
+                    else DEFAULT_GAS if gas else "")
+        walls = tables.get("walls") or ()
+        raw_wall_kind = walls[wall_idx] if 0 <= wall_idx < len(walls) else ""
         known_wall = raw_wall_kind in WALL_DEFINITIONS
         wall_kind = raw_wall_kind if known_wall else DEFAULT_WALL if solid else ""
         if solid and cover > 0 and wall_def(wall_kind).break_effect == 'dreamcrystal':
-            stored_kind = SaveManager._lookup(tables, 'gases', gas_idx)
-            if stored_kind in GAS_DEFINITIONS:
-                gas_kind = stored_kind  # cover stores gas; free gas may legitimately be zero.
+            if raw_gas_kind in GAS_DEFINITIONS:
+                gas_kind = raw_gas_kind  # cover stores gas; free gas may legitimately be zero.
+        variants = tables.get("variants") or ()
+        aggregate_variant = (variants[variant_idx] if 0 <= variant_idx < len(variants)
+                             else "普通聚合物")
+        # 位置传参＝Cell 的字段声明顺序（core/entities.py::Cell）：
+        # wire, floor, solid, liquid, gas, hardness, thickness, integrity, cover,
+        # flame, aggregate_variant, wall_kind, height, elevation, liquid_kind,
+        # gas_kind, plant, plant_fuel, floor_fuel, item_burn_progress, creation,
+        # material_clocks, light_radius, light_on, doorway, phase_stock。
+        # 关键字传参在 10800 格上约多 7-8ms（每次 load 都付）。
         cell = Cell(
-            floor=Material.SOLID_AGGREGATE if solid else Material.PLAIN_AGGREGATE,
-            solid=solid,
-            liquid=liquid,
-            gas=gas,
-            hardness=hardness,
-            thickness=thickness,
-            integrity=integrity,
-            cover=cover,
-            flame=flame,
-            aggregate_variant=SaveManager._lookup(tables, "variants", variant_idx, "普通聚合物"),
-            wall_kind=wall_kind,
-            height=height,
-            elevation=elevation,
-            liquid_kind=liquid_kind,
-            gas_kind=gas_kind,
-            plant=max(0, plant) if not solid else 0,
-            wire=max(0, wire),
-            plant_fuel=max(0, int(item[17])) if len(item) > 17 else 0,
-            floor_fuel=max(0, int(item[18])) if len(item) > 18 else 0,
-            item_burn_progress=max(0, int(item[19])) if len(item) > 19 else 0,
-            creation=dict(item[20]) if len(item) > 20 and isinstance(item[20], dict) else {},
-            material_clocks=dict(item[21]) if len(item) > 21 and isinstance(item[21], dict) else {},
-            light_radius=max(0, int(item[22])) if len(item) > 22 else 0,
-            light_on=bool(item[23]) if len(item) > 23 else True,
-            doorway=bool(item[24]) if len(item) > 24 else wall_kind in DOOR_KINDS,
-            phase_stock=dict(item[25]) if len(item) > 25 and isinstance(item[25], dict) else {},
+            max(0, wire),
+            Material.SOLID_AGGREGATE if solid else Material.PLAIN_AGGREGATE,
+            solid, liquid, gas, hardness, thickness, integrity, cover, flame,
+            aggregate_variant, wall_kind, height, elevation, liquid_kind, gas_kind,
+            max(0, plant) if not solid else 0,
+            max(0, int(item[17])) if length > 17 else 0,
+            max(0, int(item[18])) if length > 18 else 0,
+            max(0, int(item[19])) if length > 19 else 0,
+            dict(item[20]) if length > 20 and isinstance(item[20], dict) else {},
+            dict(item[21]) if length > 21 and isinstance(item[21], dict) else {},
+            max(0, int(item[22])) if length > 22 else 0,
+            bool(item[23]) if length > 23 else True,
+            bool(item[24]) if length > 24 else wall_kind in DOOR_KINDS,
+            dict(item[25]) if length > 25 and isinstance(item[25], dict) else {},
+            dict(item[26]) if length > 26 and isinstance(item[26], dict) else {},
         )
         if solid and not known_wall:
             definition = wall_def(wall_kind)
@@ -957,6 +1158,20 @@ class SaveManager:
             cell.thickness = definition.thickness
             cell.integrity = definition.integrity
         return cell
+
+    @staticmethod
+    def _decode_cells(rows: list, tables: dict[str, list[str]]) -> list[list[Cell]]:
+        """批量解码一层的格子：紧凑列表格直连快路径，旧字典格仍走迁移解码。"""
+        legacy = SaveManager._decode_cell_legacy
+        # CY-1：编译过的内核一次接管整层；未编译/关闭时用下方纯 Python 实现。
+        if _kernel_enabled("save"):
+            return _kernel_decode_cells(rows, tables, legacy)
+        compact = SaveManager._decode_compact_cell
+        return [
+            [legacy(item) if isinstance(item, dict) else compact(item, tables)
+             for item in row]
+            for row in rows
+        ]
 
     @staticmethod
     def _decode_cell_legacy(item: dict[str, Any]) -> Cell:
@@ -1004,6 +1219,7 @@ class SaveManager:
             doorway=bool(item.get('doorway', wall_kind in DOOR_KINDS)),
             light_on=bool(item.get('light_on', True)),
             phase_stock=dict(item.get('phase_stock') or {}),
+            plant_state=dict(item.get('plant_state') or {}),
         )
         if solid and not known_wall:
             definition = wall_def(wall_kind)
@@ -1116,7 +1332,7 @@ class SaveManager:
 
     def _decode(self, data: dict[str, Any]) -> GameState:
         tables = data.get("tables") or SaveManager._make_tables()
-        cells = [[self._decode_cell(item, tables) for item in row] for row in data["cells"]]
+        cells = SaveManager._decode_cells(data["cells"], tables)
         player = self._decode_entity(data["player"])
         enemies = [self._decode_entity(enemy) for enemy in data.get("enemies", [])]
         def decode_item(item: dict[str, Any]) -> Item:
@@ -1159,7 +1375,7 @@ class SaveManager:
 
         def decode_layer(entry: dict[str, Any]) -> LayerSnapshot:
             from .core.realm_surface import normalize_bg_zones
-            layer_cells = [[self._decode_cell(item, tables) for item in row] for row in entry["cells"]]
+            layer_cells = SaveManager._decode_cells(entry["cells"], tables)
             layer_items = [decode_world_item(item) for item in entry.get("world_items", [])]
             for item in layer_items:
                 cell = (layer_cells[item.y][item.x]
@@ -1298,6 +1514,8 @@ class SaveManager:
             overclock_turns=int(data.get("overclock_turns", 0)),
             # 延时声源（蜂鸣诱饵）的待响队列；旧档没有 → 空表（不再补响）。
             delayed_sounds=[dict(row) for row in (data.get("delayed_sounds") or [])],
+            # 上一处实际诱引落点（扩展包「返场」）；旧档没有 → 空 dict（返场拒用）。
+            last_lure=dict(data.get("last_lure") or {}),
             delayed_fuel=[dict(row) for row in (data.get("delayed_fuel") or [])],
             drug_debts=[dict(row) for row in data.get("drug_debts", [])],
             drug_debt_version=int(data.get("drug_debt_version", 0)),
@@ -1374,6 +1592,8 @@ class SaveManager:
             environment_rework_version=int(data.get('environment_rework_version', 0) or 0),
             terrain_scale_version=int(data.get('terrain_scale_version', 0) or 0),
             memory_effect_awards=list(data.get('memory_effect_awards', data.get('memory_fragments', [])) or []),
+            memory_buffers={str(key): str(value)
+                            for key, value in (data.get('memory_buffers') or {}).items()},
             quiet_step_ready=bool(data.get('quiet_step_ready', False)),
             quiet_step_charges=max(0, int(data.get('quiet_step_charges', 0) or 0)),
             quiet_step_until=int(data.get('quiet_step_until', 0) or 0),
@@ -1563,9 +1783,11 @@ class GameSession:
     # 退出时无条件全量保存。
     SAVE_TURN_INTERVAL = 10
 
-    def __init__(self, state: GameState, manager: SaveManager, *, persist_initial: bool = True):
+    def __init__(self, state: GameState, manager: SaveManager, *, persist_initial: bool = True,
+                 persistence_enabled: bool = True):
         self.state = state
         self.manager = manager
+        self.persistence_enabled = persistence_enabled
         self.started = time.monotonic()  # 本局开始时刻，用于界面右上角的本局时长
         self._dirty = False
         self._last_saved_turn = state.time
@@ -1582,12 +1804,12 @@ class GameSession:
             _invalidate_visibility(state)
         except Exception:  # pragma: no cover - 极端早期挂载中字段未就绪
             pass
-        if persist_initial:
+        if persist_initial and self.persistence_enabled:
             self.manager.save(self.state)
 
     def start(self) -> None:
         """Commit an explicitly entered game, never a home-screen placeholder."""
-        if self._provisional:
+        if self._provisional and self.persistence_enabled:
             self.manager.save(self.state)
             self._provisional = False
 
@@ -1628,6 +1850,7 @@ class GameSession:
         if (result.changed and not noop_board) or mutated:
             if (
                 self.state.run_over
+                and self.persistence_enabled
                 and not self.state.history_recorded
                 and (self.state.ending_id or self.state.victory)
             ):
@@ -1697,6 +1920,9 @@ class GameSession:
             # 路由：走同一个方法、同一套记账（视野地形、脏标记、终局检查），
             # 不改任何结算规则。
             result = self.state.activate_ability(*args)
+        elif command == 'ability_targeted':
+            # 浏览器选点和回放复用同一个 GameSession，确保存档与行动后处理一致。
+            result = self.state.activate_ability(args[0], **args[1])
         elif command == "uproot_plant":
             result = self.state.uproot_plant()
         elif command == "fire":
@@ -1805,16 +2031,22 @@ class GameSession:
 
     def flush_pending_save(self) -> None:
         """节流落盘：脏状态距上次存档经过的回合数达到间隔时才写盘。"""
-        if not self._dirty:
+        if not self.persistence_enabled or not self._dirty:
             return
         if self.state.time - self._last_saved_turn >= self.SAVE_TURN_INTERVAL:
-            self.manager.save(self.state)
+            try:
+                self.manager.save(self.state)
+            except Exception as error:
+                # 存档失败不能打死游戏线程（2026-10-27：元组键导致 OSError 终止 App）。
+                self.manager._record_save_diagnostic(error, ['flush'])
+                self.last_save_error = repr(error)
+                return
             self._dirty = False
             self._last_saved_turn = self.state.time
 
     def flush_pending_save_async(self) -> None:
         """同 flush_pending_save，但把 JSON/写盘交给后台线程（真实运行时用）。"""
-        if not self._dirty:
+        if not self.persistence_enabled or not self._dirty:
             return
         if self.state.time - self._last_saved_turn >= self.SAVE_TURN_INTERVAL:
             self.manager.save_async(self.state, self._action_lock)
@@ -1846,6 +2078,8 @@ class GameSession:
         return result
 
     def save_and_exit(self) -> None:
+        if not self.persistence_enabled:
+            return
         if self._provisional and not self._dirty:
             return
         self.manager.save(self.state)

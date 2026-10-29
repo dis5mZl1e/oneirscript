@@ -25,8 +25,11 @@ from .ballistics import trace_path
 
 # 喷射的弹道距离（格）。
 SPRAY_RANGE = 8
-# 每次发射的想象力消耗（少量）。
+# 每次发射的想象力消耗（少量）。有弹药（容器）时固定 2 点。
 SPRAY_COST = 2
+# 无可用弹药、退化为自带清水/水蒸气时的默认消耗（物品可在 spray 规格里覆盖）。
+# 喷水枪 2026-10-26 起无弹药喷射需要 3 点想象力。
+SPRAY_BUILTIN_COST = SPRAY_COST
 # 从容器抽取 / 自带水源的沉积量。
 SPRAY_AMOUNT = 12
 SPRAY_BUILTIN_AMOUNT = 6
@@ -100,6 +103,14 @@ def bound_spray_source(state, plan, source_index):
     if medium != dict(plan.projectile_profile).get('medium') or not pick_ammo_kind(item):
         return None, '容器中没有可用的对应材料。'
     return index, ''
+
+
+def spray_imagination_cost(plan, source_index: int | None) -> int:
+    """一次喷射实际要付的想象力：有弹药走容器价，无弹药走自带水源价。"""
+    spec = dict(getattr(plan, "projectile_profile", {}) or {})
+    if source_index is not None:
+        return int(spec.get("cost", SPRAY_COST))
+    return int(spec.get("builtin_cost", SPRAY_BUILTIN_COST))
 
 
 def hand_fire_spec(state: Any) -> dict[str, Any] | None:
@@ -234,8 +245,11 @@ def spray_fire(state: Any, source_index: int | None, dx: int, dy: int, *, plan=N
     if source_index is not None:
         from ..equipment.runtime import action_effect_power
         amount += action_effect_power(state, "spray_boost", plan.rows) * 6
+    cost = spray_imagination_cost(plan, source_index)
+    if state.imagination < cost:
+        return tr("想象力不足（喷射需要 {cost} 点）。", cost=cost), {}
     return _resolve_spray_phases(state,plan,medium,kind,amount,source_index,path,
-                                 cost=int(spec.get('cost',SPRAY_COST)))
+                                 cost=cost)
 
 
 def spray_target(state: Any, source_index: int | None, tx: int, ty: int, *, plan=None) -> tuple[str, dict[str, Any]]:
@@ -262,8 +276,11 @@ def spray_target(state: Any, source_index: int | None, tx: int, ty: int, *, plan
     if source_index is not None:
         from ..equipment.runtime import action_effect_power
         amount += action_effect_power(state, "spray_boost", plan.rows) * 6
+    cost = spray_imagination_cost(plan, source_index)
+    if state.imagination < cost:
+        return tr("想象力不足（喷射需要 {cost} 点）。", cost=cost), {}
     return _resolve_spray_phases(state,plan,medium,kind,amount,source_index,path,
-                                 cost=int(spec.get('cost',SPRAY_COST)),aim_cell=(tx,ty))
+                                 cost=cost,aim_cell=(tx,ty))
 
 
 def _resolve_spray_phases(state,plan,medium,kind,amount,source_index,path,*,cost,aim_cell=None):

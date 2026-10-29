@@ -1,12 +1,50 @@
 """Bounded sentence feedback, using settled world facts and real materials."""
 from __future__ import annotations
 
-from .events import DEFAULT_COOLDOWN, FEEDBACK_PER_EVENT, FEEDBACK_PER_ROUND, FeedbackResult
+from .events import (DEFAULT_COOLDOWN, FEEDBACK_PER_EVENT, FEEDBACK_PER_ROUND,
+                     FeedbackResult, emit_equipment_visual,
+                     forget_equipment_store)
 from .runtime import condition_matches
 from ..i18n import tr
 
 FAMILIES = {"ignite": "ember", "shock": "spark", "conduct": "spark",
             "imprint": "imprint", "strike": "cut", "cover": "buffer"}
+
+
+def _root_endpoint(state) -> str:
+    """当前真实根事件的端点；没有根帧时归入盘面动作。"""
+    frame = getattr(state, "_equipment_root_frame", None)
+    facts = getattr(frame, "facts", None) if frame is not None else None
+    if facts:
+        return str(facts[-1].endpoint)
+    return "board"
+
+
+def _register_feedback_visual(state, opcode, *, cell, target, recipient, damage_kind):
+    """只在 execute_feedback 已真实成功后调用；不改数值、不回调伤害。"""
+    endpoint = _root_endpoint(state)
+    common = (("piece", opcode), ("opcode", opcode), ("root_event", endpoint))
+    if opcode == "cover":
+        emit_equipment_visual(
+            state, endpoint=endpoint, opcode=opcode, outcome="store",
+            source=(state.player.x, state.player.y),
+            store_key=("buffer", str(damage_kind or "any")),
+            facts=common + (("kind", str(damage_kind or "any")),))
+        return
+    if opcode == "ignite":
+        point = cell
+        emit_equipment_visual(
+            state, endpoint=endpoint, opcode=opcode, outcome="hit",
+            source=point, targets=(point,), affected_cells=(point,),
+            facts=common)
+        return
+    if recipient is None:
+        return
+    point = (recipient.x, recipient.y)
+    emit_equipment_visual(
+        state, endpoint=endpoint, opcode=opcode, outcome="hit",
+        source=cell, targets=(point,), affected_cells=(point,),
+        facts=common + (("damage", 1),))
 
 
 def layer_identity(state):
@@ -61,6 +99,7 @@ def execute_feedback(state, opcode, *, cell=None, target=None, damage_kind="", a
     if not state._has_line_of_sight(state.player.x, state.player.y, *cell):
         return FeedbackResult(opcode, False, "落点被墙体阻隔")
     state._equipment_derived_depth = getattr(state, "_equipment_derived_depth", 0) + 1
+    recipient = None
     try:
         if opcode == "ignite":
             if not state._ignite_cell(*cell, 1, by_player=False):
@@ -118,6 +157,9 @@ def execute_feedback(state, opcode, *, cell=None, target=None, damage_kind="", a
                  effect=tr({"ignite": "余温", "shock": "静电", "conduct": "传导", "blast": "余爆", "strike": "刀痕", "cover": "护持"}.get(opcode, opcode)),
                  x=cell[0], y=cell[1])
     state.messages.append(message)
+    # 旁路登记：世界已经改变且 _record 已落账后才抄事实，不改玩法。
+    _register_feedback_visual(state, opcode, cell=cell, target=target,
+                              recipient=recipient, damage_kind=damage_kind)
     return FeedbackResult(opcode, True, detail={"cell": cell})
 
 
@@ -169,6 +211,14 @@ def cast_imprint(state, row, target):
                                        "amount": 1, "root_id": state.action_seq}
     _record(state, "imprint", active=True)
     state._emit_combat_fx("cut", (target.x, target.y), [(target.x, target.y)])
+    # 储存：印记是独立事件；下一次真实命中兑现时再发 release 事件。
+    point = (target.x, target.y)
+    emit_equipment_visual(
+        state, endpoint=_root_endpoint(state), opcode="imprint", outcome="store",
+        source=point, targets=(point,), affected_cells=(point,),
+        visual_key="fx.memory", store_key=("imprint", str(target.id)),
+        facts=(("piece", "imprint"), ("opcode", "imprint"),
+               ("until", int(state.time + 3))))
     return True
 
 
@@ -177,4 +227,16 @@ def redeem_imprint(state, target):
     if (not mark or mark.get("location") != layer_identity(state)
             or state.time >= mark.get("until", 0)):
         return 0
-    return min(1, max(0, int(mark.get("amount", 0))))
+    amount = min(1, max(0, int(mark.get("amount", 0))))
+    if amount:
+        point = (target.x, target.y)
+        # 兑现：只观察已经执行的加成伤害；这里绝不调用伤害入口。
+        emit_equipment_visual(
+            state, endpoint=_root_endpoint(state), opcode="imprint_release",
+            outcome="release", visual_key="fx.impact",
+            source=point, targets=(point,), affected_cells=(point,),
+            parent_store_key=("imprint", str(target.id)),
+            facts=(("piece", "imprint"), ("opcode", "strike"),
+                   ("amount", int(amount))))
+        forget_equipment_store(state, ("imprint", str(target.id)))
+    return amount

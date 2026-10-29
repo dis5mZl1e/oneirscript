@@ -35,8 +35,8 @@ EN_ORIGIN_COURSE = {
     "接取与交付": "Accepting and Delivering",
     "离开教程": "Leaving the Tutorial",
     "保存与恢复": "Saving and Resuming",
-    "目标与操作见任务日志；Esc 跳过，N 随时离开。":
-        "Objectives and controls are in the task log; Esc skips, N leaves at any time.",
+    "目标与操作见任务日志；Delete 跳过，Esc 返回/暂停，N 随时离开。":
+        "Objectives and controls are in the task log; Delete skips, N leaves at any time.",
     "这个分类暂时没有可显示的内容。": "No visible entries in this category yet.",
     # origin course / task journal / controls
     "没有这项练习操作。": "That practice action does not exist.",
@@ -48,9 +48,9 @@ EN_ORIGIN_COURSE = {
         "Sound practice started; the opponent investigates actual sound sources. Use area G.",
     "环境练习已开始：H 区封闭浅池有有限的水和水蒸气，受热后真实转换。":
         "Environment practice started: the sealed shallow pool in area H has finite water and steam; heat causes a real phase change.",
-    "请把练习玻璃杯带回出口纸偶旁边再交付。":
+    "请把练习玻璃瓶带回出口纸偶旁边再交付。":
         "Bring the practice glass back to the exit doll before handing it in.",
-    "练习委托：取回物品区的练习玻璃杯，交给出口纸偶。无正式奖励。":
+    "练习委托：取回物品区的练习玻璃瓶，交给出口纸偶。无正式奖励。":
         "Practice request: retrieve the practice glass from the item area and deliver it to the exit doll. No formal reward.",
     "练习委托已交付；没有正式奖励或任务名额变动。":
         "Practice request delivered; no formal reward or quest-slot change.",
@@ -58,7 +58,7 @@ EN_ORIGIN_COURSE = {
     "已选择教学目标。": "Teaching objective selected.",
     "此练习尚待前置机制接入。": "This practice still waits for its prerequisite mechanic.",
     "这项练习委托已经接取。": "That practice request is already accepted.",
-    "请先接取委托，并取回物品区的练习玻璃杯。":
+    "请先接取委托，并取回物品区的练习玻璃瓶。":
         "Accept the request first, then retrieve the practice glass from the item area.",
     "没有进行中的练习委托。": "There is no active practice request.",
     "握持 {item}：按 Enter 确认后生效（一次行动）。":
@@ -70,7 +70,7 @@ EN_ORIGIN_COURSE = {
     "教学：梦的起始（不占委托名额）": "Practice: The Dream's Beginning (no quest slot used)",
     "新增教材与练习成长仅本层有效；N 可随时离开。":
         "New practice items and growth apply only on this floor; N leaves at any time.",
-    "练习委托：{status}；在物品区取练习玻璃杯，交给出口纸偶。":
+    "练习委托：{status}；在物品区取练习玻璃瓶，交给出口纸偶。":
         "Practice request: {status}; take the practice glass from the item area and deliver it to the exit doll.",
     "    Enter／点击选择此目标，不重置完成记录。":
         "    Enter/click selects this objective; completion records are not reset.",
@@ -109,4 +109,55 @@ EN_ORIGIN_COURSE.update({
 EN_ORIGIN_COURSE.update({
     '用F3或Alt+V打开分层观察，Tab切换低、中、高层；Alt+G查看地势，Enter查看本格详情，再返回原场景。':
         'Open the map inspector with F3 or Alt+V. Use Tab to inspect the low, middle and high bands, Alt+G for elevation, and Enter for tile details; then return without taking a turn.',
+})
+
+EN_ORIGIN_COURSE.update({
+    # 进阶练习模块标题（skip() 用 tr(title)，英文下必须有词条）
+    '事件与回应': 'Events and responses',
+    '植物与采撷': 'Plants and gathering',
+    '材料反应': 'Material reactions',
+    '弹匣与换弹': 'Magazines and reloading',
+    '药物与债务': 'Drugs and debt',
+    '异象情报': 'Anomaly intelligence',
+    '击破与崩解': 'Defeat and dissolution',
+    '构造环境': 'Constructed environments',
+    '机关与电路': 'Mechanisms and circuits',
+    '陷阱与识别': 'Traps and identification',
+    # 教学日志里的控制项与状态词
+    '展开／收起教学提示': 'Expand/collapse tutorial tips',
+    '归还遗失教材／恢复练习资源': 'Return lost practice items and restore practice resources',
+    '开始／重置声音练习（G 区）': 'Start/reset sound practice (G)',
+    '开始／重置环境练习（H 区）': 'Start/reset environment practice (H)',
+    '准备篡改液体样本（F 区）': 'Prepare tampering samples (F)',
+    '借用记忆与洞察教材（本层有效）': 'Borrow memory and insight examples (this floor only)',
+    '已实践': 'practised', '待机制接入': 'awaiting mechanic',
+    '已跳过': 'skipped', '待实践': 'to practise',
+    '开始／重置事件练习（A 区）': 'Start/reset event practice (A)',
+    '开始／重置植物练习（E 区）': 'Start/reset plant practice (E)',
+    '准备材料反应样本（E 区）': 'Prepare material-reaction samples (E)',
+    '借出弹匣武器（练习）': 'Borrow a magazine weapon (practice)',
+    '借出浓缩咖啡因（练习）': 'Borrow an espresso shot (practice)',
+    '开始／重置异象练习（E 区）': 'Start/reset anomaly practice (E)',
+    '借出火花构想（本层有效）': 'Borrow Spark (this floor only)',
+    '开始／重置机关电路练习（E 区）': 'Start/reset mechanism-circuit practice (E)',
+    '开始／重置陷阱练习（E 区）': 'Start/reset trap practice (E)',
+    # 控制结果消息
+    '事件练习已备好：A 区出现一处异常地点；相邻回应后读完选项再决定。':
+        'Event practice ready: an anomalous site appeared in area A. Respond from an adjacent cell, read the options, then decide.',
+    '植物练习已备好：E 区有高丛与一株稀有植株，走过去踩踏或站上去拔起。':
+        'Plant practice ready: area E has tall grass and a rare plant. Walk over the grass or stand on the plant and uproot it.',
+    '材料反应样本已备好：E 区有水与湿墨；用容器盛水，走到墨池上倒出。':
+        'Reaction samples ready: water and wet ink are in area E. Fill a container with water, stand on the ink pool and pour.',
+    '练习药已借出：使用浓缩咖啡因后查看账单，再等待两回合分期扣款。':
+        'Practice drug borrowed: use the espresso shot, check the bill, then wait two rounds for the installment charge.',
+    '异象练习已备好：E 区出现一只普通异象；可读详情，也可以击破它。':
+        'Anomaly practice ready: an ordinary anomaly appeared in area E. Read its details or defeat it.',
+    '练习构想已借出：火花只在本层生效；施放后等待两回合观察它留下的场。':
+        'Practice conception borrowed: Spark works on this floor only. Cast it, then wait two rounds to watch the field it leaves.',
+    '机关电路已备好：取走机关石台上的练习物，信号会沿电线传到显影方尖。':
+        'Mechanism circuit ready: take the practice item from the mechanism platform; the signal travels along the wire to the reveal obelisk.',
+    '陷阱练习已备好：另一张石台外观相同；取走其上的练习物，读实际触发结果。':
+        'Trap practice ready: the other platform looks identical. Take its practice item and read what actually triggers.',
+    '弹匣练习已借出：把钉枪放上联想盘源位并确认成句，再发射与换弹。':
+        'Magazine practice borrowed: place the nail gun in the source column of the board, commit the sentence, then fire and reload.',
 })

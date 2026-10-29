@@ -290,7 +290,8 @@ def observe_scene(scene: SceneSnapshot, layer: str) -> SceneSnapshot:
 
 
 def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None,
-                cell_w: int = 2, cell_h: int = 1, legacy_terrain: bool = False) -> SceneSnapshot:
+                cell_w: int = 2, cell_h: int = 1, legacy_terrain: bool = False,
+                visible: set[tuple[int, int]] | None = None) -> SceneSnapshot:
     """Build the shared permission-filtered map scene (read-only).
 
     2026-10-22 批次3 微优化：输出与优化前逐字段等价
@@ -300,6 +301,9 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
     空集合不逐格查、SceneCell 改位置参数构造、occupants 仅在真有内容时建列表。
     信息权限/知识语义（unknown/memory/terrain_known/always_visible/容器伪装/
     developed/显影液/sensed/电场/预警/hazards）逐项未改。
+
+    ``visible`` 允许调用方传入同一次界面刷新里已算好的可见集合（M2-A，
+    2026-10-24）：这里复制一份再补「恒显异象」格，调用方的集合不受影响。
     """
     if viewport is None:
         viewport = (0, 0, state.width, state.height)
@@ -308,7 +312,7 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
     top = max(0, min(top, state.height - 1))
     width = max(1, min(width, state.width - left))
     height = max(1, min(height, state.height - top))
-    visible = set(state.visible_cells())
+    visible = set(state.visible_cells()) if visible is None else set(visible)
     # Resolve the expensive LOS/glow set once, then add only separately public
     # actor cells. is_visible() per viewport cell rescans nearby light sources.
     knowledge_visible = None if (state.debug_full_vision or state.light_turns > 0) else visible
@@ -373,8 +377,8 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
     for y in range(top, top + height):
         for x in range(left, left + width):
             pos = (x, y)
-            knowledge = knowledge_of(state, x, y, visible=knowledge_visible,
-                                     memory_layer=memory_layer, developed=developed_cells)
+            knowledge = knowledge_of(state, x, y, knowledge_visible,
+                                     memory_layer, developed_cells)
             cell = state.cell(x, y)
             knowledge_status = knowledge.status
             live_content = knowledge_status in ("visible", "developed")

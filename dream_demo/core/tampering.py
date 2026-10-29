@@ -16,6 +16,7 @@ from ..equipment.root_facts import root_action
 from . import tamper_pipeline as pipeline
 from .chaos import chaos_risk_tier, clamp_chaos
 from .entities import ActionResult
+from .visual_events import emit_visual
 from .tamper_views import (
     language_of,
     record_of,
@@ -23,6 +24,18 @@ from .tamper_views import (
     target_for_event,
     target_for_npc,
 )
+
+
+def _target_cell(obj: Any) -> tuple[int, int] | None:
+    """文本载体在主地图上时的格子；纯对白/界面对象没有地图实体返回 None。"""
+    x = getattr(obj, "x", None)
+    y = getattr(obj, "y", None)
+    if x is None or y is None:
+        return None
+    try:
+        return int(x), int(y)
+    except (TypeError, ValueError):
+        return None
 
 
 def make_request(state: Any, target: TamperTarget, text_id: str, transition_id: str) -> TamperRequest:
@@ -89,9 +102,12 @@ def _validate(state: Any, request: TamperRequest) -> tuple[Any, Any, dict[str, A
     reason = _text_open(state, request.target, definition, obj)
     if reason:
         return definition, transition, record, obj, reason
-    if int(state.imagination) < int(transition.imagination_cost):
+    quoted = pipeline.quote_cost(
+        state, pipeline.TamperCost(int(transition.imagination_cost),
+                                   int(transition.chaos_delta)))
+    if int(state.imagination) < int(quoted.imagination):
         return definition, transition, record, obj, tr(
-            "想象力不够（需要 {n}）。", n=int(transition.imagination_cost))
+            "想象力不够（需要 {n}）。", n=int(quoted.imagination))
     return definition, transition, record, obj, ""
 
 
@@ -108,8 +124,11 @@ def preview_tamper(state: Any, request: TamperRequest, *, language: str | None =
     before = compose_text(definition.variant(str(record.get("variant_id")))
                           or definition.variant(definition.initial_variant), language)
     after = compose_text(definition.variant(transition.to_variant), language)
-    cost = int(transition.imagination_cost)
-    delta = pipeline.quote_cost(state, pipeline.TamperCost(cost, int(transition.chaos_delta))).chaos_delta
+    quoted = pipeline.quote_cost(
+        state, pipeline.TamperCost(int(transition.imagination_cost),
+                                   int(transition.chaos_delta)))
+    cost = int(quoted.imagination)
+    delta = int(quoted.chaos_delta)
     chaos_after = clamp_chaos(int(state.chaos) + delta)
     risk_tier = chaos_risk_tier(chaos_after)
     from .dialogue_contract import build_dialogue_contract
@@ -194,6 +213,12 @@ def commit_tamper(state: Any, request: TamperRequest) -> ActionResult:
 
     language = language_of()
     key = request.target.record_key(request.text_id)
+    # 先捕获本次目标快照：推进世界之后载体可能移走/消失，不能那时再读。
+    target_cell = _target_cell(obj)
+    if target_cell is not None and not (
+            0 <= target_cell[0] < state.width and 0 <= target_cell[1] < state.height):
+        target_cell = None
+    source_cell = (int(state.player.x), int(state.player.y))
     entry = dict(record)
     state.tamper_records = dict(getattr(state, "tamper_records", None) or {})
     sequence = pipeline.next_sequence(state)
@@ -210,8 +235,9 @@ def commit_tamper(state: Any, request: TamperRequest) -> ActionResult:
     entry.pop("migrated", None)
     state.tamper_records[key] = entry
 
-    cost = int(transition.imagination_cost)
-    quoted = pipeline.quote_cost(state, pipeline.TamperCost(cost, int(transition.chaos_delta)))
+    quoted = pipeline.quote_cost(
+        state, pipeline.TamperCost(int(transition.imagination_cost),
+                                   int(transition.chaos_delta)))
     chaos_after, outcome = pipeline.settle(
         state, request, quoted,
         sequence=sequence, reason=request.text_id,
@@ -220,10 +246,37 @@ def commit_tamper(state: Any, request: TamperRequest) -> ActionResult:
         entry["risk"] = {"event_id": outcome.event_id, "payload": dict(outcome.payload or {})}
         entry["risk_status"] = "pending"
 
+    # 只有真实验证通过、记录已写入、代价已结算后才登记成功事件；上面所有
+    # 提前返回（校验失败、过期版本、幂等 replayed）都不会走到这里。
+    commit_event = emit_visual(
+        state,
+        kind="tamper.commit",
+        outcome="release",
+        source=source_cell,
+        targets=(target_cell,) if target_cell is not None else (),
+        affected_cells=(target_cell,) if target_cell is not None else (),
+        visual_key="tamper.rewrite",
+        tier=1,
+        theme="paper",
+        root_id=request.request_id,
+        source_id=request.target.instance_uid,
+        layer_key="tamper.commit",
+        facts=(
+            ("text_id", request.text_id),
+            ("transition_id", request.transition_id),
+            ("option_id", str(getattr(definition, "option_id", ""))),
+            ("variant", transition.to_variant),
+            ("before_variant", str(record.get("variant_id", ""))),
+            ("imagination_cost", int(quoted.imagination)),
+            ("chaos_after", int(chaos_after)),
+            ("target_kind", request.target.kind),
+        ),
+    )
+
     facts = {
         "before_variant": str(record.get("variant_id")),
         "after_variant": transition.to_variant,
-        "cost": cost,
+        "cost": int(quoted.imagination),
         "chaos": chaos_after,
     }
     entry["result_facts"] = facts
@@ -239,7 +292,7 @@ def commit_tamper(state: Any, request: TamperRequest) -> ActionResult:
     else:
         feedback = pipeline.apply_risk(
             state, RiskOutcome(outcome.event_id, outcome.payload),
-            source_uid=request.target.instance_uid)
+            source_uid=request.target.instance_uid, parent_event=commit_event)
         entry["risk_status"] = "executed"
         if feedback:
             # 风险反馈是当场渲染的句子，不进 facts（重放不重复执行风险，也不回放它）。

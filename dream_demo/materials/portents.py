@@ -177,7 +177,7 @@ PORTENT_DEFINITIONS: dict[str, PortentDef] = {
         "接触流动月光", 8, "流动月光", affects_creatures=False, min_amount=6, vision=4,
     ),
     "enlarged": PortentDef(
-        "放大", "中性", "身体被放大：无法穿过 1 格宽的缝隙和门，受到的心智创伤减半。",
+        "放大", "中性", "身体被放大：挤过 1 格宽的缝隙时移动耗时翻倍，仍然挤不过门，受到的心智创伤减半。",
         "接触彩虹牛奶", 10, "彩虹牛奶", affects_creatures=False, min_amount=6,
     ),
     "cursed_sight": PortentDef(

@@ -424,6 +424,8 @@ NPC_DEFINITIONS: dict[str, dict[str, Any]] = {
         ],
     },
 }
+#: 每层稳定意识的上限。**结构自带 NPC 与随机零散 NPC 共用这一个名额**
+#: （2026-10-27）：盖章期结构先占额，随机预留位只在余额内补位。
 NPC_MAX_PER_LAYER = 2
 NPC_TRADE_DRAW = (2, 3)
 STAT_LABELS = {

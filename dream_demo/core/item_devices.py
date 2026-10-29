@@ -113,6 +113,11 @@ def _drop(state, record: dict) -> None:
         features.pop("item_devices", None)
 
 
+def register_device(state, kind: str, x: int, y: int, turns: int, **data) -> dict:
+    """公开登记入口：扩展包装备的装置与旧十件共用同一张逐层表。"""
+    return _register(state, kind, x, y, turns, **data)
+
+
 # ---------------------------------------------------------------------------
 # 材料投放（不与异种材料混装，装不下就顺到四邻）
 # ---------------------------------------------------------------------------
@@ -341,6 +346,9 @@ def bottled_sunrise_landing(state, x: int, y: int) -> tuple[str, dict]:
 
 def tick(state) -> None:
     """推进本层全部装置；由 ``core.state._advance`` 每回合调用一次。"""
+    from ..equipment import gear_tools
+
+    gear_tools.tick_state(state)
     records = devices(state)
     if not records:
         return
@@ -348,6 +356,15 @@ def tick(state) -> None:
     for record in list(records):
         handler = _HANDLERS.get(str(record.get("kind", "")))
         if handler is None:
+            from . import expansion_consumables
+            keep = expansion_consumables.tick_record(state, record)
+            if keep is not None:
+                if keep:
+                    alive.append(record)
+                continue
+            keep = gear_tools.tick_record(state, record)
+            if keep:
+                alive.append(record)
             continue
         if handler(state, record):
             alive.append(record)
@@ -464,7 +481,10 @@ def _discharge_storm(state, x: int, y: int) -> None:
         if (enemy.x, enemy.y) not in zone or enemy.relation == "稳定意识":
             continue
         state._kill_full_reward = True
+        _damage_number_before = enemy.integrity
         enemy.integrity = max(0, enemy.integrity - STORM_DISCHARGE_POWER)
+        from .hit_events import note_integrity_loss
+        note_integrity_loss(state, enemy, _damage_number_before)
         state._apply_direct_portent(enemy, "shocked", 2)
         struck += 1
         if enemy.integrity <= 0:

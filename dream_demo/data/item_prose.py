@@ -60,7 +60,7 @@ EFFECT_START = {
     'charge_clip': '聚合弹 +5', 'unfinished_fullstop': '想象力 +35',
     'sage_powder': '想象力 +24', 'glass_bottle': '盛一种',
     'ideal_tube': '多种液态记忆', 'ideal_vessel': '合计二十五点',
-    'lighthouse_ember': '以自身为中心', 'glass_shard': '5 格内',
+    'lighthouse_ember': '以自身为中心', 'glass_shard': '6 格内',
     'impact_fold': '掷到落点才炸',
 }
 
@@ -93,7 +93,7 @@ EN_ITEM_EFFECTS = {
     'ideal_tube': 'Holds several liquid memories separately, up to 25 units in total. You choose the order of pouring.',
     'ideal_vessel': 'Holds up to 25 units in total. Release one gas at a time, in your chosen order.',
     'lighthouse_ember': 'Permanently reveals terrain within 7 cells of you.',
-    'glass_shard': 'Halves the sight range, for 5 rounds, of Lost Consciousness within 5 cells that can actually see the flash; walls block it, and it is not invisibility.',
+    'glass_shard': 'Halves the sight range, for 5 rounds, of Lost Consciousness within 6 cells that can actually see the flash; walls block it, and it is not invisibility.',
     'hospital.sealed_ampoule': 'Holds up to 6 units of one liquid and can be carried into the Main Dream. Throw it to release its actual sample at the landing; the shell deals 1 trauma to another creature it hits. Any sample that cannot fit remains in the landed container.',
     'hospital.clean_air_bottle': 'Holds up to 12 units of gas and can be used in the Main Dream.',
 }

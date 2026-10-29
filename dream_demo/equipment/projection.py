@@ -75,7 +75,7 @@ def project(formation: FormationResult, state=None) -> CompiledBoard:
                 key = (contract.instance_id, contract.effect)
                 ability = Ability(contract.effect, contract.power, contract.secondary,
                                   contract.instance_id, contract.definition_id,
-                                  "hold", sentence.sentence_id, text)
+                                  "hold", sentence.sentence_id, text, contract.profile)
                 previous = unique.get(key)
                 if previous is None or previous.power < ability.power:
                     unique[key] = ability

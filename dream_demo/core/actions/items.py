@@ -24,7 +24,7 @@ from ..constants import (
 from .. import Material  # noqa: F401  (ink_doodle/blink 的 SOLID_AGGREGATE 判定)
 from ..content import ITEM_DEFINITIONS, PROJECTILE_DEFINITIONS
 from ..entities import ActionResult, Entity, Item, WorldItem
-from ..item_access import record_pickup, run_limit_refusal
+from ..item_access import insight_learnable, record_pickup, run_limit_refusal
 
 # 普通眩光道具的基础时长：写入 enemy.blind_turns，之后每拍衰减（视野受限＝
 # 视距减半，不是致盲）。强闪光／正面命中才挂统一的 `blinded` 征兆（docs §14.1）。
@@ -149,8 +149,17 @@ class ItemActionsMixin:
         if "swift_pickup" not in self.equipped_effect_ids() and not self.insight_active("疾行拾荒"):
             self._action_time(1, ActionKind.USE)
         # 逻辑固体（内容扩展包 v1）：陷阱/机关石台的台面被动过——触发其逻辑。
+        # 桌面不是地面（expansion.terrain.i02）：从**陷阱**石台上取物时多站一回合，
+        # 这一回合把机关隔开（陷阱不响），石台照旧发信号、机关石台照旧触发。
+        slow = (cell.wall_kind == "陷阱石台"
+                and self.insight_active("桌面不是地面"))
         if cell.wall_kind in ("陷阱石台", "机关石台"):
-            self.trigger_platform(x, y)
+            self.trigger_platform(
+                x, y,
+                safe_note=(tr("桌面不是地面：你多站了一回合，慢慢把东西取下来——"
+                              "陷阱没踩响，石台照旧发了信号。") if slow else ""))
+        if slow:
+            self._action_time(1, ActionKind.USE)
         return ActionResult(True, self.messages[-1], {"item": item.definition_id,
                             "surface": cell.wall_kind, "position": [x,y]})
 
@@ -205,6 +214,8 @@ class ItemActionsMixin:
         """
         if not entries:
             return ActionResult(False, tr("没有选中任何显化物。"))
+        if self.pending_memory:
+            return ActionResult(False, tr("先决定待收纳记忆碎片的去留。"))
         # A stale selection must not turn into remote pickup or target another
         # object after a table disappears. Validate the whole request first.
         entries=list({id(entry):entry for entry in entries}.values())
@@ -221,6 +232,7 @@ class ItemActionsMixin:
         taken: list[str] = []
         changed_tables=set()
         full = False
+        pending_full = False
         for entry in entries:
             if entry not in self.world_items:
                 continue  # 已被其他途径拿走，跳过
@@ -230,6 +242,11 @@ class ItemActionsMixin:
                 self._add_memory(item.definition_id)
                 taken.append(tr(item.name))
                 if (entry.x,entry.y) in tables: changed_tables.add((entry.x,entry.y))
+                if self.pending_memory:
+                    # Preserve the remaining selected items until the player resolves
+                    # this fragment; another fragment must not overwrite it.
+                    pending_full = True
+                    break
                 continue
             try:
                 self._add_inventory_item(item)
@@ -248,7 +265,9 @@ class ItemActionsMixin:
             message = tr("背包已满，无法拾取这个显化物。")
             self.messages.append(message)
             return ActionResult(False, message)
-        if full:
+        if pending_full:
+            message = tr("拾取 {items}；先决定新记忆的去留。", items="、".join(taken))
+        elif full:
             message = tr("拾取 {items}；背包已满，其余留在原地。", items="、".join(taken))
         else:
             message = tr("拾取：{items}。", items="、".join(taken))
@@ -258,7 +277,7 @@ class ItemActionsMixin:
         for position in sorted(changed_tables):
             if tables[position] in ("陷阱石台", "机关石台"):
                 self.trigger_platform(*position)
-        return ActionResult(True, message, {"items": taken, "incomplete": full,
+        return ActionResult(True, message, {"items": taken, "incomplete": full or (pending_full and len(taken) < len(entries)),
                             "table_positions":[list(pos) for pos in sorted(changed_tables)]})
 
     def adjacent_table(self) -> tuple[int, int] | None:
@@ -411,6 +430,21 @@ class ItemActionsMixin:
             if definition is not None and definition.washable and definition.kind == "负面":
                 allowed.add(pid)
         return allowed
+
+    def _emit_item_use_noise(self, item: Item, radius: int | None = None) -> None:
+        """使用物品的世界噪音：摄入物轻，装置/工具重；声音来源是玩家格。
+
+        本身已经有专属声场的物品（汽笛/诱饵/铃声）不叠加通用噪音，避免覆盖
+        它们真实的声径与 full_alert 口径。
+        """
+        if item.effect in ("blast_lure", "sound_lure", "slow_ring"):
+            return
+        base = radius if radius is not None else min(10, 2 + max(0, int(item.power or 0)))
+        from ..expansion_consumables import tool_noise
+        base = tool_noise(self, item, base)
+        self._sound_pulse(self.player.x, self.player.y, max(1, int(base)), by_player=True, category="item",
+                          source=tr(item.name),
+                          announce=False, triggers_rewards=False)
 
     @animate_consumable
     def _use_consumable_item(self, item: Item, index: int, *, tool_target=None, tool_row=None) -> ActionResult:
@@ -761,6 +795,12 @@ class ItemActionsMixin:
             self._parry_pending_turns = turns
             self.messages.append(
                 tr("镜面碎片架在了你和梦之间（{turns} 回合内有效）。", turns=turns))
+        elif item.effect == "expansion_growth":
+            from ..expansion_rewards import apply_growth
+            result = apply_growth(self, item.definition_id)
+            if not result.changed:
+                return result
+            self.messages.append(result.message)
         elif item.effect == "learn_ability":
             ability_id = self._learn_random_ability(ITEM_DEFINITIONS.get(item.definition_id, {}).get('ability_pool','general'))
             if ability_id is None:
@@ -779,6 +819,7 @@ class ItemActionsMixin:
         if self.hang_item_id and not any(entry.instance_id == self.hang_item_id for entry in self.inventory):
             self._refresh_hang()
         self._action_time(1, ActionKind.USE)
+        self._emit_item_use_noise(item)
         pending_parry = int(getattr(self, "_parry_pending_turns", 0) or 0)
         if pending_parry:
             # 先付时间、再盖章：使用本身那一拍不计入 8 回合（与无声步同口径）。
@@ -802,11 +843,28 @@ class ItemActionsMixin:
         if not (0 <= index < len(self.inventory)):
             return ActionResult(False, tr("意识行囊中没有这个承载位。"))
         item = self.inventory[index]
+        from ..expansion_consumables import tool_unseal
+        unsealed = tool_unseal(self, item)
+        if unsealed is not None:
+            return unsealed
         if item.category == '记忆碎片':
             from ..memory_management import equip_memory
             return equip_memory(self, item.instance_id)
+        if item.effect == 'expansion_consumable':
+            from .. import expansion_consumables
+            spec = ITEM_DEFINITIONS[item.definition_id]['consumable_use']
+            if item.definition_id == 'expansion.terrain.x05':
+                return ActionResult(True, tr('选择投掷落点，取消不消耗。'), {'throw_aim': index})
+            if spec['form'] in ('point', 'pair', 'direction'):
+                return ActionResult(True, tr('选择已知目标，取消不消耗。'), {'deploy_aim': index})
+            return expansion_consumables.use(self, index)
         if item.definition_id == 'hospital.hollow_lancet':
             return self.open_hospital_lancet_selection(index)
+        active = self._gear_active_spec(item.definition_id)
+        if active:
+            # 扩展包装备的主动行为（2026-10-25）：必须先在联想盘上，
+            # 选点形态复用 deploy_aim，自身形态直接结算。
+            return self._use_gear_active(index, item, active)
         if not item.effect or item.category not in ("摄入物", "易逝物", "交互道具", "惯用物"):
             return ActionResult(False, tr("{item}当前不能直接使用。", item=tr(item.name)))
         if item.effect in ('hospital_wash_choice', 'hospital_positive_choice'):
@@ -832,7 +890,6 @@ class ItemActionsMixin:
         if item.effect == "enter_realm":
             # 梦中梦入口（2026-09-21）：使用不消耗——钥匙本身就是反复开关的门。
             from ...data.dreams import DREAM_REALM_DEFINITIONS
-            from ...data.items import ITEM_DEFINITIONS
 
             realm_id = str(ITEM_DEFINITIONS.get(item.definition_id, {}).get("realm_id", ""))
             if realm_id not in DREAM_REALM_DEFINITIONS:
@@ -889,6 +946,7 @@ class ItemActionsMixin:
             if not lit:
                 return ActionResult(False, tr("近旁没有能引火的东西——先把燃料铺到身边。"))
             self._action_time(1, ActionKind.USE)
+            self._emit_item_use_noise(item, 5)
             message = tr("火柴擦亮了——近旁的可燃物烧了起来。")
             self.messages.append(message)
             return ActionResult(True, message, {"ignite": True})
@@ -911,6 +969,53 @@ class ItemActionsMixin:
                                          for entry in self.inventory):
             self._refresh_hang()
 
+    # ---- 扩展包装备的主动行为（2026-10-25 批次一）----
+
+    def _gear_active_spec(self, definition_id: str) -> dict | None:
+        """装备的主动行为规格；定义表里的 ``active_use`` 是唯一真源。"""
+        definition = ITEM_DEFINITIONS.get(definition_id) or {}
+        active = definition.get("active_use")
+        return active if isinstance(active, dict) else None
+
+    def _use_gear_active(self, index: int, item: Item, active: dict) -> ActionResult:
+        """装备主动行为：上盘才可用；选点形态返回 deploy_aim，自身形态直接结算。"""
+        from ...equipment import gear_tools
+        from ...equipment import gear_light
+
+        if item.instance_id not in self.equipped.values():
+            return ActionResult(False, tr("{item}要先装到联想盘上才能这样用。",
+                                          item=tr(item.name)))
+        # 焦黑遮片举着时占着本句的工具行为：换不了别的工具动作，但它自己可以放下。
+        busy = gear_light.tool_busy(self)
+        if busy and str(active.get("behavior") or "") != "raise_shield":
+            return ActionResult(False, tr("你的另一只手还举着{busy}——先放下它。", busy=busy))
+        form = str(active.get("form") or "self")
+        if form in ("point", "pair", "direction"):
+            return ActionResult(
+                True,
+                tr("举起{item}——点选落点或按方向键（Esc 取消，不消耗）。",
+                   item=tr(item.name)),
+                {"deploy_aim": index},
+            )
+        ok, message, data = gear_tools.use_self(self, item, active)
+        if not ok:
+            return ActionResult(False, message)
+        self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
+        self._action_time(1, ActionKind.USE)
+        self.messages.append(message)
+        return ActionResult(True, message, {"item": item.definition_id, **data})
+
+    def _finish_gear_deploy(self, item: Item, ok: bool, message: str,
+                            data: dict, position) -> ActionResult:
+        """装备部署成功才扣一次行动；本体可能已被装置接管，故不走消耗路径。"""
+        if not ok:
+            return ActionResult(False, message)
+        self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
+        self._action_time(1, ActionKind.USE)
+        self.messages.append(message)
+        return ActionResult(True, message,
+                            {"item": item.definition_id, "position": position, **data})
+
     @root_action
     def deploy_item(self, index: int, tx: int, ty: int) -> ActionResult:
         """单点部署：误点的夜班灯、应急蜡封。"""
@@ -918,7 +1023,19 @@ class ItemActionsMixin:
         if not (0 <= index < len(self.inventory)):
             return ActionResult(False, tr("意识行囊中没有这个承载位。"))
         item = self.inventory[index]
+        if item.effect == 'expansion_consumable':
+            from .. import expansion_consumables
+            return expansion_consumables.use(self, index, point=(tx, ty))
         definition_id = item.definition_id
+        active = self._gear_active_spec(definition_id) or {}
+        if active:
+            if str(active.get("form") or "") != "point":
+                return ActionResult(False, tr("{item}不能这样放。", item=tr(item.name)))
+            if not item_targeting.valid_target(self, definition_id, (tx, ty)):
+                return ActionResult(False, tr("那个落点放不下。"))
+            from ...equipment import gear_tools
+            ok, message, data = gear_tools.use_point(self, item, active, (tx, ty))
+            return self._finish_gear_deploy(item, ok, message, data, [tx, ty])
         if definition_id not in ("night_shift_beacon", "wax_emergency_seal"):
             return ActionResult(False, tr("{item}不能这样放。", item=tr(item.name)))
         if not item_targeting.valid_target(self, definition_id, (tx, ty)):
@@ -932,6 +1049,7 @@ class ItemActionsMixin:
         self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
         self._consume_inventory_item(index)
         self._action_time(1, ActionKind.USE)
+        self._emit_item_use_noise(item, 6)
         self.messages.append(message)
         return ActionResult(True, message,
                             {"item": definition_id, "position": [tx, ty], **data})
@@ -944,7 +1062,20 @@ class ItemActionsMixin:
         if not (0 <= index < len(self.inventory)):
             return ActionResult(False, tr("意识行囊中没有这个承载位。"))
         item = self.inventory[index]
+        if item.effect == 'expansion_consumable':
+            from .. import expansion_consumables
+            return expansion_consumables.use(self, index, point=(ax, ay), second=(bx, by))
         definition_id = item.definition_id
+        active = self._gear_active_spec(definition_id) or {}
+        if active:
+            if str(active.get("form") or "") != "pair":
+                return ActionResult(False, tr("{item}不能这样放。", item=tr(item.name)))
+            if not item_targeting.valid_pair(self, definition_id, (ax, ay), (bx, by)):
+                return ActionResult(False, tr("这两个落点凑不成一对。"))
+            from ...equipment import gear_tools
+            ok, message, data = gear_tools.use_pair(
+                self, item, active, (ax, ay), (bx, by))
+            return self._finish_gear_deploy(item, ok, message, data, [ax, ay])
         if definition_id not in ("portable_siphon", "folded_escape_route"):
             return ActionResult(False, tr("{item}不能这样放。", item=tr(item.name)))
         if not item_targeting.valid_pair(self, definition_id, (ax, ay), (bx, by)):
@@ -958,6 +1089,7 @@ class ItemActionsMixin:
         self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
         self._consume_inventory_item(index)
         self._action_time(1, ActionKind.USE)
+        self._emit_item_use_noise(item, 6)
         self.messages.append(message)
         return ActionResult(True, message,
                             {"item": definition_id, "position": [ax, ay], **data})
@@ -969,6 +1101,19 @@ class ItemActionsMixin:
         if not (0 <= index < len(self.inventory)):
             return ActionResult(False, tr("意识行囊中没有这个承载位。"))
         item = self.inventory[index]
+        if item.effect == 'expansion_consumable':
+            from .. import expansion_consumables
+            return expansion_consumables.use(self, index, direction=(dx, dy))
+        active = self._gear_active_spec(item.definition_id) or {}
+        if active:
+            if str(active.get("form") or "") != "direction":
+                return ActionResult(False, tr("{item}没有方向可指。", item=tr(item.name)))
+            if max(abs(int(dx)), abs(int(dy))) != 1:
+                return ActionResult(False, tr("方向无效。"))
+            from ...equipment import gear_tools
+            ok, message, data = gear_tools.use_direction(
+                self, item, active, (int(dx), int(dy)))
+            return self._finish_gear_deploy(item, ok, message, data, [int(dx), int(dy)])
         if item.definition_id != "breach_spool":
             return ActionResult(False, tr("{item}没有方向可指。", item=tr(item.name)))
         if max(abs(int(dx)), abs(int(dy))) != 1:
@@ -979,6 +1124,7 @@ class ItemActionsMixin:
         self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
         self._consume_inventory_item(index)
         self._action_time(1, ActionKind.USE)
+        self._emit_item_use_noise(item, 6)
         self.messages.append(message)
         return ActionResult(True, message, {"item": item.definition_id, **data})
 
@@ -1069,6 +1215,10 @@ class ItemActionsMixin:
         item = self.inventory[index]
         if item.instance_id in self.equipped.values():
             return ActionResult(False, tr("携带意象仍在使用中，不能投掷。"))
+        if item.definition_id == 'expansion.terrain.x05':
+            from .. import expansion_consumables
+            landing = throwing.directional_landing(self, dx, dy)
+            return expansion_consumables.use(self, index, point=landing)
         thrown = self._spend_for_throw(index)
         self.run_stats["items_used"] = self.run_stats.get("items_used", 0) + 1
         # 几何与结算集中在 core.throwing（与弹道 ballistics 并列）。
@@ -1125,20 +1275,17 @@ class ItemActionsMixin:
 
         if insight_name not in INSIGHT_DEFINITIONS:
             return ActionResult(False, tr("镜面里没有这个映像。"))
-        mirror = next(
-            (i for i, item in enumerate(self.inventory) if item.effect == "mirror_insight"),
-            None,
-        )
-        if mirror is None:
+        if not (0 <= index < len(self.inventory)) or self.inventory[index].effect != "mirror_insight":
             return ActionResult(False, tr("你没有洞察之镜。"))
         owned = set(self.insights)
         rng = _random.Random(self.seed ^ (self.time * 613) ^ index)
-        pool = [name for name in INSIGHT_DEFINITIONS if name not in owned]
+        pool = [name for name in INSIGHT_DEFINITIONS
+                if name not in owned and insight_learnable(self, name)]
         rng.shuffle(pool)
         candidates = pool[:3]
         if insight_name not in candidates:
             return ActionResult(False, tr("镜面里没有这个映像。"))
-        self.inventory.pop(mirror)
+        self.inventory.pop(index)
         grant = self._grant_insight(insight_name)
         self.run_stats["events"] = self.run_stats.get("events", 0) + 1
         message = tr("镜面碎裂——你留下了「{insight}」。", insight=tr(insight_name))
@@ -1152,7 +1299,8 @@ class ItemActionsMixin:
         import random as _random
 
         rng = _random.Random(self.seed ^ (self.time * 613) ^ index)
-        pool = [name for name in INSIGHT_DEFINITIONS if name not in self.insights]
+        pool = [name for name in INSIGHT_DEFINITIONS
+                if name not in self.insights and insight_learnable(self, name)]
         rng.shuffle(pool)
         return pool[:3]
 
@@ -1176,6 +1324,13 @@ class ItemActionsMixin:
         # submission; the actual shorter flight still spends this throw once.
         trace=throwing.trace_throw(self,tx,ty)
         tx,ty=trace.landing
+        if item.definition_id == 'expansion.terrain.x05':
+            from .. import expansion_consumables
+            result = expansion_consumables.use(self, index, point=(tx, ty))
+            if result.changed:
+                self._note_projectile(list(trace.path), [], kind='throw', color=item.color,
+                                      end='land', end_cell=(tx, ty), origin=origin)
+            return result
         if item.definition_id == 'hospital.filter_sac':
             combat_before = getattr(self, '_combat_fx_seq', 0)
             result = self._deploy_hospital_tool(index, tx, ty)

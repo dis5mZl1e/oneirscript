@@ -108,6 +108,8 @@ class BoardEditorMixin:
         `instance_id` 是「从原列表装配」的入口（§8.4）：带着这件进编辑器并直接
         拿在手上，不自动挤掉其他件——放不放得下由玩家自己看预览。
         """
+        if getattr(self, 'world_tamper_editor', None) is not None:
+            self.close_world_tamper_editor(refresh=False)
         state = self.session.state
         if self.sentence_aim is not None:
             self._cancel_sentence_aim()
@@ -322,7 +324,9 @@ class BoardEditorMixin:
             editor.move_list(-1)
         elif key in ("pagedown", ".", "period", "full_stop"):
             editor.move_list(1)
-        elif key == "r":
+        elif key in ("r", "R"):
+            # 2026-10-24 键位治理 B9：Shift+R 也旋转——此前大写 R 落进「未匹配」
+            # 被静默吞掉，与盘内提示「r 旋转」的 CapsLock 手感不符。
             editor.rotate()
         elif key == "z":
             editor.cycle_tool()
@@ -371,9 +375,11 @@ class BoardEditorMixin:
         self.query_one('#board-editor-grammar', Static).update(editor.render_grammar(width))
         self.query_one('#board-editor-status', Static).update(editor.render_status(width))
         compiled = editor._preview_compiled()
+        fragments = editor.sentence_fragments(compiled)
         self.query_one('#board-editor-sentence', SentenceWriter).write(
-            compiled.text, fragments=((compiled.text, FIELD_COLORS['effects']),))
-        self.query_one('#board-editor-inspect', Static).update(editor.render_inspect())
+            ''.join(value for value, _ in fragments), fragments=fragments)
+        inspect = self.query_one('#board-editor-inspect', Static)
+        inspect.update(editor.render_inspect(width=max(1, inspect.content_size.width)))
         side = self.query_one("#board-editor-side", Static)
         side.update(editor.render_side(width=content_width, comparison_only=True))
         effects = self.query_one('#board-editor-effects', Static)
@@ -422,10 +428,37 @@ class BoardEditorMixin:
 
     def _refresh_settings_rows(self, mode: str) -> None:
         """设置页行渲染：主页（home_settings）与暂停菜单（pause_settings）共用。"""
+        visible = self.settings_page.visible_indices(self.config.registry)
+        if self.settings_page.selected not in visible and visible:
+            self.settings_page.selected = visible[0]
+        for category, label in self.settings_page.CATEGORIES:
+            button = self.query_one(f'#settings-category-{category}', Button)
+            # 分类页签前置图标（2026-10-24 玩家要求）：五个分类各登记一枚字形，
+            # 与图鉴分类页共用 symbol() 取字入口，ascii 档自动退成两格缩写；
+            # symbol() 已经把字形补齐到两列，这里不再另加间隔。
+            rendered_label = Text(symbol(f'settings_{category}', mode) + tr(label))
+            if button.label != rendered_label:
+                button.label = rendered_label
+            button.set_class(category == self.settings_page.active_category, 'selected')
         for index, definition in enumerate(self.config.registry):
-            self.query_one(f"#setting-row-{index}", Static).update(
-                render_setting_row(self.settings_page, self.config, mode, index, definition)
-            )
-        self.query_one("#settings-feedback", Static).update(
-            self.settings_page.feedback or tr("↑↓ 选择 · ←→ 调整 · Enter/Space 修改 · Q 返回")
-        )
+            row = self.query_one(f"#setting-row-{index}", Static)
+            row.styles.display = 'block' if index in visible else 'none'
+            if index in visible:
+                rendered = render_setting_row(self.settings_page, self.config, mode, index, definition)
+                # Compare the actual styled content so selection, language, capture,
+                # values and symbol mode all invalidate without a parallel key schema.
+                cache = getattr(self, '_settings_rendered_rows', None)
+                if cache is None:
+                    cache = self._settings_rendered_rows = {}
+                # The row renderer returns a fixed three-column Table. Snapshot
+                # its full cells before wrapping; hidden rows can have zero width.
+                content = tuple(tuple(cell.copy() if isinstance(cell, Text) else cell
+                                      for cell in column._cells)
+                                for column in rendered.columns)
+                if cache.get(index) != (row, content):
+                    row.update(rendered)
+                    cache[index] = (row, content)
+        feedback = self.settings_page.feedback or tr("Tab/Shift+Tab 换页 · ↑↓ 选择 · ←→ 调整 · Enter/Space 修改 · Q 返回")
+        feedback_row = self.query_one("#settings-feedback", Static)
+        if feedback_row.renderable != feedback:
+            feedback_row.update(feedback)

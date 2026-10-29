@@ -52,6 +52,10 @@ from ...data.anomaly_skills import FX_PROFILES
 from ..transition import TOTAL, cell_off_time_a, cell_on_time_b, cell_segments, compose_frame
 from ...core.tutorial import tutorial_card_text, tutorial_pump, tutorial_target_cells
 
+# 纸感分区（2026-10-24 批次）：右栏内部按「桌上的纸」分区，分区底色只活在
+# paper_zones 一张表里，样式表从这里拼进去、不存第二份 hex。
+from ..paper_zones import TAB_INK_INVENTORY, ZONE_BODY, ZONE_COVER, ZONE_NOTE, ZONE_TABS, ZONE_TAB_ACTIVE
+
 try:
     # textual 0.89 的分区竖线（真正的 Rule 控件在私有模块 _rule 里）。
     from textual.widgets._rule import Rule
@@ -97,7 +101,7 @@ class AppCssMixin:
     """DreamApp 的样式表（CSS 类属性）。"""
 
     CSS = """
-    Screen { background: #101018; layers: default overlay tamper toast confirmation help inspection; }
+    Screen { background: #101018; layers: default overlay tamper toast help inspection tutorial confirmation; }
     #signal-status { height: 1; width: 100%; }
     #signal-status:focus { text-style: underline; }
     #signal-detail { display: none; layer: inspection; position: absolute;
@@ -149,13 +153,22 @@ class AppCssMixin:
     #map-pane { width: 2fr; border: round #44445c; padding: 1; align-horizontal: center; align-vertical: middle; layers: default self_audit overlay tamper toast; }
     # 自我察觉：地图内居中悬浮（map-pane 的 align 负责居中；layer 独立成层
     # 不挤压地图——不写 position: absolute，见 #map-overlay 的同类注释）。
-    #self-pane { layer: inspection; position: absolute; width: 92%; max-height: 88%;
-                 border: round #44445c; padding: 1; background: #292930;
-                 scrollbar-size-vertical: 1; }
-    #self-audit-body { width: 100%; }
+#self-pane { layer: inspection; position: absolute; width: 92%; max-height: 88%;
+             border: round #44445c; padding: 1; background: #292930;
+             scrollbar-size-vertical: 1; }
+#self-audit-body { width: 100%; }
+# 层详情面板（2026-10-24 玩家优化 6）：与自我察觉同层的只读悬浮层，
+# 由 _fit_inspection_pane 定位在地图区域内；同一时刻只开一个（互斥）。
+#layer-info-pane { display: none; layer: inspection; position: absolute; width: 92%; max-height: 88%;
+                   border: round #44445c; padding: 1; background: #292930;
+                   scrollbar-size-vertical: 1; }
+#layer-info-body { width: 100%; }
     #side-pane { width: 1fr; min-width: 55; border: round #44445c; padding: 1; background: #292930; }
     Screen.qol-medium #side-pane { width: 44; min-width: 44; padding: 0 1; }
     Screen.qol-compact #side-pane { width: 36; min-width: 36; padding: 0 1; }
+    # 地图任务（瞄准/拾取等左侧浮层）期间**不再收窄右栏**：宽度与内边距变化会
+    # 让右栏内容整体重排、左右边缘跳动（2026-10-24 玩家反馈）。地图任务只由
+    # `map-task-focus` 这个语义类标记，不改任何几何——右栏始终按上面的档位取宽。
     Screen.qol-compact #map-pane { padding: 0; }
     Screen.qol-compact #panel-tabs, Screen.qol-compact #panel-tabs Button { height: 1; padding: 0; border: none; }
     Screen.qol-compact #panel-help { max-height: 2; overflow: hidden; }
@@ -219,28 +232,32 @@ class AppCssMixin:
         display: none;
     }
     #status { height: 5; color: #ffffff; }
-    # 五个文字导航按钮共占一行；业务快捷键保留原目标。
+    # 六个文字导航按钮共占一行；业务快捷键保留原目标。
     #panel-sections { height: 1; }
     #panel-sections Button {
         width: auto; min-width: 0; height: 1; padding: 0; border: none;
         background: transparent; color: #bcc5d6;
     }
     #panel-tabs Button.sidebar-active, #panel-sections Button.sidebar-active {
-        text-style: bold underline; background: #30354b;
+        text-style: bold underline;
     }
     #panel-tabs { height: 1; }
     #panel-tabs Button { width: 1fr; min-width: 0; height: 1; margin: 0; padding: 0; content-align: center middle; text-align: center; }
-    # 五区沿用既有类别色，用底色亮度区分悬停和聚焦。
-    #nav-inventory { color: #44aaff; background: #132534 55%; border: none; }
+    # 六区沿用既有类别色，用底色亮度区分悬停和聚焦。
+    # nav 文字色集中在样式表尾部的「纸感分区」块（2026-10-24）：inventory
+    # 提亮过一档，色值只存 paper_zones.TAB_INK_INVENTORY 一份。
+    #nav-inventory { background: #132534 55%; border: none; }
     #nav-equipment { color: #ffd166; background: #2b2413 55%; border: none; }
     #nav-portents { color: #c9a0ff; background: #241a33 55%; border: none; }
     #nav-actions { color: #ff8c42; background: #2f2117 55%; border: none; }
+    #nav-environment { color: #73dfb1; background: #12302a 55%; border: none; }
     # 悬停/聚焦时同色底色提到 85%。
     # Button 自带的 :hover/:focus 会换成主题色，这里按 id 覆盖回来。
     #nav-inventory:hover, #nav-inventory:focus { background: #132534 85%; border: none; }
     #nav-equipment:hover, #nav-equipment:focus { background: #2b2413 85%; border: none; }
     #nav-portents:hover, #nav-portents:focus { background: #241a33 85%; border: none; }
     #nav-actions:hover, #nav-actions:focus { background: #2f2117 85%; border: none; }
+    #nav-environment:hover, #nav-environment:focus { background: #12302a 85%; border: none; }
     # 当前对象沿用旧版完整地形叙述，按实际列宽自动换行。
     #layout { layers: default overlay toast; }
     #map-hints > * { layer: default; }
@@ -249,6 +266,14 @@ class AppCssMixin:
     #sidebar-tools Button { width: auto; min-width: 0; height: 1; padding: 0; border: none; background: transparent; color: #bcc5d6; }
     #sidebar-tools Button:hover { text-style: bold underline; }
     #panel { height: 1fr; color: #ffffff; overflow-y: auto; }
+    /* Below the supported height, scroll the whole sidebar rather than lose
+       its unique return/tools rows or truncate the legacy terrain narrative. */
+    Screen.sidebar-short #side-pane { overflow-y: auto; }
+    Screen.sidebar-short #panel { min-height: 6; }
+    # 矮屏：状态与底部键位提示固定在滚动区两端，中间内容自己滚——
+    # 「我在哪、怎么回去」不能随滚动消失（手感方案 §5.4）。
+    Screen.sidebar-short #status { dock: top; width: 100%; }
+    Screen.sidebar-short #panel-help { dock: bottom; }
     # 键位提示高度自适应：操作界面的长提示自动折行完整显示。
     # ⚠️ 「次要文字」的灰是**三档对比度色阶**（口径 = 对**最亮的那档面板**
     # `#242e35` 也 ≥4.5；取值与实测都记在 styles.py 的对比度色阶一节）：
@@ -258,6 +283,8 @@ class AppCssMixin:
     # 🔴 旧的 `#696b82` 在黑底上只有 3.63、在面板上 2.75 —— 两处都不够，已弃用；
     # 它当年被留在主页/暂停只是「黑底上凑合」，玩家反馈读不清后一并提到 4.5 以上。
     #panel-help { height: 1; overflow: hidden; color: #aab0c2; text-align: center; }
+    # 构想/环境/发射的键位提示在紧凑侧栏需要两行；仍紧贴完整键位表入口。
+    #panel-help.panel-help-hint { height: auto; max-height: 2; overflow: hidden; }
     #panel-help:hover { color: #eeeeff; text-style: underline; }
     #home { display: none; height: 1fr; align: center middle; color: #ffffff; layers: dream content buttons; }
     #home-title, #home-subtitle, #home-menu, #history-page, #newgame-page { layer: content; }
@@ -284,39 +311,42 @@ class AppCssMixin:
     #home-menu { width: 60; height: auto; margin-top: 1; align-horizontal: center; }
     #home-content { width: 60; height: auto; min-height: 3; text-align: center; margin-bottom: 1; }
     .slot-row { width: 60; height: 3; margin-bottom: 1; }
-    # 46 + 14 = 60。Button 默认只有上下边框（无左右边框），内容区宽 = width，
-    # 「删除」占 4 格，取偶数宽 14 才能左右各留 5 格，真正居中。
-    # 主页选项默认无边框（边框颜色 = 背景色，占位不显形），选中/悬停才亮边。
-    # 边框始终占位（而不是 none↔round 切换），避免悬停时按钮文字抖动。
-    # 背景与主页底色（Screen #101018）一致：存档槽融进页面，不靠色块抢视线，
-    # 选中与否只由边框表达。
+    #home-tutorial { width: 100%; }
+    Screen.qol-short-home #home-saves .slot-row { margin-bottom: 0; }
+    # 46 + 14 = 60：保留原有槽位行与删除键的外部几何。
+    # 功能配色在此定义，底色和边框最终由下方 .glass-button 规则统一。
+    # 玻璃底合成主页门景；常驻细框避免选中/悬停时文字位移。
     .slot-main { width: 46; height: 3; margin: 0; content-align: center middle; text-align: center; background: #101018; border: round #101018; color: #ffffff; }
     .slot-main:hover, .slot-main:focus { background: #1a1a27; border: round #5b67a0; }
     .slot-main.selected { border: round #5b67a0; }
     # Button 默认 min-width:16，会顶掉这里的 width:14 并把整行撑到 62 列（超出 60 的部分被裁切），
     # 使「删除」看起来偏右。显式归零 min-width 后宽度才是真正的 14。
-    # 删除键不占边框位（60 列行宽与「内容 14 列」的居中断言都按无边框设计），
-    # 悬停/聚焦时才临时加边框（内容轻微回缩可接受）。
+    # 删除键外宽始终为 14；下方玻璃规则为它保留常驻边框和内边距。
     .slot-delete { width: 14; min-width: 0; height: 3; margin: 0; content-align: center middle; text-align: center; border: none; }
     .slot-delete:hover, .slot-delete:focus { border: round #a0453a; }
     .home-nav-row { width: 60; height: 3; }
     .home-nav-row Button { width: 1fr; min-width: 0; height: 3; margin: 0; padding: 0 1; content-align: center middle; text-align: center; }
     # 主页导航按钮按功能着色（与游戏内右侧面板的界面色一致，2026-10-09 消重：
     # 回忆原与入梦同为 #9ad1c9，改用记忆碎片紫 #b18cff，六项两两可辨）。
-    #home-history { background: #251b31; color: #c5a3df; border: round #251b31; }
+    # 2026-10-24 玩家反馈对比度不足：文字色整体提亮一档（底色/边框在渲染时由
+    # 下方 .glass-button 透明合成接管，这里的 color 是每项实际可见的主色）。
+    #home-history { background: #251b31; color: #dfc8f8; border: round #251b31; }
     #home-history:hover, #home-history:focus { border: round #c5a3df; }
-    #home-catalog { background: #2b2516; color: #e8c77b; border: round #2b2516; }
+    #home-catalog { background: #2b2516; color: #f8e3a6; border: round #2b2516; }
     #home-catalog:hover, #home-catalog:focus { border: round #e8c77b; }
-    #home-settings { background: #172432; color: #94bdd9; border: round #172432; }
+    #home-settings { background: #172432; color: #bce2fb; border: round #172432; }
     #home-settings:hover, #home-settings:focus { border: round #94bdd9; }
-    #home-exit { background: #2c1b1b; color: #d99587; border: round #2c1b1b; }
+    #home-exit { background: #2c1b1b; color: #f6c0b2; border: round #2c1b1b; }
     #home-exit:hover, #home-exit:focus { border: round #d99587; }
     # 键盘光标（home_row/home_column）所在的主页选项：亮边 + 加粗，规则写在 hover
     # 之后同权重时后者生效；选择器带 id 故优先级高于上面的默认底色边框。
     .slot-delete.selected { border: round #a0453a; }
     #home-main { width: 60; height: auto; }
-    #home-main Button { width: 100%; }
-    #home-enter { background: #162820; color: #9ad1b3; border: round #162820; }
+    # 竖排主菜单按钮之间留 1 行空隙（2026-10-24 玩家反馈：不再紧贴）；
+    # 矮屏（<28 行）收回间距，六枚按钮在 80×24 仍完整可见（探针断言 bottom ≤ 高度）。
+    #home-main Button { width: 100%; margin-bottom: 1; }
+    Screen.qol-short-home #home-main Button { margin-bottom: 0; }
+    #home-enter { background: #162820; color: #b8f2d0; border: round #162820; }
     #home-enter:hover, #home-enter:focus { border: round #9ad1b3; }
     #home-enter.selected { border: round #9ad1b3; text-style: bold; }
     #home-saves { width: 60; height: auto; }
@@ -363,14 +393,47 @@ class AppCssMixin:
     # （主页/暂停共用同一份设置 UI，视觉一致），游戏内打开时盖住整个界面。
     # display 与 panel_mode 的同步在 refresh（_refresh_home_view / 暂停路径）里。
     #settings-page { display: none; position: absolute; width: 100%; height: 100%; padding: 1 2; layer: overlay; }
-    #catalog-categories { height: 3; }
-    #catalog-categories Button { width: 1fr; min-width: 0; height: 3; margin: 0; padding: 0 1; }
+    # 图鉴分类页签两行（2026-10-24）：圆边框吃掉上下各一行，height 3 只剩一行正文，
+    # 放不下「图标行 + 名称行」就把图标丢掉过；抬到 4 之后两行都在边框内。
+    # 名称最长 8 格，97 列时九等分只有 10 格可用宽，内边距归零才不必截名称。
+    # 行距由 Textual 自己算，这里不引入行高常量。
+    #catalog-categories { height: 4; }
+    #catalog-categories Button { width: 1fr; min-width: 0; height: 4; margin: 0; padding: 0; }
     #codex-body { height: 1fr; }
     #codex-list { width: 2fr; height: 1fr; min-width: 24; border: round #625f36; padding: 1; overflow: hidden; }
     #codex-detail { width: 3fr; height: 1fr; min-width: 36; padding-left: 1; overflow-y: auto; }
     #codex-help { height: 1; color: #aab0c2; text-align: center; }
     #codex-too-small { display: none; height: 1fr; content-align: center middle; color: #d6a94d; }
     #settings-list { width: 100%; height: 1fr; border: round #365d62; padding: 1 2; overflow-y: auto; }
+    #settings-categories { width: 100%; height: 3; }
+    #settings-categories Button { width: 1fr; min-width: 6; }
+    #settings-categories Button.selected { color: #d8f6e9; border: tall #70cbbb; text-style: bold; }
+    /* Glass controls: stable thin outlines, no inherited solid variant fills.
+       The button renderer composites a quiet gradient over the scene itself. */
+    #home Button.glass-button, #catalog-categories Button.glass-button, #settings-categories Button.glass-button {
+        background: transparent; background-tint: transparent;
+        border: round #40535f; padding: 0 1;
+    }
+    #home Button.glass-button:hover, #home Button.glass-button:focus,
+    #home Button.glass-button.selected,
+    #catalog-categories Button.glass-button:hover, #catalog-categories Button.glass-button:focus,
+    #catalog-categories Button.glass-button.selected,
+    #catalog-categories Button.glass-button.category-candidate,
+    #settings-categories Button.glass-button:hover, #settings-categories Button.glass-button:focus,
+    #settings-categories Button.glass-button.selected {
+        background: transparent; background-tint: transparent;
+        border: round #9acbc5; text-style: bold;
+    }
+    #home .slot-delete.glass-button { color: #f6c0b2; }
+    #home .slot-delete.glass-button:hover, #home .slot-delete.glass-button:focus,
+    #home .slot-delete.glass-button.selected { border: round #d99587; }
+    # 内边距归零（盖住上面 glass-button 共用的 padding: 0 1）：图鉴页签两行排版后
+    # 名称独占一行，97 列九等分只剩 10 格，留 1 格边距就得把「携带意象」截成
+    # 「携带…」。两行都居中，图标与名称都不贴边。
+    #catalog-categories Button.glass-button { color: #d8bf85; padding: 0; text-align: center;
+        content-align: center middle; }
+    #catalog-categories Button.glass-button.category-candidate { text-style: bold underline; }
+    #settings-categories Button.glass-button { color: #b5d3e4; }
     .setting-row { width: 100%; height: auto; min-height: 1; }
     #settings-feedback { width: 100%; height: auto; min-height: 1; margin-top: 1; color: #aab0c2; }
     # 携带意象·联想盘的独立编辑器（2026-10-09，设计方案 §8.2/§8.4）：与设置页
@@ -398,4 +461,23 @@ class AppCssMixin:
     .board-tool.accent { color: #ffd166; }
     .board-tool.accent:hover { border-bottom: solid #ffd166; }
     #board-editor-help { width: 100%; height: 2; color: #aab0c2; text-align: center; }
+    """ + f"""
+    # 纸感分区（2026-10-24 批次）：右栏 = 摊在桌面（#side-pane 的区域 panel_bg）
+    # 上的一张纸，内部按功能分块铺固定的纸色（设计口径见 paper_zones.py 文件头）：
+    #   #status 封面 / #hover-info 便签 / #panel-tabs+#panel-sections 标签行 /
+    #   #panel 米白正文 / .sidebar-active 激活标签块。
+    # 分区之间的行（#sidebar-tools、合并前或窄屏的 #signal-status）不上色，
+    # 露出的仍是桌面色——区域识别继续由边框/顶栏/缝隙承担。写在分区上的
+    # 文字色对各分区底 ≥4.5 的逐档验收在 tests/test_paper_zones.py。
+    # 注意：分区底必须不透明纯色（合成器会把 alpha 预混进地图色）。
+    #status {{ background: {ZONE_COVER}; }}
+    #hover-info {{ background: {ZONE_NOTE}; }}
+    #panel-tabs, #panel-sections {{ background: {ZONE_TABS}; }}
+    #panel {{ background: {ZONE_BODY}; }}
+    #panel-tabs Button.sidebar-active, #panel-sections Button.sidebar-active {{ background: {ZONE_TAB_ACTIVE}; }}
+    # 六区页签文字：inventory 对激活标签底原只有 4.36，提亮一档（4.63）。
+    #nav-inventory {{ color: {TAB_INK_INVENTORY}; }}
+    # 矮屏 dock 行跟各自的分区走：状态行仍属封面，键位提示行贴着正文纸。
+    Screen.sidebar-short #status {{ background: {ZONE_COVER}; }}
+    Screen.sidebar-short #panel-help {{ background: {ZONE_BODY}; }}
     """

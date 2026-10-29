@@ -106,11 +106,24 @@ class PortentMixin:
         if self._portent_protected(holder, portent_id):
             return False
         value = max(0, int(duration))
+        cast = getattr(self, "_expansion_construct_cast", None)
+        if (cast and holder is not self.player
+                and portent_id in {"slow_turns", "obscured", "blinded"}):
+            from ..equipment.expansion_runtime import active_effects, params
+            bonus = sum(int(params(ability).get("duration_bonus_turns", 0) or 0)
+                        for ability in active_effects(
+                            self, "construct_soft_portent_duration"))
+            value += min(2, bonus)
         current = int(holder.portents.get(portent_id, 0) or 0)
         if mode == "add":
             value = current + value
         elif mode != "set":
             value = max(current, value)
+        if holder is self.player and value > current:
+            # 记忆碎片的缓冲：这一轮新沾染少挂几回合，但不会抹掉已有的层。
+            from . import memory_buffers
+            value = max(current, value - memory_buffers.spend(
+                self, f"portent:{portent_id}"))
         if value <= 0:
             return False
         holder.portents[portent_id] = value
@@ -312,6 +325,12 @@ class PortentMixin:
                 continue
             if not definition.affects_creatures and holder is not self.player:
                 continue
+            if (holder is self.player and definition.material in LIQUID_DEFINITIONS):
+                # 扩展包液体装备（2026-10-25）：木底鞋挡一层薄液面的新附着，
+                # 沉箱工作服封闭期内一律不沾。只拦「新授予」，不改已有征兆。
+                from ..equipment import gear_tools
+                if gear_tools.block_liquid_attachment(self, cell):
+                    continue
             debt = holder.portent_debt
             if self._portent_protected(holder, portent_id):
                 continue
@@ -337,6 +356,12 @@ class PortentMixin:
                 duration = int(resolve_stat(
                     self, "portent.effective_duration",
                     {"portent": portent_id, "base": duration, "player": True}).value)
+                from . import memory_buffers
+                # 「首次…少一回合」类碎片：只削这一层新沾染，到期后的附着层照常。
+                duration = max(0, duration - memory_buffers.spend(
+                    self, f"portent:{portent_id}"))
+                if duration <= 0:
+                    continue
             holder.portents[portent_id] = self._hospital_initial_duration(holder, portent_id, duration)
             debt[portent_id] = 0.0
             if definition.stacks > 0:
@@ -346,16 +371,37 @@ class PortentMixin:
                 # 附着层（2026-10-07，D3=B 环境也附着）：材料黏在意识上，离开来源后
                 # 附着期内全额续效且不走衰减。打蜡的雨衣对附着同样减半。
                 attach_rounds = ATTACH_PORTENT_ROUNDS
+                # 洞察「先让它沉下去」：刚相变过的那一格第一次取液，表面附着跟不上你。
+                # 只削**附着层**，征兆本身照给——「不能跳过伤害」是结构性的。
+                # ⚠️ 这里只置标记，真正清零放到最后一行之前：下面 `attachment_duration`
+                # 与 `resolve_stat` 都会把 0 重新抬起来（第一版就是在这里写 0 被抬回 2）。
+                settled_free = False
+                if (holder is self.player and attach_rounds > 0
+                        and self.insight_active("先让它沉下去")):
+                    from . import phase_changes
+                    if phase_changes.take_settled_grab(self, cell):
+                        settled_free = True
+                        self.messages.append(tr(
+                            "先让它沉下去：这一格刚相变完，表面附着没有跟上你——"
+                            "身上的东西该发作还是发作。"))
                 if (
                     holder is self.player and self._effect_power("liquid_ward") > 0
                     and definition.material in LIQUID_DEFINITIONS
                 ):
                     attach_rounds = max(1, attach_rounds // 2)
                 if holder is self.player:
+                    if definition.material in LIQUID_DEFINITIONS:
+                        from ..equipment.remaining_gear import attachment_duration
+                        attach_rounds = attachment_duration(self,attach_rounds)
                     from .stats import resolve_stat
                     attach_rounds = int(resolve_stat(
                         self, "portent.effective_duration",
                         {"portent": portent_id, "base": attach_rounds, "player": True}).value)
+                if holder is self.player and definition.material in ('熔念金属','熔融蜡烛'):
+                    from . import memory_buffers
+                    attach_rounds=max(0,attach_rounds-memory_buffers.spend(self,'attachment:molten'))
+                if settled_free:
+                    attach_rounds = 0
                 holder.portent_attach[portent_id] = (self._identity_attachment(portent_id, cell, attach_rounds)
                     if holder is self.player else attach_rounds)
             else:
@@ -390,6 +436,16 @@ class PortentMixin:
             if portent_id in washed:
                 self._remember_portent_end(holder, portent_id)
                 removed.append(portent_id)
+        if removed and holder is self.player:
+            # 「出院门口的长椅」：洗掉之后，同源再积累被压一阵子。
+            # 磨损的是**既有**的 ward 机制（`portent_ward_id` / `portent_ward_turns`，
+            # 与 R03 留灯的避难圈同一条判定：只缩短这一种征兆的**新沾染**），
+            # 不另开一套「抵抗积累」的记账。
+            from . import memory_buffers
+            ward = memory_buffers.spend(self, "portent_ward")
+            if ward:
+                self.portent_ward_id = removed[0]
+                self.portent_ward_turns = max(int(self.portent_ward_turns), int(ward))
         return removed
 
     def _tick_entity_portents(self, holder: Entity, cell: Cell, amount: int) -> list[str]:
@@ -636,7 +692,12 @@ class PortentMixin:
                 return
 
     def _cell_too_narrow_for_enlarged(self, x: int, y: int) -> bool:
-        """「放大」无法通过的格子：门，以及 1 格宽的缝隙（对边都是墙）。"""
+        """「放大」相关的地形判定：门，以及 1 格宽的缝隙（对边都是墙）。
+
+        2026-10-27 改：1 格宽缝隙**不再阻挡**「放大」——挤过去只是这一步的
+        移动耗时翻倍（见 movement.py 的 base_cost 结算）；门仍然进不去，
+        门也仍然算作「狭窄」。函数名保留供 sim/tests 使用：sim 只把其中的
+        「门」算作 body_blocked，移动层只用它判断这一步是否涉及狭窄地形。"""
         if not (0 <= x < self.width and 0 <= y < self.height):
             return True
         if self.cell(x, y).wall_kind in DOOR_KINDS:
@@ -726,6 +787,15 @@ class PortentMixin:
         guard = self._effect_power("mind_guard")
         if guard > 0 and amount > 0:
             amount = max(1, amount - guard)
+        # 记忆碎片的「心智创伤」缓冲（2026-10-25）：``_lose_mind`` 是心智伤害的
+        # **统一入口**，它自己算完再 ``write_resource``，不经过 ``settle_delta``——
+        # 所以 ``mind:combat`` / ``mind:environment`` 这两条通道必须在这里补一次，
+        # 否则「首次…少受一点」的碎片永远不会生效（通道名对得上、结算点却不存在）。
+        # 位置放在征兆倍率与守护之后、装备缓冲片之前：它是「这一类创伤的一次减免」，
+        # 不是又一层无限盾。
+        if amount > 0:
+            from . import memory_buffers
+            amount = max(0, amount - memory_buffers.spend(self, f"mind:{reason}"))
         # 联想盘·缓冲片：只抵扣下一次创伤，不恢复已损失的心智，不叠成无限盾。
         # 对应创伤被旧防御减到 0 时不消耗缓冲（§5.5）。
         if amount > 0:
@@ -947,23 +1017,28 @@ class PortentMixin:
         """兼容旧调用点：按脚下的植物给玩家结算踩踏反应。"""
         self.apply_plant_trample(self.player, self.player.x, self.player.y)
 
-    def _release_plant_material(self, x: int, y: int, name: str, amount: int) -> str:
-        """在 (x, y) 释放少量气体或液体（按名字在两张定义表里查），返回释放物名。
+    def _release_plant_material(self, x: int, y: int, name: str, amount: int) -> tuple[str, int]:
+        """在 (x, y) 释放少量气体或液体（按名字在两张定义表里查）。
 
         走 `_add_gas` / `_add_liquid` 两个既有入口：材料赋予征兆、扩散、消散全都
         交给材料管线，不在这里另写一套——所以「植物释放的毒气」与「地图上本来就
         有的毒气」对玩家与失控意识完全同源，谁站在里面谁中招。
+
+        返回 ``(释放物名, 实际落地量)``：容量已满等「看似释放、实际没加进去」的
+        情况返回 0，视觉事件据此判断有没有真实产物可播。
         """
         if not name or amount <= 0:
-            return ""
+            return "", 0
         cell = self.cells[y][x]
         if name in GAS_DEFINITIONS:
+            landed = max(0, int(cell.gas))
             self._add_gas(cell, name, amount)
-            return name
+            return name, max(0, int(cell.gas) - landed)
         if name in LIQUID_DEFINITIONS:
+            landed = max(0, int(cell.liquid))
             self._add_liquid(cell, name, amount)
-            return name
-        return ""
+            return name, max(0, int(cell.liquid) - landed)
+        return "", 0
 
     def _grant_portent_direct(self, holder: Entity, portent_id: str) -> bool:
         """把征兆**直接**挂到某个生物身上（不经过材料接触那条通道）。
@@ -1019,20 +1094,32 @@ class PortentMixin:
         self._portent_round_started(holder, portent_id, definition, round_duration, attach)
         return True
 
-    def apply_plant_trample(self, holder: Entity, x: int, y: int, code: int) -> None:
+    def apply_plant_trample(self, holder: Entity, x: int, y: int, code: int) -> dict:
         """踩踏植物的反应：对**任何**踩上来的生物生效，玩家与失控意识一视同仁。
 
         踩坏一株植物，它该吐的东西就吐在踩踏者脚下：征兆直接挂给踩踏者，
         气体/液体放在他站的这一格（材料管线会自己给站在里面的人上征兆）。
         植物形变（高丛→低草）由 `state.trample_plant` 负责，这里只管反应。
+
+        返回本次**实际发生**的反应（空 dict = 没有真实变化），供视觉事件只登记
+        真实产物，不用定义字段猜效果。
         """
+        result: dict = {}
         if not code:
-            return
+            return result
         definition = plant_def_for(code)
         if definition.trample_portent:
-            self._grant_portent_direct(holder, definition.trample_portent)
+            portent_id = definition.trample_portent
+            before_turns = holder.portents.get(portent_id, 0)
+            if self._grant_portent_direct(holder, portent_id):
+                if holder.portents.get(portent_id, 0) > before_turns:
+                    result["portent"] = portent_id
         if definition.trample_release:
-            self._release_plant_material(x, y, definition.trample_release, definition.trample_amount)
+            released = self._release_plant_material(
+                x, y, definition.trample_release, definition.trample_amount,
+            )
+            if released[1]:
+                result["release"] = released
         if definition.trample_noise:
             # §13.2 彩玻菌「踩碎清脆一响」：踩踏链原本只释放气体，没有真实声源。
             # 这里按定义补一次 R=n 脉冲；植物踩碎后已换码，同一格再踩不重复发声。
@@ -1041,16 +1128,24 @@ class PortentMixin:
                 category="environment", source=tr(str(definition.name)),
                 announce=False,
                 emitter=None if holder is self.player else holder)
+            result["noise"] = int(definition.trample_noise)
         if definition.trample_lucidity:
             # 荆棘藤一类的「穿越刮擦」：玩家扣清醒度，失控意识扣等量完整度。
             if holder is self.player:
+                before_lucidity = int(self.lucidity)
                 from .settlement import REASON_ENVIRONMENT, settle_delta
                 settle_delta(self, 'lucidity', -definition.trample_lucidity,
                              reason=REASON_ENVIRONMENT,
                              source=str(getattr(definition, 'name', '荆棘')))
+                result["trauma"] = max(0, before_lucidity - int(self.lucidity))
                 self.messages.append(tr("荆棘刮过手臂：清醒度 −{n}。", n=definition.trample_lucidity))
             else:
+                before_integrity = int(holder.integrity)
                 holder.integrity = max(0, holder.integrity - definition.trample_lucidity)
+                from .hit_events import note_integrity_loss
+                note_integrity_loss(self, holder, before_integrity)
+                result["trauma"] = max(0, before_integrity - int(holder.integrity))
+        return result
 
     def uproot_plant_reward(self, x: int | None = None, y: int | None = None) -> str | None:
         """拔除稀有植物的收益（返回提示；普通植物返回 None）。
@@ -1069,10 +1164,27 @@ class PortentMixin:
         if not cell.plant:
             return None
         definition = plant_def_for(cell.plant)
+        old_code = int(cell.plant)
+        before = plant_visual_snapshot(self, self.player, x, y)
+        done: dict = {}
+        reaction: dict = {}
         parts: list[str] = []
+        release = getattr(definition, "release", None)
+        if release is not None and release.allows("uproot"):
+            # 释出型：走统一管线（它会先移除本株，再把寄存物放回真实地形）。
+            from .plant_release import apply_plant_release
+            done = apply_plant_release(
+                self, self.player, x, y, cell.plant, "uproot", announce=False,
+            )
+            if done:
+                parts.append(tr("释出{detail}", detail=done.get("detail", "")))
         if definition.uproot_portent:
-            if self._grant_portent_direct(self.player, definition.uproot_portent):
-                portent = portent_def(definition.uproot_portent)
+            portent_id = definition.uproot_portent
+            before_turns = self.player.portents.get(portent_id, 0)
+            if self._grant_portent_direct(self.player, portent_id):
+                if self.player.portents.get(portent_id, 0) > before_turns:
+                    reaction["portent"] = portent_id
+                portent = portent_def(portent_id)
                 if portent is not None:
                     parts.append(tr("沾染「{name}」", name=tr(portent.name)))
         if definition.uproot_item:
@@ -1081,15 +1193,27 @@ class PortentMixin:
                 self._add_memory(item.definition_id)
             else:
                 self._add_inventory_item(item)
+            reaction["item"] = str(item.definition_id)
             parts.append(tr("获得 {item}", item=tr(item.name)))
         if definition.uproot_release:
-            released = self._release_plant_material(
+            released, landed = self._release_plant_material(
                 x, y, definition.uproot_release, definition.uproot_amount
             )
-            if released:
+            if landed:
+                reaction["release"] = (released, landed)
                 parts.append(tr("散出少量{name}", name=tr(released)))
         if not parts:
+            emit_plant_reaction_visual(
+                self, self.player, x, y, old_code, int(self.cell(x, y).plant),
+                done, reaction, before, kind="plant.uproot", trigger="uproot",
+                materials_are_external=True,
+            )
             return None
+        emit_plant_reaction_visual(
+            self, self.player, x, y, old_code, int(self.cell(x, y).plant),
+            done, reaction, before, kind="plant.uproot", trigger="uproot",
+            materials_are_external=True,
+        )
         return tr("{plant}：{rewards}。", plant=tr(definition.name), rewards="，".join(parts))
 
     def _region_move_penalty(self) -> float:
@@ -1245,3 +1369,161 @@ class PortentMixin:
                 slowest = min(slowest, definition.speed_multiplier)
         # 限制叠加收益，保留单一征兆自身约定的倍率（含模组/探针）。
         return max(slowest, min(fastest, scale))
+
+
+# ---- 植物视觉事件旁路（2026-10-26，ASCII 动画扩展 Task 8）-----------------
+# 只登记真实结算后的局部快照：R1 与触发者，不做全图差分、不反查玩法。
+_PLANT_VISUAL_WATCH = (
+    (0, 0), (1, 0), (-1, 0), (0, 1), (0, -1),
+    (1, 1), (1, -1), (-1, 1), (-1, -1),
+)
+
+
+def _plant_cell_signature(cell) -> tuple:
+    return (
+        int(cell.plant), int(cell.gas), str(cell.gas_kind), int(cell.liquid),
+        str(cell.liquid_kind), int(cell.flame), int(cell.integrity),
+        str(cell.wall_kind), bool(cell.solid),
+    )
+
+
+def plant_visual_snapshot(state, holder, x: int, y: int) -> dict:
+    """植物反应前的局部快照：触发格 R1 + 触发者，只读不写。"""
+    points = []
+    for dx, dy in _PLANT_VISUAL_WATCH:
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < state.width and 0 <= ny < state.height:
+            points.append((nx, ny))
+    is_player = holder is state.player
+    return {
+        "points": tuple(points),
+        "cells": {pos: _plant_cell_signature(state.cell(*pos)) for pos in points},
+        "electric": set(state.electric_field_cells()),
+        "player": is_player,
+        "holder_portents": dict(holder.portents) if holder is not None else {},
+        "holder_integrity": int(getattr(holder, "integrity", 0)),
+        "player_lucidity": int(state.lucidity),
+        "player_mind": int(state.mind),
+    }
+
+
+def _plant_visual_choice(tokens: tuple, done: dict, reaction: dict, trigger: str) -> tuple:
+    if "electrified" in tokens:
+        return "circuit.arc", 1
+    if "ignited" in tokens:
+        return "fx.explosion", 2
+    if "released" in tokens:
+        return "plant.growth", 1
+    if trigger == "uproot" and ("item" in reaction or "portent" in reaction):
+        return "fx.memory", 1
+    if "rang" in tokens:
+        return "boss.core_cry", 1
+    if any(token in tokens for token in ("snared", "scratched", "scraped")):
+        return "fx.impact", 1
+    return "plant.growth", 0
+
+
+def emit_plant_reaction_visual(state, holder, x: int, y: int, old_code: int,
+                               new_code: int, done: dict, reaction: dict,
+                               before: dict, *, kind: str, trigger: str,
+                               materials_are_external: bool = False) -> None:
+    """把一次真实植物反应登记成单个结构性 VisualEvent（不改世界）。
+
+    ``materials_are_external=True`` 用于释出型植物：材料/产物落点由
+    ``core/plant_release.py`` 的 ``plant.release.*`` 通道事件承载，这里只保留
+    折伏/移除/拔取/获得物/征兆/声响等结构事实，绝不重复声明产物格。
+    """
+    from .visual_events import emit_visual
+
+    # 踩踏/拔除的字符动画已按用户实测下线（2026-10-26，"踩一下草就炸一朵"观感差）。
+    # 结构与材料事实仍然照常算进世界，只是不再登记成可见事件。开关与释出通道
+    # 共用一处：``core/plant_release.PLANT_REACTION_ANIMATIONS``。
+    from .plant_release import plant_reaction_animations_enabled
+    if not plant_reaction_animations_enabled():
+        return
+
+    if before is None:
+        return
+    points: dict = {}
+    if materials_are_external:
+        # 结构几何：只取植物码真实改变格，产物材料格归 plant.release.* 通道。
+        for pos in before["points"]:
+            if int(state.cell(*pos).plant) != int(before["cells"][pos][0]):
+                points[pos] = None
+    else:
+        for pos in before["points"]:
+            if _plant_cell_signature(state.cell(*pos)) != before["cells"][pos]:
+                points[pos] = None
+        for pos in sorted(set(state.electric_field_cells()) - before["electric"]):
+            points.setdefault(pos, None)
+    holder_pos = (int(holder.x), int(holder.y)) if holder is not None else None
+    facts: dict = {"plant": int(old_code), "trigger": str(trigger)}
+    tokens: list[str] = []
+    if trigger == "uproot":
+        tokens.append("uprooted")
+        if "item" in reaction:
+            facts["item"] = str(reaction["item"])
+    if new_code != old_code:
+        facts["new_plant"] = int(new_code)
+        tokens.insert(0, "removed" if int(new_code) == 0 else "folded")
+    if not materials_are_external:
+        if "gas" in done:
+            facts["gas"] = str(done["gas"][0])
+            facts["gas_amount"] = int(done["gas"][1])
+            tokens.append("released")
+        if "liquid" in done:
+            facts["liquid"] = str(done["liquid"][0])
+            facts["liquid_amount"] = int(done["liquid"][1])
+            tokens.append("released")
+        for key in ("push_gas", "ignite", "electric", "integrity"):
+            if key in done:
+                facts[key] = int(done[key])
+        if "ignite" in done:
+            tokens.append("ignited")
+        if "electric" in done:
+            tokens.append("electrified")
+        if "integrity" in done:
+            tokens.append("scraped")
+        if "portent" in done:
+            facts["portent"] = str(done["portent"])
+            tokens.append("snared")
+        if "release" in reaction:
+            name, amount = reaction["release"]
+            facts["release"] = str(name)
+            facts["release_amount"] = int(amount)
+            tokens.append("released")
+    # 声响不属于材料通道：释出管线明确不重复发声，这里保留真实声源。
+    if "sound" in done:
+        facts["sound"] = int(done["sound"])
+        tokens.append("rang")
+    if "noise" in reaction:
+        facts["noise"] = int(reaction["noise"])
+        tokens.append("rang")
+    if "trauma" in reaction:
+        facts["trauma"] = int(reaction["trauma"])
+        tokens.append("scratched")
+    if "portent" in reaction:
+        facts["portent"] = str(reaction["portent"])
+        tokens.append("snared")
+    if holder_pos is not None and ("portent" in reaction or "trauma" in reaction):
+        points.setdefault(holder_pos, None)
+    if new_code != old_code or trigger == "uproot" or "sound" in done or "noise" in reaction:
+        points.setdefault((int(x), int(y)), None)
+    if not tokens:
+        return
+    affected = tuple(points)
+    visual_key, tier = _plant_visual_choice(tuple(tokens), done, reaction, trigger)
+    emit_visual(
+        state,
+        kind=kind,
+        outcome="hit",
+        source=(int(x), int(y)),
+        targets=affected,
+        paths=(),
+        affected_cells=affected,
+        visual_key=visual_key,
+        tier=tier,
+        theme="plant",
+        facts=tuple(facts.items()),
+        layer_key="plant",
+    )

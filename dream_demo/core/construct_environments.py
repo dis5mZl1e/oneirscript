@@ -5,6 +5,15 @@ from ..i18n import tr
 
 KINDS = {'spark', 'echo_pulse', 'library.erase', 'mirror_stance'}
 VISUALS = {
+    'expansion.pin_liquid': ('~ ', '#7fd3ee', '#213247'),
+    'expansion.uphill_liquid': ('^ ', '#7fd3ee', '#213247'),
+    'expansion.light_curtain': ('| ', '#b7c8d8', '#213247'),
+    # 「裁光」：收窄一盏灯的照明扇区（光本身还在，只是照向一侧）。
+    'expansion.narrow_light': ('◤ ', '#e5e561', '#2b2b15'),
+    'expansion.sound_fold': ('\\ ', '#c8a0d3', '#213247'),
+    'expansion.deflector': ('/ ', '#c2e4ff', '#213247'),
+    'expansion.double_mirror': ('| ', '#c2e4ff', '#213247'),
+    'expansion.delay_sound': ('~ ', '#89dbe1', '#173038'),
     'spark': ('* ', '#ffb86b', '#392619'),
     'echo_pulse': ('~ ', '#89dbe1', '#173038'),
     'library.erase': ('/ ', '#d7a9ee', '#302039'),
@@ -33,6 +42,16 @@ RESIDUE_SOURCE = {
     'slow_zone': 'slow_wave',
     'moth_zone': 'moth_dust',
     'transpire_zone': 'transpire',
+    # 扩展包构想（2026-10-25）留下的八种场：`VISUALS` 先有了图标，来源表没跟上，
+    # 悬停只显示「构想残留」而没有来源名。每个 kind 对应真的会 `start_field` 它的那条构想。
+    'expansion.pin_liquid': 'expansion.terrain.a05',
+    'expansion.uphill_liquid': 'expansion.terrain.a06',
+    'expansion.light_curtain': 'expansion.light.a03',
+    'expansion.narrow_light': 'expansion.light.a01',
+    'expansion.sound_fold': 'expansion.sound.a03',
+    'expansion.delay_sound': 'expansion.sound.a05',
+    'expansion.deflector': 'expansion.projectile.a01',
+    'expansion.double_mirror': 'expansion.projectile.a06',
 }
 
 
@@ -50,6 +69,7 @@ def start_field(state, kind, position, direction, *, cells=(), remaining=1):
                  cells=[list(p) for p in cells] or [list(position)],
                  remaining=int(remaining))
     state.construct_environments.append(field)
+    state._narrow_light_cache = None
     return field
 
 
@@ -114,7 +134,10 @@ def _paper_blades_damage(state, field):
         if enemy.integrity <= 0 or (enemy.x, enemy.y) not in ring:
             continue
         state._kill_full_reward = True
+        _damage_number_before = enemy.integrity
         enemy.integrity = max(0, enemy.integrity - PAPER_BLADES_DAMAGE)
+        from .hit_events import note_integrity_loss
+        note_integrity_loss(state, enemy, _damage_number_before)
         if enemy.integrity <= 0:
             state._resolve_enemy(enemy)
     if (state.player.x, state.player.y) in ring:
@@ -556,6 +579,39 @@ def active(state):
             if field['layer'] == state.layer_key() and field['remaining'] > 0]
 
 
+def narrow_light_map(state):
+    """光源格 → 受限方向；按（回合, 场数量）缓存，供 ``glow`` 热路径逐格查。
+
+    缓存键只看「回合数 + 场条数」：场到期时条数变少、起场时条数变多，两种情况
+    都会换键；同一回合内不会有多于这两种的变化（`_narrow_light_cache` 也会在
+    ``start_field`` 里被清掉，覆盖「同条数换内容」这种边角）。
+    """
+    fields = state.construct_environments
+    key = (int(getattr(state, "time", 0)), len(fields))
+    cache = getattr(state, "_narrow_light_cache", None)
+    if cache is not None and cache[0] == key:
+        return cache[1]
+    layer = state.layer_key()
+    table = {}
+    for field in fields:
+        if (field.get('kind') == 'expansion.narrow_light'
+                and field.get('layer') == layer and int(field.get('remaining', 0)) > 0):
+            table[(int(field['position'][0]), int(field['position'][1]))] = (
+                int(field['direction'][0]), int(field['direction'][1]))
+    state._narrow_light_cache = (key, table)
+    return table
+
+
+def narrow_light_direction(state, x, y):
+    """光源格 (x, y) 上「裁光」场的受限方向；没有就返回 None。
+
+    ``glow`` 与 ``light_allows`` 共用这一处读取：扇区只在照明判定里生效，
+    灯的 ``light_radius`` / ``light_on`` 一个数都不动，所以「灯本身仍耗能」是
+    字面成立的，而不是「我们决定不改耗能」。
+    """
+    return narrow_light_map(state).get((int(x), int(y)))
+
+
 def visual_cells(state):
     cells = {}
     for field in active(state):
@@ -636,7 +692,15 @@ def tick(state, amount):
     for _ in range(int(amount)):
         for field in list(active(state)):
             kind = field['kind']
-            if kind == 'echo_pulse':
+            if field.get('persistent'):
+                continue
+            if int(field.get('pause_ticks', 0)) > 0:
+                field['pause_ticks'] -= 1
+                continue
+            if kind == 'expansion.uphill_liquid':
+                from .expansion_abilities import tick_uphill
+                tick_uphill(state,field)
+            elif kind == 'echo_pulse':
                 position, direction = echo_step(state, field['position'], field['direction'])
                 field['position'], field['direction'] = list(position), list(direction)
                 field['cells'] = [field['position'][:]]
@@ -696,14 +760,22 @@ def reflection(state, x, y, direction):
     # directional and assisted firing use this same collision priority.
     if state.entity_at(x, y) is not None:
         return None
+    from .expansion_consumables import reflection as consumable_reflection
+    redirected = consumable_reflection(state, x, y, direction)
+    if redirected is not None:
+        return redirected
     for field in active(state):
-        if field['kind'] != 'mirror_stance' or field['position'] != [x, y]:
+        if field['kind'] not in {'mirror_stance','expansion.deflector','expansion.double_mirror'}:
+            continue
+        if [x,y] not in field.get('cells', [field['position']]):
             continue
         dx, dy = direction
         nx, ny = field['direction']
         dot, norm = dx * nx + dy * ny, nx * nx + ny * ny
         if dot == 0:
             return None
+        if field['kind'] == 'expansion.deflector':
+            field['remaining'] = 0
         return (int(dx - 2 * dot * nx / norm), int(dy - 2 * dot * ny / norm))
     return None
 
@@ -720,3 +792,9 @@ def reflected_path(state, origin, path):
             return path[:index+1] + [p for p in tail if state.inside_board(*p)]
         previous = point
     return path
+
+
+
+def light_curtain_cells(state):
+    return {tuple(p) for f in active(state) if f['kind']=='expansion.light_curtain'
+            for p in f['cells']}

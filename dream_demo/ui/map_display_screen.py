@@ -34,6 +34,10 @@ class MapDisplayScreen(ModalScreen):
     '''
     def __init__(self, selected, reason):
         super().__init__()
+        from ..env_compat import get as env_get
+        if env_get('UI_FONTS') == '1':
+            from ._wide_compositor import _WideCompositor
+            self._compositor = _WideCompositor()
         self.selection = ('auto','image','character').index(selected if selected in ('auto','image','character') else 'auto')
         self.reason = reason
 

@@ -11,9 +11,12 @@ from ..wezterm_setup import child_command, launch
 
 class GraphicsMixin:
     def _graphics_startup_notice(self) -> None:
-        if not getattr(self,'terminal_compatibility_notice',False):
+        notice=getattr(self,'terminal_compatibility_notice',False)
+        if not notice:
             return
         message=tr('当前使用兼容终端，游戏可正常进入；字体、emoji 或地图对齐可能有差异。完整包已附 WezTerm，重新使用默认启动入口即可，无需另行下载。')
+        if isinstance(notice,str) and notice.strip():
+            message=f"{message}\n{tr('推荐终端未启动')}：{notice.strip()}"
         self.settings_page.feedback=message
         self.notify(message,title=tr('终端兼容提示'),severity='warning',timeout=10)
 

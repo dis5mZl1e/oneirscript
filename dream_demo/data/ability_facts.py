@@ -639,3 +639,9 @@ ABILITY_FACTS: dict[str, dict[str, str]] = {
         'protection': 'meta.sound=0 不发声；_screen_cells 为空则付款前拒绝（零消耗）；投掷在付款前直接拒绝而非按提前落地结算',
     },
 }
+
+# 扩展包目录里的构想：八项口径与定义行同源（都读 catalog.json 的 effect.facts），
+# 所以 integration_status 一翻成 runtime，本表与 ABILITY_DEFINITIONS 同步长行。
+from .expansion.growth_runtime import ability_fact_rows as _expansion_fact_rows  # noqa: E402
+
+ABILITY_FACTS.update(_expansion_fact_rows())

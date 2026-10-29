@@ -301,7 +301,8 @@ class Vault:
         self.height = len(pattern)
         self.width = max(len(row) for row in pattern)
         # 结构绑定事件（2026-09-18）：中大型结构生成时附带生成的固定异常地点
-        # （EVENT_DEFINITIONS 的 event_id；空 = 无）。不占每层随机事件配额。
+        # （EVENT_DEFINITIONS 的 event_id；空 = 无）。2026-10-27 起与随机零散
+        # 事件**共用**每层名额，盖章期由 ``mapgen/forms`` 的余额先占后放。
         self.event = event
         # 逻辑固体（内容扩展包 v1）：陷阱石台的候选场景池（生成时确定性抽一种）。
         self.trap_pool = tuple(trap_pool)

@@ -28,12 +28,16 @@ from .tamper_world import (
     _apply_word,
     _grow_requirement_reason,
     _normalize_conditions,
+    _rewrite_cell_state,
+    _rewrite_fluid_state,
+    _rewrite_movement_paths,
     _wither_requirement_reason,
     condition_combo_blocked_reason,
     resolved_word_id,
     word_blocked_reason,
     word_cost_with_conditions,
 )
+from .visual_events import emit_visual
 
 RANGE_VERBS = frozenset({"break", "ignite", "grow", "wither"})
 RANGE_API_VERSION = 1
@@ -226,13 +230,15 @@ def range_preview(state: Any, word_id: str, *, range_mode: str = "vision",
     plan = build_plan(state, word_id, range_mode=range_mode, condition_ids=condition_ids)
     if isinstance(plan, str):
         return plan
+    from .tamper_pipeline import quote_cost
+    quoted = quote_cost(state, TamperCost(plan.imagination, plan.chaos_delta))
     return {
         "label": plan.label,
         "count": plan.count,
         "excluded": len(plan.excluded),
         "excluded_reasons": plan.excluded,
-        "imagination": plan.imagination,
-        "chaos": plan.chaos_delta,
+        "imagination": quoted.imagination,
+        "chaos": quoted.chaos_delta,
         "targets": [(target.slot.x, target.slot.y) for target in plan.targets],
     }
 
@@ -256,8 +262,17 @@ def commit_range_tamper(state: Any, sentence: Any, word_id: str, *,
             return _AR(False, plan)
     if not plan.valid(state):
         return _AR(False, tr("眼前的情形已经改变，请重新选择。"))
-    if int(state.imagination) < plan.imagination:
-        return _AR(False, tr("想象力不够（需要 {n}）。", n=plan.imagination))
+    from .tamper_pipeline import quote_cost
+    quoted = quote_cost(state, TamperCost(plan.imagination, plan.chaos_delta))
+    if int(state.imagination) < quoted.imagination:
+        return _AR(False, tr("想象力不够（需要 {n}）。", n=quoted.imagination))
+
+    # 提交前快照整图真实格：批量点燃/崩塌可能产生连锁，落点只能来自差分，
+    # 不能按 range/radius 自造。快照覆盖整图，避免漏掉目标之外的真实变化格。
+    snapshot_cells = tuple((x, y) for y in range(state.height)
+                           for x in range(state.width))
+    before_cells = {cell: _rewrite_cell_state(state, *cell) for cell in snapshot_cells}
+    before_fluid = {cell: _rewrite_fluid_state(state, *cell) for cell in snapshot_cells}
 
     notes: list[str] = []
     for target in plan.targets:
@@ -267,13 +282,48 @@ def commit_range_tamper(state: Any, sentence: Any, word_id: str, *,
             return _AR(False, error)
         if note:
             notes.append(note)
+    # 逐目标效果全部成功后立即结算真实改写，早于风险与推进世界。
+    after_cells = {cell: _rewrite_cell_state(state, *cell) for cell in snapshot_cells}
+    after_fluid = {cell: _rewrite_fluid_state(state, *cell) for cell in snapshot_cells}
+    changed_cells = tuple(cell for cell in snapshot_cells
+                         if before_cells[cell] != after_cells[cell])
+    movement_paths = _rewrite_movement_paths(snapshot_cells, before_fluid, after_fluid)
     sequence = next_sequence(state)
     request = TamperRequest(
         TamperTarget("event", "world_tamper_range", f"world:range:{word_id}"),
         "world_tamper", word_id, 0, f"world|range|{word_id}|{sequence}")
     chaos_after, outcome = settle(
-        state, request, TamperCost(plan.imagination, plan.chaos_delta),
+        state, request, quoted,
         sequence=sequence, reason=f"world_tamper_range:{word_id}", source_uid=source_uid)
+    # 真实成功（逐目标效果已落地、代价/混乱/风险已结算）后登记一次提交事件；
+    # targets 是本次范围点名的真实目标格，affected_cells 是推进世界前的整图差分；
+    # root_id 用本次 request 身份，供风险子事件归组。
+    commit_event = emit_visual(
+        state,
+        kind="tamper.commit",
+        outcome="release",
+        source=(int(state.player.x), int(state.player.y)),
+        targets=tuple(sorted((int(target.slot.x), int(target.slot.y))
+                             for target in plan.targets)),
+        affected_cells=changed_cells,
+        paths=movement_paths,
+        visual_key="tamper.rewrite",
+        tier=1,
+        theme="paper",
+        root_id=request.request_id,
+        source_id=source_uid,
+        layer_key="tamper.commit",
+        facts=(
+            ("word_id", str(word_id)),
+            ("resolved_word", resolved_word_id(word_id, combo)),
+            ("condition_id", "+".join(combo)),
+            ("range_mode", str(range_mode)),
+            ("target_count", int(plan.count)),
+            ("cost", int(plan.imagination)),
+            ("chaos_after", int(chaos_after)),
+            ("affected_count", len(changed_cells)),
+        ),
+    )
     if sentence is not None:
         sentence.consumed = True
     from .tamper_prose import strip_terminal
@@ -287,7 +337,8 @@ def commit_range_tamper(state: Any, sentence: Any, word_id: str, *,
                     n=plan.count, cost=plan.imagination, chaos=chaos_after,
                     tier=tr(_chaos_tier(chaos_after))))
     advance_time(state)
-    feedback = apply_risk(state, outcome, source_uid=source_uid)
+    feedback = apply_risk(state, outcome, source_uid=source_uid,
+                          parent_event=commit_event)
     if feedback:
         parts.append(feedback)
     message = "".join(parts)

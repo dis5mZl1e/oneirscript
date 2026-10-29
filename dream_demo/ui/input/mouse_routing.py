@@ -70,10 +70,16 @@ class MouseRoutingMixin:
         if self.panel_mode == "event_dialog":
             # 点地图 = 离开对话（本次点击同时照常行动，与旧行为一致）。
             self._close_event_dialog_state()
+            self.panel_mode = self._default_panel_mode()
         state = self.session.state
         if self.aiming:
-            self.confirm_aim(target)
-            return
+            if self._aim_ammo_status() != 'ready':
+                self.cancel_aim()
+                self._begin_path_click(target)
+                return
+            else:
+                self.confirm_aim(target)
+                return
         if ctrl:
             self.pinned_target = None if self.pinned_target == target else target
             if target not in self.shortcut_targets:
@@ -81,8 +87,8 @@ class MouseRoutingMixin:
             self.panel_mode = "actions"
             self.refresh_view()
             return
-        self.panel_mode = "world"
-        self.panel_selection = 0
+        # Map focus and the sidebar's current page are independent. A click
+        # can control the world without resetting the other half of the UI.
         if target == (state.player.x, state.player.y):
             if any((entry.x, entry.y) == target for entry in state.world_items):
                 # 自己脚下这格：左键＝尝试拾取（多件时开勾选面板）。
@@ -127,6 +133,25 @@ class MouseRoutingMixin:
                 self._apply("open", *target)
                 self.refresh_view()
             return
+        self._begin_path_click(target)
+
+    def _begin_path_click(self, target):
+        state = self.session.state
+        if not (0 <= target[0] < state.width and 0 <= target[1] < state.height):
+            # 视口理论上有界，但兜底：边界外没有生成地形 = 维持旧的「取消寻路」。
+            self._cancel_unreachable_path()
+            self.refresh_view()
+            return
+        # 黑暗未知格（2026-10-24 玩家优化 2）：按空地寻路**接近**——
+        # 不用真实地形决定「台边落脚点」（那会泄露未探索地形），
+        # 路径中间撞到真实障碍由 _follow_path 停下，中途不重算。
+        # 已知格（视野/记忆/全图口径）照旧走下面的完整判定。
+        # ⚠️ 只有三层信息开启（雾口径生效）时才有「黑暗未知」：旧档全图可见
+        # （map_memory 关）或全图地形增强开时，视野外的台子照旧走台边落脚点
+        # 分支——点远程台面不能退化成取消。
+        fogged = (bool(getattr(state, 'map_memory_enabled', False))
+                  and not bool(getattr(state, 'terrain_known', False)))
+        unknown_target = fogged and state.cell_knowledge(*target).status == 'unknown'
         # 远处格：若上面有掉落物，记下目标，走到后自动捡起。
         self.pickup_goal = target if any((entry.x, entry.y) == target for entry in state.world_items) else None
         # 「点击可寻路」的固体（石台/木桌子，见 materials.WallDef.path_clickable）：
@@ -138,8 +163,9 @@ class MouseRoutingMixin:
         circuit_control = component and component[2]["op"] in {"toggle", "pulse"}
         scavenge_control=any(e.x==target[0] and e.y==target[1] and
                              any(o.get('realm_scavenge') for o in e.options) for e in state.events)
-        if target_cell.solid and (wall_def(target_cell.wall_kind).path_clickable
-                                  or wall_def(target_cell.wall_kind).pushable or circuit_control or scavenge_control):
+        if (target_cell.solid and not unknown_target
+                and (wall_def(target_cell.wall_kind).path_clickable
+                     or wall_def(target_cell.wall_kind).pushable or circuit_control or scavenge_control)):
             standby = self._path_click_standby(target)
             click_goal, waypoint = target, standby
             self.pickup_goal = None
@@ -148,7 +174,9 @@ class MouseRoutingMixin:
         # 部分信息寻路：只把「看得见的格子」上的生物当障碍——视野外默认没有
         # 不可见物体（如生物），路径照常给出；真走到那里撞上了，_follow_path
         # 会停下（见下）。地形与墙体仍是完整已知的（视野外保留墙体记忆）。
-        path = state.path_to(*waypoint, known_cells=state.visible_cells()) if waypoint else []
+        # 点击黑暗未知目标时未探索格按空地放行（接近语义，撞墙即停）。
+        path = state.path_to(*waypoint, known_cells=state.visible_cells(),
+                             unknown_passable=unknown_target) if waypoint else []
         if path:
             self.begin_auto_walk(path)
             self.path_click_goal = click_goal
@@ -342,6 +370,7 @@ class MouseRoutingMixin:
         return rows[y]
 
     def handle_panel_right_click(self, event: MouseDown) -> None:
+        self._select_input_region('overlay' if getattr(event.control, 'id', None) == 'map-overlay' else 'panel')
         if self.layer_observation is not None:
             if getattr(getattr(event, 'control', None), 'id', None) == 'map-overlay':
                 self._layer_close_detail()
@@ -361,7 +390,7 @@ class MouseRoutingMixin:
             if self.panel_mode == "event_dialog":
                 # 对话悬浮面板同理：右键＝离开对话。
                 self._close_event_dialog_state()
-                self.panel_mode = "world"
+                self.panel_mode = self._default_panel_mode()
                 self.refresh_view()
             return
         # 与左键一致：offset 是可视行，叠加面板滚动量才对应真实行（判定见 _panel_row_at）。
@@ -375,9 +404,12 @@ class MouseRoutingMixin:
             self._open_anomaly_detail(index)
 
     def handle_map_mouse_down(self, map_view: MapView, event: MouseDown) -> None:
-        if self._inspection_active():
-            event.stop()
-            return
+        self._keys_handled_in_on_key.clear()
+        self._dismiss_transient()
+        if not self._left_overlay_blocks_interrupt():
+            if self._left_panel_open():
+                self._dismiss_left_panel()
+            self._select_input_region('map')
         if self.layer_observation is not None:
             self._layer_point(map_view.cell_from_offset(event.offset))
             if event.button == 3 and self.observe_cursor is not None:
@@ -420,31 +452,24 @@ class MouseRoutingMixin:
             return
         self._panel_enter_mode = None
         self._dismiss_transient()
-        # 左侧覆盖面板打开时＝默认锁定：左键地图只关面板、不行动（要先退出再点第二次）。
+        # 左侧覆盖面板打开时：左键地图只关面板、不行动（要先退出再点第二次）。
         # 替换洞察/替换记忆不可被打断——它们只认自己的选中确认，点击一律吞掉。
         # 同样靠「关了就 return」消耗掉本次点击，不需要额外的「下次才生效」标记。
-        # （2026-10-11 提前到 panel_locked 之前：浮层自适应后不再铺满整块地图，
-        # 点到浮层外的格子会真的落到 #map——旧顺序下这次点击只解锁不关面板，
-        # 退化成要点两次；浮层开着时锁定本就由浮层引起，关浮层顺带解锁，
-        # 保持「一次点击退出」的既有手感。）
+        # （2026-10-11：浮层自适应后不再铺满整块地图，点到浮层外的格子会真的
+        # 落到 #map，因此这一层必须早于普通地图点击处理，保持「一次点击退出」
+        # 的既有手感。2026-10-26：这里不再牵涉 ~ 锁定/解锁。）
         if self._active_left_overlay() is not None:
             if self._left_overlay_blocks_interrupt():
                 event.stop()
                 return
             self._close_active_left_overlay()
-            if self.panel_locked:
-                self.release_cursor_lock()
             self.refresh_view()
             event.stop()
             return
-        if self.panel_locked:
-            # 点击地图 = 解除面板锁定（不移动、不推进时间），并回到事件记录界面。
-            # 这一次点击只是「关锁定」，不落到世界；再点一次才真的走过去。
-            self.release_cursor_lock()
-            event.stop()
-            return
+        # 2026-10-26 玩家定稿：点击地图不再解除 ~ 锁定——锁定只冻结右栏页面，
+        # 点击恢复普通行为（能走就走、能行动就行动），右栏页由手动键鼠切换。
         _trace_native(
-            f"DreamApp.on_mouse_down control={type(event.control).__name__} "
+            f"DreamApp.on_mouse_down control={type(getattr(event, 'control', None)).__name__} "
             f"offset={event.offset} button={event.button}"
         )
         target = map_view.cell_from_offset(event.offset)
@@ -472,12 +497,21 @@ class MouseRoutingMixin:
             self.open_cell_detail(target)
         event.stop()
     def on_mouse_down(self, event: MouseDown) -> None:
+        self._note_activity()
+        self._keys_handled_in_on_key.clear()
+        self._dismiss_transient()
         _trace_native(
             f"DreamApp.generic_mouse_down control={type(event.control).__name__} "
             f"screen=({event.screen_x},{event.screen_y}) button={event.button}"
         )
         if isinstance(event.control, MapView):
             self.handle_map_mouse_down(event.control, event)
+        elif getattr(event.control, 'id', None) == 'map-pane':
+            if not self._modal_menu_open(allow_inspection=True):
+                self._dismiss_left_panel()
+                self._select_input_region('map')
+        elif getattr(event.control, 'id', None) == 'side-pane':
+            self._select_input_region('panel')
 
     def refresh_hover_only(self) -> None:
         """鼠标移动的轻量刷新：只更新悬停观察区。
@@ -495,9 +529,6 @@ class MouseRoutingMixin:
             return
 
     def handle_map_mouse_move(self, map_view: MapView, event: MouseMove) -> None:
-        if self._inspection_active():
-            event.stop()
-            return
         if self._active_tamper_editor() is not None:
             return
         if getattr(self, 'controls_help_open', False):
@@ -528,7 +559,9 @@ class MouseRoutingMixin:
             self._assist_cache = None
         self._refresh_cursor_only()
     def handle_panel_mouse_down(self, event: MouseDown, panel: Static | None = None) -> None:
-        if self._inspection_active():
+        widget = panel if panel is not None else getattr(event, 'control', None)
+        self._select_input_region('overlay' if getattr(widget, 'id', None) == 'map-overlay' else 'panel')
+        if self._inspection_active() and getattr(widget, 'id', None) != 'panel':
             event.stop()
             return
         if self._layer_panel_mouse(event, panel):
@@ -556,15 +589,33 @@ class MouseRoutingMixin:
             # 演出中点击面板 = 跳过动画（与地图点击同一语义，设计文档 §2.3）。
             event.stop()
             return
+        # 瞄准/施放态（2026-10-24 玩家优化 1）：面板区域不再响应条目激活——
+        # 点地图 = 在对应位置释放（_left_click → confirm_aim/_cast_sentence_aim），
+        # 点面板 = 取消本次动作（与 Esc 同语义，零消耗）。面板在瞄准中显示的
+        # 世界条目没有「瞄着它用」的语义，旧路径会把选中挪走却打不出手。
+        if self.sentence_aim is not None:
+            self._cancel_sentence_aim()
+            self.refresh_view()
+            event.stop()
+            return
+        if self.aiming:
+            self.cancel_aim()
+            self.refresh_view()
+            event.stop()
+            return
         self._dismiss_transient()
         widget = panel if panel is not None else getattr(event, "control", None)
         widget_id = getattr(widget, "id", None)
-        if self._active_tamper_editor() is not None and widget_id == 'panel':
+        if widget_id == 'panel' and self._sidebar_navigation_allowed():
+            if self.panel_subtab_click(self._panel_visual_row(event.offset.y), int(event.offset.x)):
+                event.stop()
+                return
+        if self._world_tamper_side_active() and widget_id == 'panel':
             event.stop()
             if event.button == 1:
                 row = self._panel_visual_row(event.offset.y)
-                keys = getattr(self,'_panel_row_keys',())
-                self._tamper_side_click(keys[row] if 0 <= row < len(keys) else None)
+                inset = widget.content_region.x - widget.region.x
+                self._tamper_side_click(self._tamper_side_pointer_key(row, event.offset.x-inset))
             return
         if self.tamper_editor is not None and widget_id != "tamper-overlay":
             # 编辑期间点击对话/其他面板：不选选项、不交易，只收起篡改面板
@@ -769,7 +820,10 @@ class MouseRoutingMixin:
             event.stop()
             return
         if self.panel_mode == "event_dialog" and widget_id == "map-overlay":
-            y = event.offset.y - 2  # offset 含边框与内边距（各 1 行）
+            # offset 含边框与内边距：用控件自己的内容区偏移算，别写死 2 行
+            # （不同边框/主题/缩放下边框与 padding 不一定各 1 行）。
+            inset_y = int(widget.content_region.y - widget.region.y)
+            y = event.offset.y - inset_y
             rows = getattr(self, "_dialog_rows", [])
             if 0 <= y < len(rows) and rows[y] == TAMPER_ENTRY_ROW:
                 # 点篡改提示行 = 按篡改键（规格 §4.1：入口是可点击的）。
@@ -778,7 +832,7 @@ class MouseRoutingMixin:
                 self._click_dialog_option(rows[y])
             elif y >= len(rows):
                 self._close_event_dialog_state()
-                self.panel_mode = "world"
+                self.panel_mode = self._default_panel_mode()
                 self.refresh_view()
             event.stop()
             return
@@ -786,6 +840,14 @@ class MouseRoutingMixin:
         if not rows:
             return
         index = self._panel_row_at(event.offset.y, widget=widget if widget_id == "map-overlay" else None)
+        # 2026-10-24 玩家定稿：点「构筑·装备」页的联想盘示意图直接进入编辑器；
+        # -4 是盘面图形与「[ 编辑联想盘」提示行的专用行标记。
+        if index == -4:
+            if (self.panel_mode == 'equipment' and self._panel_subpage_id() != 'memory'
+                    and self._sidebar_navigation_allowed()):
+                self.open_board_editor()
+                event.stop()
+            return
         if index < 0:
             return
         # 条目键走**渲染时的快照**（_panel_row_keys 与 _panel_rows 逐行对齐）：
@@ -798,7 +860,7 @@ class MouseRoutingMixin:
             key = keys[visual_row]
         else:
             key = self._panel_entry_key(index)
-        if self.panel_mode == "equipment":
+        if self.panel_mode == "equipment" and self._panel_subpage_id() != "memory":
             # 行映射存的是真实行囊下标：选中光标按「行囊中的携带意象」列表的
             # 位置换算，否则 ▶ 跳到别的条目、激活也会算错物品（点击错位根因）。
             equipment_indices = [i for i, item in enumerate(self.session.state.inventory) if item.slot]
@@ -824,6 +886,7 @@ class MouseRoutingMixin:
         self._activate_panel_selection(key_hint=key)
 
     def on_mouse_move(self, event: MouseMove) -> None:
+        self._note_activity()
         if self.layer_observation is not None:
             # A parked editor or sidebar list must not reclaim this observer's
             # cursor/selection when the pointer crosses either widget.
@@ -832,11 +895,30 @@ class MouseRoutingMixin:
             return
         editor = self._active_tamper_editor()
         if editor is not None:
-            # The observation cursor moves only by click or keyboard. Entering
-            # the sidebar must not replace its tile with the player's tile.
             if editor.map_preview and self.hover_cell != editor.preview_cursor:
                 self.hover_cell = editor.preview_cursor
                 self.refresh_hover_only()
+            if getattr(event.control, 'id', None) != 'panel':
+                return
+            if self._world_tamper_side_active():
+                widget = event.control
+                row = self._panel_visual_row(event.offset.y)
+                column = event.offset.x - (widget.content_region.x-widget.region.x)
+                key = self._tamper_side_pointer_key(row, column)
+                if key and key.startswith('word:') and key[5:] != editor.word_id:
+                    self._world_tamper_click(key)
+                elif key and key.startswith('ctoggle:'):
+                    from ...core.tamper_world import condition_ids_for
+                    singles = tuple(cid for cid in condition_ids_for(editor.sentence, editor.word_id, editor.slot)
+                                    if cid not in ('gently', 'forcefully'))
+                    if key[8:] in singles:
+                        index = singles.index(key[8:])
+                        if editor.focus != 'condition' or editor.condition_cursor != index:
+                            editor.focus = 'condition'
+                            editor.condition_cursor = index
+                            self.refresh_view()
+                return
+            self._update_panel_hover(event.offset.y)
             return
         if getattr(self, 'controls_help_open', False):
             return
@@ -868,12 +950,49 @@ class MouseRoutingMixin:
             elif widget_id == "map-overlay" and self.cell_detail_target is not None:
                 # 格子详情同理：不参与右侧面板的悬停选中。
                 pass
+            elif (widget_id == "map-overlay"
+                  and getattr(self, "insight_replace_target", None) is not None):
+                # 洞察替换（物品/剧情产生）：悬停即选中该条，▶ 与鼠标对齐。
+                if not self.insight_replace_confirm_discard:
+                    inset_y = int(control.content_region.y - control.region.y)
+                    row = event.offset.y - inset_y
+                    rows = getattr(self, "_insight_replace_rows", [])
+                    if 0 <= row < len(rows) and rows[row] >= 0:
+                        index = rows[row]
+                        if index != self.insight_replace_cursor:
+                            self.insight_replace_cursor = index
+                            self.refresh_view()
+            elif (widget_id == "map-overlay"
+                  and getattr(self, "memory_replace_target", None) is not None):
+                # 记忆碎片替换：同上。
+                if not self.memory_replace_confirm_discard:
+                    inset_y = int(control.content_region.y - control.region.y)
+                    row = event.offset.y - inset_y
+                    rows = getattr(self, "_memory_replace_rows", [])
+                    if 0 <= row < len(rows) and rows[row] >= 0:
+                        index = rows[row]
+                        if index != self.memory_replace_cursor:
+                            self.memory_replace_cursor = index
+                            self.refresh_view()
             elif widget_id == "map-overlay" and self.panel_mode == "event_dialog":
                 if self.tamper_editor is not None:
                     self.handle_tamper_mouse(widget_id, event.offset.y - 2,
                         event.offset.x - (control.content_region.x - control.region.x),
                         event_kind='move')
-            else:
+                else:
+                    # 2026-10-28：对话（书卷/事件/NPC）悬停与 ▶ 选中对齐。
+                    # 旧实现悬停完全不更新 event_dialog_cursor，鼠标停在某条上
+                    # 却仍高亮别的条目；点击又只是「首击选中」，玩家会以为点击无效。
+                    # 现在悬停即选中该条，随后单击同一条直接确认；键盘 ↑↓ 不受影响。
+                    inset_y = int(control.content_region.y - control.region.y)
+                    row = event.offset.y - inset_y
+                    rows = getattr(self, "_dialog_rows", [])
+                    if 0 <= row < len(rows):
+                        option = rows[row]
+                        if option >= 0 and option != self.event_dialog_cursor:
+                            self.event_dialog_cursor = option
+                            self.refresh_view()
+            elif widget_id != 'map-overlay':
                 self._update_panel_hover(event.offset.y)
             return
         if self.hover_cell is not None:
@@ -915,9 +1034,43 @@ class MouseRoutingMixin:
             selection = index
         if selection != self.panel_selection:
             self.panel_selection = selection
-            self.refresh_view()
+            if self.panel_mode in {'inventory', 'equipment', 'insights', 'portents', 'catalog'}:
+                self._refresh_panel_selection()
+            else:
+                self.refresh_view()
+
+    def _refresh_panel_selection(self) -> None:
+        """Selection changes only affect sidebar content and its UI bookkeeping."""
+        # 与 refresh_view 的成对顺序一致：owner/锁定瞄准的停放恢复先跑，
+        # 再重建面板。否则 hover 路径在锁定瞄准/owner 切换场景下与普通刷新
+        # 行为不一致（2026-10-25 独立审查发现的缺口）。
+        self._sidebar_before_refresh()
+        self.query_one('#panel', Static).update(self._panel_text(self.session.state))
+        self._refresh_panel_help()
+        self._refresh_qol()
+        self._sidebar_after_refresh()
+        if self._coach_enabled():
+            from ...core.origin_course import observe_ui, pump
+            observe_ui(self)
+            pump(self.session.state)
+        self._refresh_tutorial_coach()
+
+    def _scroll_right_panel(self, event, amount: int) -> bool:
+        """A wheel over the sidebar belongs to it, even with left details open."""
+        if (getattr(getattr(event, 'control', None), 'id', None) != 'panel'
+                or getattr(event, 'ctrl', False) or not self._sidebar_navigation_allowed()):
+            return False
+        if self.panel_mode == 'equipment' and self._memory_region_row_at(event):
+            self._scroll_memory(-amount)
+        else:
+            self._scroll(amount)
+        event.stop()
+        return True
 
     def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
+        self._note_activity()
+        if self._scroll_right_panel(event, 1):
+            return
         if self._inspection_active():
             event.stop()
             return
@@ -929,6 +1082,8 @@ class MouseRoutingMixin:
             event.stop()
             return
         if self._scroll_self_audit(event, -1):
+            return
+        if self._scroll_layer_info(event, -1):
             return
         if getattr(self, 'controls_help_open', False):
             event.stop()
@@ -972,6 +1127,9 @@ class MouseRoutingMixin:
         self._scroll(1)
 
     def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
+        self._note_activity()
+        if self._scroll_right_panel(event, -1):
+            return
         if self._inspection_active():
             event.stop()
             return
@@ -981,6 +1139,8 @@ class MouseRoutingMixin:
             event.stop()
             return
         if self._scroll_self_audit(event, 1):
+            return
+        if self._scroll_layer_info(event, 1):
             return
         if getattr(self, 'controls_help_open', False):
             event.stop()

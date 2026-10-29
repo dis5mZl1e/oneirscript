@@ -179,15 +179,32 @@ ALERT_STYLES = {
     "追踪": _F["danger"],
 }
 GAME_FRAME_SECONDS = 1 / 30
+
+
+def _beat_seconds(env_name: str, default_ms: int) -> float:
+    """移动节拍的环境变量入口（A/B 实机对比用，默认值保持不变）。
+
+    DREAM_MOVE_REPEAT_MS=90/110/130 与 DREAM_HOLD_RELEASE_MS=200/250/300
+    可分别对比「首步后节奏」与「松键判定」；钳在 50–600ms，避免误配把
+    走路变成瞬移或停不下来。
+    """
+    import os
+    try:
+        ms = float(os.environ.get(env_name, default_ms))
+    except (TypeError, ValueError):
+        ms = float(default_ms)
+    return max(0.05, min(0.60, ms / 1000.0))
+
+
 # 长按方向键的移动节拍：终端重复发送的按键事件只作为“仍按住”的证据，
 # 移动统一由 30fps 帧定时器按此节拍执行，保证移动判定与渲染同步、逐格呈现。
-MOVE_REPEAT_MIN_SECONDS = 0.11
+MOVE_REPEAT_MIN_SECONDS = _beat_seconds("DREAM_MOVE_REPEAT_MS", 110)
 # 终端不发送按键释放事件：超过该时长没有收到重复按键即视为已松开。
-HOLD_RELEASE_TIMEOUT = 0.25
+HOLD_RELEASE_TIMEOUT = _beat_seconds("DREAM_HOLD_RELEASE_MS", 250)
 # 右侧五个面板模式：方向键走这里，Esc 关闭这里，其它游戏按键绕过这里。
 RIGHT_PANEL_MODES = ("inventory", "equipment", "portents", "insights", "catalog", "tasks", "actions", "build_overview", "self_overview", "journal_log", "nearby", "self_stats", "sidebar_detail")
 # 右侧面板**同一按钮界面内部**的分层（2026-10-23 用户定稿）：面板顶部的
-# 小页签，点击或 ←→ 切换；到头停留，Alt+←→ 单独切换五个工作区。
+# 小页签，点击或 ←→ 切换；到头停留，Alt+←→ 单独切换六个工作区。
 # inventory 的分层直接复用既有物品分类筛选值（默认「全部」）。
 PANEL_SUBPAGES = {
     "inventory": ("全部", "携带意象", "摄入物", "易逝物", "交互道具", "惯用物"),

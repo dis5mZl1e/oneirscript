@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -37,6 +38,7 @@ from ..i18n import get_language, tr
 from .tamper_layout import hit_tamper_slot, layout_tamper_text
 from . import tamper_presentation as presentation
 from .tamper_host import TamperHostMixin
+from . import tamper_animation as anim
 
 #: 词的展示顺序（词表固定，规格 §3.2）；「删除」排最后。
 WORD_ORDER: dict[str, int] = {word.word_id: index for index, word in enumerate(TAMPER_WORDS)}
@@ -119,6 +121,10 @@ class TamperEditorState(presentation.TamperViewState):
     dialogue_region: Region | None = None
     details_expanded: bool = False
     follow_selection: bool = False
+    # UI-only 短脉冲（装饰时钟）：不入存档、不推进世界。
+    pulse_kind: str = ""
+    pulse_born: float = 0.0
+    pulse_life: float = 0.0
 
     @property
     def group(self) -> TamperWordGroup | None:
@@ -172,6 +178,63 @@ class TamperUIMixin(TamperHostMixin):
         # 正文和侧栏共用当前槽位，任何选择变化都必须同时重建命中坐标。
         self.refresh_view()
 
+    # ── UI 局部短脉冲（装饰时钟，不碰世界） ──────────────────────────────
+    def _tamper_pulse(self, kind: str, life: float) -> None:
+        editor = self.tamper_editor
+        if editor is None:
+            return
+        editor.pulse_kind = str(kind)
+        editor.pulse_born = time.monotonic()
+        editor.pulse_life = float(life)
+        timer = self._tamper_anim_timer()
+        if timer is not None:
+            timer.resume()
+
+    def _tamper_anim_timer(self):
+        timer = getattr(self, '_tamper_anim_timer_handle', None)
+        if timer is None:
+            try:
+                timer = self.set_interval(1 / 20, self._tamper_anim_tick, pause=True)
+            except Exception:
+                return None
+            self._tamper_anim_timer_handle = timer
+        return timer
+
+    def _tamper_pulse_stop(self) -> None:
+        timer = getattr(self, '_tamper_anim_timer_handle', None)
+        if timer is not None:
+            timer.pause()
+        editor = self.tamper_editor
+        if editor is not None:
+            editor.pulse_kind = ""
+            editor.pulse_born = 0.0
+            editor.pulse_life = 0.0
+
+    def _tamper_anim_tick(self) -> None:
+        from textual.css.query import NoMatches
+
+        editor = self.tamper_editor
+        if editor is None or not editor.pulse_kind:
+            self._tamper_pulse_stop()
+            return
+        age = time.monotonic() - editor.pulse_born
+        if age >= editor.pulse_life:
+            self._tamper_pulse_stop()
+        try:
+            # 计时器可能在 App 退出/组件卸载的同一拍触发：此时刷新会因
+            # #equipment-sentence 等控件已不在 DOM 而抛 NoMatches。停掉脉冲
+            # 即可，不能把 teardown 竞态升级成整局崩溃。
+            self._refresh_tamper_text()
+        except NoMatches:
+            self._tamper_pulse_stop()
+
+    def _tamper_pulse_view(self) -> tuple:
+        editor = self.tamper_editor
+        if editor is None or not editor.pulse_kind:
+            return "", 1.0
+        age = time.monotonic() - editor.pulse_born
+        return editor.pulse_kind, anim.pulse_progress(age, editor.pulse_life)
+
     # ── 入口 ────────────────────────────────────────────────────────────
     def _tamper_key_label(self) -> str:
         """玩家提示里的键名：读实际绑定（规格 §4.1），不写死 C。"""
@@ -204,6 +267,7 @@ class TamperUIMixin(TamperHostMixin):
         rules = overlay.styles.get_rules() if hasattr(overlay.styles, 'get_rules') else {}
         self._tamper_dialogue_style_backup = {key: rules.get(key) for key in ('position', 'offset', 'width', 'height')}
         self.tamper_editor = TamperEditorState(target=target, groups=groups, dialogue_region=origin)
+        self._tamper_pulse_stop()
         self._capture_tamper_view(self.tamper_editor)
         self.refresh_view()
         return True
@@ -214,6 +278,7 @@ class TamperUIMixin(TamperHostMixin):
             return
         self._restore_tamper_view(self.tamper_editor)
         self._restore_tamper_dialogue()
+        self._tamper_pulse_stop()
         self.tamper_editor = None
         if refresh:
             self.refresh_view()
@@ -292,13 +357,23 @@ class TamperUIMixin(TamperHostMixin):
         def add(tag: Any, line: str | Text, style: str = NORMAL) -> None:
             entries.append((tag, line if isinstance(line, Text) else Text(line, style=style)))
 
-        add(('title',), tr("篡改"), TITLE_STYLE)
+        pulse_kind, pulse_progress = self._tamper_pulse_view()
+        add(('title',), tr("篡改"),
+            anim.pulse_title_style(TITLE_STYLE, pulse_kind, pulse_progress))
         # The full sentence is visible from the first word selection onward.
         # Preview shows the complete result first; the original anchors remain
         # available below for repositioning with the mouse.
         if group is not None:
             if editor.phase == 'preview' and editor.preview is not None:
-                add(('result',), '→ ' + editor.preview.after_text, 'bold ' + presentation.EFFECT)
+                kind = anim.word_kind(editor.group.word_id) if editor.group is not None else "replace"
+                line = anim.preview_result_line(
+                    kind, editor.group.label if editor.group is not None else "",
+                    editor.preview.after_text, pulse_progress)
+                if editor.preview.available:
+                    line += anim.condition_marker(True, pulse_progress)
+                add(('result',), line,
+                    anim.preview_result_style('bold ' + presentation.EFFECT,
+                                              pulse_kind or kind, pulse_progress))
             if editor.phase != 'preview' or editor.details_expanded:
                 sentence, spans = self._tamper_sentence(state, editor, width)
                 editor.spans = spans
@@ -308,7 +383,10 @@ class TamperUIMixin(TamperHostMixin):
         elif editor.phase == "word":
             add(None, "── " + tr("选词") + " ──", 'bold ' + presentation.WORD)
             for index, entry in enumerate(editor.groups):
-                marker = "▶ " if index == editor.group_index else "  "
+                if index == editor.group_index and pulse_kind == "select":
+                    marker = anim.selected_marker(pulse_progress)
+                else:
+                    marker = "▶ " if index == editor.group_index else "  "
                 style = ('bold underline ' if index == editor.group_index else '') + presentation.WORD
                 from ..data.semantic_icons import icon_label
                 label = Text(marker,style=style)
@@ -327,7 +405,8 @@ class TamperUIMixin(TamperHostMixin):
                                  cost=preview.imagination_cost, delta=preview.chaos_delta,
                                  chaos=preview.chaos_after, tier=tr(preview.risk_tier)), presentation.COST)
                     if preview.risk_note:
-                        add(('preview_risk',), preview.risk_note, presentation.RISK)
+                        add(('preview_risk',), preview.risk_note,
+                            anim.pulse_risk_style(presentation.RISK, pulse_kind, pulse_progress))
                     if not preview.available and preview.reason:
                         for line in self._split_by_width(preview.reason, max(8, width - 2)):
                             add(('unavailable',), line, presentation.RISK)
@@ -339,7 +418,8 @@ class TamperUIMixin(TamperHostMixin):
                     cost=quote.imagination_cost, delta=quote.chaos_delta,
                     chaos=quote.chaos_after, tier=tr(quote.risk_tier)), presentation.COST)
                 if quote.risk_note:
-                    add(('preview_risk',), quote.risk_note, presentation.RISK)
+                    add(('preview_risk',), quote.risk_note,
+                        anim.pulse_risk_style(presentation.RISK, pulse_kind, pulse_progress))
                 if not quote.available and quote.reason:
                     add(('unavailable',), quote.reason, presentation.RISK)
             from ..data.semantic_icons import icon_label
@@ -491,6 +571,7 @@ class TamperUIMixin(TamperHostMixin):
             return
         editor.group_index = max(0, min(len(editor.groups) - 1, int(index)))
         editor.follow_selection = True
+        self._tamper_pulse("select", anim.SELECT_PULSE)
         group = editor.group
         editor.position_index = min(editor.position_index, len(group.transitions) - 1)
         editor.hover_slot = ""
@@ -513,6 +594,7 @@ class TamperUIMixin(TamperHostMixin):
         total = len(group.transitions)
         editor.position_index = (editor.position_index + int(delta)) % total if total else 0
         editor.hover_slot = ""
+        self._tamper_pulse("move", anim.MOVE_PULSE)
         if editor.phase == "preview":
             self._tamper_enter_preview()
         else:
@@ -531,6 +613,8 @@ class TamperUIMixin(TamperHostMixin):
         editor.preview = preview_tamper(state, request)
         editor.phase = "preview"
         editor.hover_slot = ""
+        self._tamper_pulse(anim.preview_pulse_kind(
+            editor.group.word_id, bool(editor.preview.available)), anim.PREVIEW_PULSE)
         self._refresh_tamper_text()
 
     def _tamper_advance(self, state: Any) -> None:
@@ -591,6 +675,8 @@ class TamperUIMixin(TamperHostMixin):
         if editor is None or editor.request is None:
             return
         result = self._apply("commit_tamper", editor.request)
+        self._tamper_pulse("commit" if bool(getattr(result, "changed", False)) else "deny",
+                           anim.COMMIT_PULSE if bool(getattr(result, "changed", False)) else anim.DENY_PULSE)
         message = str(getattr(result, "message", "") or "")
         if message:
             self.show_toast(message)

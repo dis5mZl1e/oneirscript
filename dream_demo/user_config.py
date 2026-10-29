@@ -32,6 +32,7 @@ from typing import Any, Iterable
 
 from .config import SETTING_REGISTRY, SettingDef, SettingType
 from .i18n import LANGUAGE_PACKS
+from .system_locale import first_run_defaults
 
 CONFIG_FILENAME = "game_config.ini"
 
@@ -57,15 +58,19 @@ SECTION_ORDER: tuple[tuple[str, str, str], ...] = (
 
 SECTION_KEYS: dict[str, tuple[str, ...]] = {
     "general": ("language",),
-    "display": ("symbol_mode", "fx_quality", "fx_scanlines", "floor_transition",
-                "fx_light_walls", "map_display", "map_observe"),
+    "display": ("symbol_mode", "fx_quality", "fx_scanlines", "fx_hitstop_ms",
+                "fx_reduce_motion", "smooth_movement", "floor_transition", "fx_light_walls",
+                "map_display", "map_observe", "left_event_log", "terse_mode"),
     "audio": ("sfx_enabled", "sfx_volume", "music_enabled", "music_volume"),
     "gameplay": ("auto_pickup", "show_details", "numpad5_wait"),
     "keys": ("key_up", "key_down", "key_left", "key_right", "key_tamper"),
 }
 
-from .controls import PANEL_SHORTCUTS
+from .controls import PANEL_SHORTCUTS, valid_alt_binding
 SECTION_KEYS['keys'] += tuple(entry.setting for entry in PANEL_SHORTCUTS)
+# -/= 子标签切换（2026-10-24 键位治理 A1）：键位类设置统一归 [keys] 段，
+# 不追加会落进 [general]，与其它按键项的分组不一致。
+SECTION_KEYS['keys'] += ("key_subtab_prev", "key_subtab_next")
 
 # 个别键在模板里用更贴近玩家的说明替代注册表的 description（中 / 英）。
 EXTRA_KEY_NOTES: dict[str, tuple[str, str]] = {
@@ -78,8 +83,9 @@ EXTRA_KEY_NOTES: dict[str, tuple[str, str]] = {
     "key_down": ("面板向下主键", "Panel Down key"),
     "key_left": ("面板向左主键", "Panel Left key"),
     "key_right": ("面板向右主键", "Panel Right key"),
-    "key_tamper": ("对话中打开篡改面板的按键；只在事件/NPC 对话里生效",
-                   "Key that opens the tampering panel in dialogue; only active there"),
+    "key_tamper": ("对话与地图中打开篡改面板的按键：对话里是旁侧面板，地图上是浮层编辑器",
+                   "Key that opens the tamper panel in dialogue and on the map "
+                   "(a side panel in dialogue, an overlay editor on the map)"),
 }
 
 # 只存在于本文件的开关（不在设置页注册表里）：(键, 默认值, 中文说明, 英文说明)。
@@ -118,7 +124,7 @@ _HEADER = """\
 ;  写法 / Syntax:
 ;    开关 booleans：true / false（也接受 1/0、开/关、yes/no、on/off）
 ;    数值 numbers：0~10        文本 enums：选项名 / option name
-;    按键 keys：单个字符或 Alt+字母／数字 / one character or Alt+letter/digit
+;    按键 keys：单个字符或 Alt+字母／数字／方向键 / one character or Alt+letter/digit/arrow
 ;    以 ; 或 # 开头的是注释，行尾注释同样会被忽略。
 ;    Lines starting with ; or # are comments; trailing comments are stripped too.
 ;    写错的项会被忽略并回退默认值，不影响其余项。
@@ -132,9 +138,20 @@ _HEADER = """\
 # ---- 路径 ---------------------------------------------------------------
 
 def base_directory() -> Path:
-    """配置文件所在的主文件夹：打包后是 exe 同目录，开发态是仓库根。"""
-    if getattr(sys, "frozen", False):  # PyInstaller 打包态
-        return Path(sys.executable).resolve().parent
+    """配置文件所在的主文件夹：打包后是**玩家可见的发布目录**，开发态是仓库根。
+
+    注意不能直接用 sys.executable.parent：无窗口启动器把真正的 onefile 核心解压到
+    %LOCALAPPDATA%/Oneirscript/runtime/<hash>/，sys.executable 指向那个隐藏目录；
+    发布包的 game_config.ini 明明在 exe 旁边却永远读不到。启动器已经用
+    --game-directory 传入发布根目录（并 chdir 过去），这里必须优先用它。
+    """
+    argv = list(sys.argv)
+    if "--game-directory" in argv:
+        index = argv.index("--game-directory")
+        if index + 1 < len(argv):
+            return Path(argv[index + 1]).resolve()
+    if getattr(sys, "frozen", False):  # PyInstaller 打包态：launch_game 已 chdir
+        return Path.cwd()
     return Path(__file__).resolve().parents[1]
 
 
@@ -172,7 +189,7 @@ def _parse_value(definition: SettingDef, raw: str) -> Any | None:
     if definition.setting_type is SettingType.KEY_BIND:
         candidate = token.lower()
         if candidate.startswith('alt+'):
-            return candidate if len(candidate) == 5 and candidate[-1].isascii() and candidate[-1].isalnum() else None
+            return candidate if valid_alt_binding(candidate) else None
         return candidate if len(candidate) == 1 else None
     return None
 
@@ -207,17 +224,20 @@ def _hint(definition: SettingDef) -> tuple[str, str]:
         )
     if definition.setting_type is SettingType.KEY_BIND:
         return (
-            "单个字符或 Alt+字母／数字（不能与 123456789 . f g e q u n b i k ? / h \\ 冲突）",
-            "One character or Alt+letter/digit (must not collide with 123456789 . f g e q u n b i k ? / h \\)",
+            "单个字符或 Alt+字母／数字／方向键（不能与 123456789 . f g e q u n b i k ? / h \\ 冲突）",
+            "One character or Alt+letter/digit/arrow (must not collide with 123456789 . f g e q u n b i k ? / h \\)",
         )
     return "", ""
 
 
-def _format_default(definition: SettingDef) -> str:
-    default = definition.default
+def _format_value(definition: SettingDef, value: object) -> str:
     if definition.setting_type is SettingType.BOOL:
-        return "true" if default else "false"
-    return str(default)
+        return "true" if value else "false"
+    return str(value)
+
+
+def _format_default(definition: SettingDef, value: object | None = None) -> str:
+    return _format_value(definition, definition.default if value is None else value)
 
 
 def _note(key: str, definition: SettingDef) -> tuple[str, str]:
@@ -235,8 +255,14 @@ def _note(key: str, definition: SettingDef) -> tuple[str, str]:
     return definition.label, _english(definition.label)
 
 
-def render_template(registry: Iterable[SettingDef] = SETTING_REGISTRY) -> str:
-    """按注册表生成带注释的模板文本（注册表新增项会自动出现在模板里）。"""
+def render_template(registry: Iterable[SettingDef] = SETTING_REGISTRY,
+                    defaults: dict[str, object] | None = None) -> str:
+    """按注册表生成带注释的模板文本（注册表新增项会自动出现在模板里）。
+
+    defaults 只覆盖**这一份模板**里某几项的默认取值，用于发行版预置语言/
+    装备句法；注册表本身的默认值不变。
+    """
+    overrides = dict(defaults or {})
     definitions = {definition.key: definition for definition in registry}
     grouped: dict[str, list[str]] = {name: [] for name, _zh, _en in SECTION_ORDER}
     assigned: set[str] = set()
@@ -274,18 +300,19 @@ def render_template(registry: Iterable[SettingDef] = SETTING_REGISTRY) -> str:
                 lines.append(f"; {hint_zh}")
             if hint_en:
                 lines.append(f"; {hint_en}")
-            lines.append(f"{key} = {_format_default(definition)}")
+            lines.append(f"{key} = {_format_default(definition, overrides.get(key))}")
     return "\n".join(lines) + "\n"
 
 
-def write_template(path: str | Path, overwrite: bool = False) -> bool:
+def write_template(path: str | Path, overwrite: bool = False,
+                   defaults: dict[str, object] | None = None) -> bool:
     """写出模板；文件已存在且不允许覆盖时返回 False。"""
     target = Path(path)
     if target.exists() and not overwrite:
         return False
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render_template(), encoding="utf-8-sig")
+        target.write_text(render_template(defaults=defaults), encoding="utf-8-sig")
     except OSError:
         return False
     return True
@@ -352,13 +379,20 @@ def load_user_config(
     base: str | Path | None = None,
     ensure: bool = True,
     registry: Iterable[SettingDef] = SETTING_REGISTRY,
+    detect_language: bool = True,
 ) -> UserConfigFile:
-    """读取主文件夹的配置文件；缺失时先生成模板再读（模板里全是默认值）。"""
+    """读取主文件夹的配置文件；缺失时先生成模板再读。
+
+    首次生成时按系统语言预置 language / equipment_syntax（中文系统 zh，
+    其它系统 en）；已有配置文件一律不动。测试可传 detect_language=False
+    得到固定的中文模板。
+    """
     path = config_path(base)
     created = False
     if ensure and not path.exists():
+        defaults = first_run_defaults() if detect_language else None
         try:
-            created = write_template(path)
+            created = write_template(path, defaults=defaults)
         except Exception:  # 只读目录（比如装在 Program Files）下不生成也不报错
             pass
     if not path.exists():

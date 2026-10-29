@@ -1,0 +1,8 @@
+{
+  "family": "Dream Strata Interface Sans",
+  "file": "DreamStrataInterfaceSans-Regular.ttf",
+  "sha256": "55962b75dbebc04e44990f539d6471811e9e986a81cf9a0f8a9d5d4337a36716",
+  "source": "Noto Sans SC",
+  "license": "OFL-1.1",
+  "modifications": "450 weight; 500/1000 cell advances; shared reading baseline; renamed family"
+}

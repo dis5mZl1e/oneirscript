@@ -10,13 +10,15 @@ from rich.cells import set_cell_size
 
 from ..core import Entity, GameState, Material
 from ..core.realm_surface import cached_surface_color, display_zones, normalize_bg_zones, surface_color
-from ..materials import CONTAINER_KINDS, DEFAULT_WALL, gas_def, liquid_def, plant_def_for, wall_def
+from ..materials import (CONTAINER_KINDS, DEFAULT_WALL, gas_def, liquid_def,
+                         plant_def_for, plant_spent, wall_def)
 from ..symbols import (NARROW_BY_GLYPH as _NARROW_BY_GLYPH, drop_glyph, entity_glyph,
                        event_site_glyph, map_symbol, symbol)
 from ..symbols import CONTINUOUS_WALL_KEYS
 from . import glyphs
 from .glyphs import (
     compact_tile_glyph,
+    contrast_lift,
     darken,
     gas_depth_key,
     liquid_depth_key,
@@ -62,6 +64,21 @@ def _dim_zone_color(color: str) -> str:
 # 的层级差异，仍明显暗于当前视野。
 _MEMORY_STYLE = "grey35"
 _TERRAIN_KNOWN_STYLE = "grey42"
+
+# 字符高刷模式（2026-10-25，设置 map_character_fast）：默认关闭。开启后只改
+# 成帧方式——同一行里样式相同的连续格合并成一次 ``Text.append``——每格最终
+# 的字形、前景、底色与逐格追加完全一致（tests/test_character_fast_261025.py
+# 逐字符对拍）。图像后端始终走逐格路径，因为它需要逐格视觉事实。
+_character_fast = False
+
+
+def set_character_fast(enabled: bool) -> None:
+    global _character_fast
+    _character_fast = bool(enabled)
+
+
+def character_fast_enabled() -> bool:
+    return _character_fast
 
 
 def _terrain_layer(cell, tile_symbol, mode):
@@ -192,6 +209,9 @@ def render_map(
     explosion_age: int = 0,
     explosion_blasts: list | None = None,
     markers: dict[tuple[int, int], str] | None = None,
+    visuals: dict | None = None,
+    visible: set[tuple[int, int]] | None = None,
+    visuals_only: bool = False,
 ) -> Text:
     """把地图渲染为终端文本。
 
@@ -205,7 +225,21 @@ def render_map(
     ``observer`` 是观察模式的光标格：那里画一枚白色 ``?``（盖过玩家自己），
     但它只是目光的落点——该格的地形/物品仍按原来的可见性呈现，不会因此
     变亮，视野也不会重算。
+
+    ``visuals`` 给出空字典时，同步把每格最终的（字形、样式、底色）按世界
+    坐标记进去（M2-A，2026-10-24）：图像后端据此直接得到 SceneGlyph，
+    不必再从文本反解。``visible`` 允许调用方传入已算好的可见集合，避免同一次
+    界面刷新里重复解析视野。
+
+    ``visuals_only``（F3，2026-10-27）只服务于图像后端：为 True 时**不组装
+    这一帧的 Text**（不 append、不叠样式、不建 span），但仍逐格计算并写入
+    ``visuals``，结果与 ``visuals_only=False`` 时逐格完全一致；返回空 Text。
+    没有任何消费者读取这帧文本时（present_scene 走 visuals 快路径）用它省掉
+    每帧 3–5ms 的组装成本。默认 False，既有调用方行为不变。
     """
+    if visuals_only and visuals is None:
+        # 只产出视觉事实：没有字典就补一个，避免每格都判两次空。
+        visuals = {}
     unicode_supported = glyphs._unicode_mode(unicode_mode)
     effective_mode = symbol_mode if unicode_supported else "ascii"
     # 2026-10-18（docs/261018方案合集.md §7）：两列常规/放大档使用地图专用大轮廓；
@@ -225,11 +259,26 @@ def render_map(
     # 视口），这里统一钳回地图内——否则后面 state.cell(x, y) 直接 IndexError。
     left = max(0, min(left, max(0, state.width - viewport_width)))
     top = max(0, min(top, max(0, state.height - viewport_height)))
-    visible = state.visible_cells()
+    visible = state.visible_cells() if visible is None else visible
     electric_cells = state.electric_field_cells()
     mind_shadow = state.mind_tier >= 2
     # 电工直觉（扩展包 v1）：持有时电线格渲染为沟槽底色+连线符号。
     wire_insight = state.insight_active("电工直觉")
+    # 帧常量只解析一次（2026-10-25）：这些查询以前每格调用一次，1017 格就是
+    # 上千次属性/方法调用，而结果在一帧内完全不变。
+    realm_id = state.realm_id
+    tick_parity = state.time % 2
+    fading = "褪色" in state.portents
+    logic_energized = getattr(state, "_logic_energized", frozenset())
+    has_explosion = bool(explosion_cells)
+    has_assist = bool(assist_cells)
+    has_markers = bool(markers)
+    marker_glyph_fn = None
+    if has_markers:
+        from ..core.sound_markers import marker_glyph as marker_glyph_fn
+    logic_kinds: tuple = ()
+    if wire_insight:
+        from ..materials.logic import LOGIC_KINDS as logic_kinds
     board_visible = wire_insight or state.realm_id == "toy_memories"
     board_nodes = {tuple(n["pos"]): n for b in state.circuit_boards for n in b["nodes"].values()}
     board_values = {tuple(n["pos"]): b["state"].get("values", {}).get(k, False)
@@ -252,7 +301,7 @@ def render_map(
     # 才决定切换默认；打开后未知格不再读取真实地形，记忆层读快照，增强项只给地形。
     fog_enabled = bool(getattr(state, "map_memory_enabled", False))
     memory_layer = (state.terrain_memory.get(state.layer_key()) or {}) if fog_enabled else {}
-    terrain_known = fog_enabled and bool(getattr(state, "terrain_known", False))
+    terrain_known = fog_enabled and (bool(getattr(state, "terrain_known", False)) or state.realm_id == "toy_memories")
     player_pos = (state.player.x, state.player.y)
     # 预建位置索引，避免渲染每格时对敌人/物品/事件做线性扫描。
     entities_at: dict[tuple[int, int], Entity] = {
@@ -303,6 +352,9 @@ def render_map(
     # 一帧 2300+ 次环境变量读取 ≈1.1ms）。mode 与解析器在本次调用内固定，
     # 所以同一个 key 的记忆结果与逐次调用完全等价。
     _glyph_memo: dict[str, str] = {}
+    # 植物字色的深底提亮结果：(色, 底色) → 渲染色。一帧里同一株只算一次，
+    # 而一帧真正不同的组合只有「位面专属色 × 位面底色」这十几个。
+    lift_memo: dict[tuple[str, str | None], str] = {}
     # C4（2026-10-22）：帧内字形记忆表。normalize 的键含 glyph 与 continuous，
     # compact 单独一表；表只由本次 render_map 调用持有，跨调用不缓存——模式/
     # 缩放档切换不需要任何失效逻辑。with_background 的帧内记忆经 A/B 实测收益
@@ -321,9 +373,18 @@ def render_map(
     lines: list[Text] = []
     grid = state.cells
     for row in range(viewport_height):
-        row_text = Text()
+        # visuals_only：这一行不组 Text（每行两个 Text 也不建）。逐格事实照常写。
+        row_text = None if visuals_only else Text()
         # cell_h=1 时 row_blank 从不进入 lines；不建它，省掉每格一次 append。
-        row_blank = Text() if cell_h > 1 else None
+        row_blank = (None if visuals_only or cell_h <= 1 else Text())
+        # 字符高刷：同一行里样式相同的连续格先攒成一段，再一次性 append。
+        # 每格最终字符与样式不变，只是 span 边界变粗；普通路径保持逐格
+        # append，输出与旧实现逐字节一致。
+        fast_mode = _character_fast and visuals is None
+        run_parts: list[str] = []
+        run_style = None
+        blank_parts: list[str] = []
+        blank_style = None
         y = top + row
         for col in range(viewport_width):
             x = left + col
@@ -340,6 +401,10 @@ def render_map(
             # 就能看出这是灵视所见、而非亲眼所见。
             cursed_reveal = position in cursed_seen and position not in visible
             cell = grid[y][x]
+            # 每格最多查一次：下面底色判断、覆盖层与字形选择都要看同一组事实。
+            entity_here = entities_at.get(position)
+            item_here = items_at.get(position)
+            event_here = events_at.get(position)
             # 多图层渲染：前景为该格最高层符号（生物=墙体 > 气体 > 液体 > 地面），
             # 被前景压住的气体/液体颜色经降亮度后作为背景色透出——
             # 上层完全表示、下层以颜色轮廓可见。
@@ -355,11 +420,11 @@ def render_map(
                 zone = cached_surface_color(state,x,y,realm_zones,surface_cache)
                 background = _dim_zone_color(zone) if zone else None
             elif cell.liquid > 0 and cell.gas <= 0 and not cell.solid and not (
-                entities_at.get(position) or items_at.get(position) or events_at.get(position)
+                entity_here or item_here or event_here
             ) and not (cell.flame or cell.floor is Material.SOLID_AGGREGATE):
                 background = None
             elif cell.liquid > 0 and cell.gas > 0 and not cell.solid and not (
-                entities_at.get(position) or items_at.get(position) or events_at.get(position)
+                entity_here or item_here or event_here
             ) and not (cell.flame or cell.solid or cell.floor is Material.SOLID_AGGREGATE):
                 # 液气共存（2026-09-21 回归）：**气体图层在液体图层之上**——
                 # 前景是气体浓度图标（░/▒/▓ 点阵字，天然透出底色），底色是液体色
@@ -372,7 +437,7 @@ def render_map(
                 background = layered_background(cell) or cached_surface_color(state,x,y,realm_zones,surface_cache)
             if in_sight or position in developed:
                 ground = cached_surface_color(state,x,y,realm_zones,surface_cache)
-                if ground and (background is None or state.realm_id == 'white_sanatorium'):
+                if ground and (background is None or realm_id == 'white_sanatorium'):
                     background = ground
             glyph, style = floor_glyph, "grey15" if not in_sight else "green"
             wall_face = None
@@ -398,14 +463,14 @@ def render_map(
             elif position == player_pos:
                 glyph, style = symbol("player", effective_mode), "bold bright_cyan"
             elif in_sight or dev_revealed or cursed_reveal:
-                entity = entities_at.get(position)
+                entity = entity_here
                 if entity and entity.integrity > 0 and mind_shadow and entity.relation == "失控意识":
                     glyph, style = "? ", "bold bright_red"
                 elif entity and entity.integrity > 0:
                     if cursed_reveal:
                         # 诅咒灵视：准确给出位置与类型——真实字形 + 阵营色，
                         # 连伪装也看穿（灵视看见的是「它是什么」，不是「它装成什么」）。
-                        style = "bold " + realm_relation_style(state.realm_id, entity.relation)
+                        style = "bold " + realm_relation_style(realm_id, entity.relation)
                         known_glyph = _tile_glyph(entity.catalog_id)
                         glyph = known_glyph if known_glyph != "??" else entity_glyph(entity.glyph, effective_mode)
                     elif entity.trait == "disguise" and entity.alert_state == "未察觉" and not state.insight_active("残影直觉") and not entity.portents.get('hospital_diagnosed', 0) and not entity.portents.get('hospital_silver', 0):
@@ -415,12 +480,12 @@ def render_map(
                         # 残影直觉：隔墙显形为灰色虚线轮廓。
                         glyph, style = entity_glyph(entity.glyph, effective_mode), "grey58"
                     else:
-                        style = "bold " + realm_relation_style(state.realm_id, entity.relation)
+                        style = "bold " + realm_relation_style(realm_id, entity.relation)
                         known_glyph = _tile_glyph(entity.catalog_id)
                         glyph = known_glyph if known_glyph != "??" else entity_glyph(entity.glyph, effective_mode)
                 else:
-                    world_item = items_at.get(position)
-                    world_event = events_at.get(position)
+                    world_item = item_here
+                    world_event = event_here
                     if world_item:
                         # 物品自带图标（书卷 📚 / 残页 📜）优先；否则能装进栏位的
                         # 用 ♕、其余掉落物用 ◆（判据只看 slot 真假，与 category 名解耦）。
@@ -455,10 +520,33 @@ def render_map(
                         elif cell.plant:
                             # 植物：可穿行的固体地形，绿色（高丛更高更绿）。
                             plant = plant_def_for(cell.plant)
-                            glyph, style = _tile_glyph(plant.key), plant.color
+                            # 满／空壳两档（docs 2026-10-26 §4）：耗尽或已释出的
+                            # 株换成空壳字形，不靠「调暗颜色」暗示还能用。
+                            key = plant.key
+                            spent = plant_spent(cell.plant, cell.plant_state)
+                            if spent:
+                                key = plant.key + ".spent"
+                            glyph = _tile_glyph(key)
+                            # 深色可行走地板带（藏书宫胡桃木横带）上把字色提亮到
+                            # 3.2:1：登记色不变，只在渲染时补足可辨性（§4）。
+                            # 键含底色——同一株在纸黄与胡桃木上取不同渲染色。
+                            lift_key = (plant.color, background)
+                            style = lift_memo.get(lift_key)
+                            if style is None:
+                                style = lift_memo[lift_key] = contrast_lift(
+                                    plant.color, background)
                         elif cell.solid or cell.floor is Material.SOLID_AGGREGATE:
                             definition = wall_def(cell.wall_kind)
                             glyph, style = _tile_glyph(definition.symbol_key), definition.color
+                            # 同一把尺子也用在墙体上：胡桃木书架压在胡桃木横带
+                            # 上本来是 1.00:1（整面墙看不见）。只在本格可见时提亮，
+                            # 视野外仍走下面「墙体记忆」的压暗路径。
+                            lift_key = (definition.color, background)
+                            lifted = lift_memo.get(lift_key)
+                            if lifted is None:
+                                lifted = lift_memo[lift_key] = contrast_lift(
+                                    definition.color, background)
+                            style = lifted
                             if definition.symbol_key in CONTINUOUS_WALL_KEYS:
                                 wall_face = glyph
                         elif cell.gas > 0 or cell.floor is Material.DIFFUSE_IMPRESSION:
@@ -468,7 +556,7 @@ def render_map(
                             # 整格盖掉——正是玩家反馈「气体图标和颜色被完全遮盖」。
                             # 气体图标浓度标准化：1-5 ░ / 6-15 ▒ / 16+ ▓，颜色区分种类。
                             definition = gas_def(cell.gas_kind)
-                            glyph, style = _tile_glyph(gas_depth_key(cell.gas)), definition.color
+                            glyph, style = symbol(gas_depth_key(cell.gas), effective_mode), definition.color
                         elif cell.liquid > 0 or cell.floor is Material.LIQUID_MEMORY:
                             definition = liquid_def(cell.liquid_kind)
                             glyph, style = symbol(liquid_depth_key(cell.liquid), effective_mode), definition.color
@@ -477,7 +565,7 @@ def render_map(
                             style = AGGREGATE_STYLES.get(variant, "bright_green")
                             if variant == "棋盘格地板":
                                 # 黑白格随回合奇偶交替：黑格白格互换，一眼可辨。
-                                style = "#f0f0f0" if state.time % 2 == 0 else "#282830"
+                                style = "#f0f0f0" if tick_parity == 0 else "#282830"
                             definition = floor_def(variant)
                             glyph, style = _tile_glyph(definition.symbol_key), style
             elif cell.solid and cell.wall_kind not in CONTAINER_KINDS:
@@ -496,7 +584,7 @@ def render_map(
                 background = "#102c30"
             # 爆炸动画：饱和黄（前 2 帧）→ 橙红（中 2 帧）→ 深红余温，
             # 6 帧后清除（见 app._refresh_game_frame 的老化计时）。
-            on_explosion = bool(explosion_cells) and position in explosion_cells
+            on_explosion = has_explosion and position in explosion_cells
             if on_explosion and (not fog_enabled or fog_state == "visible_live"):
                 # 中心→边缘距离渐变（2026-09-22 改版）：白热黄→橙红→深红。
                 # 用最近爆心的曼哈顿距离/radius 取色；帧龄只做收尾压暗。
@@ -517,11 +605,11 @@ def render_map(
                     background = "#a01810"
                 if explosion_age >= 4:
                     background = "#a01810"  # 收尾压暗
-            on_assist = bool(assist_cells) and position in assist_cells
+            on_assist = has_assist and position in assist_cells
             if on_assist and (not fog_enabled or fog_state != "unknown"):
                 # 目标辅助路径：降饱和暗黄垫底（不遮盖上层字形/地形）；
                 # 带复杂图形的格子不加粗不提亮，只垫底色以示路径经过。
-                if entities_at.get(position) or items_at.get(position) or events_at.get(position):
+                if entity_here or item_here or event_here:
                     background = "#3a3420"
                 else:
                     background = "#4a4020"
@@ -532,41 +620,39 @@ def render_map(
                 background = "#1a2a4a"
                 # Keep the player, components and objects above the wire layer.
             # 褪色雾（扩展包 v1）：吸入「褪色」征兆期间，显影格暂时失效。
-            if "褪色" in state.portents and position in developed:
+            if fading and position in developed:
                 if position not in visible and position not in (cursed_seen or set()):
                     background = None
             tut_mark = (tutorial_cells or {}).get(position)
             if tut_mark is not None:
                 # 教程目标格：青金底色脉动（随回合奇偶呼吸）+ 引导标记字形。
                 # 目标是灯塔式的存在——视野外同样可见；空格上叠标记字形。
-                background = "#0f3a46" if state.time % 2 == 0 else "#12505f"
-                if not (entities_at.get(position) or items_at.get(position) or events_at.get(position)):
+                background = "#0f3a46" if tick_parity == 0 else "#12505f"
+                if not (entity_here or item_here or event_here) and position not in (player_pos, observer):
                     glyph, style = tut_mark, "bold bright_cyan"
             # 电路层（电路逻辑 v2，独立覆盖图层）：持「电工直觉」时，
             # 电线格染线路沟槽底色、门/接收器与当回合通电格加亮——
             # 地形字形保持不变，电路信息全部走背景/前景覆盖层表达。
-            if (cell.wire and state.insight_active("电工直觉")
+            if (cell.wire and wire_insight
                     and (not fog_enabled or fog_state != "unknown")):
-                from ..materials.logic import LOGIC_KINDS
-
-                background = "#2a3a5a" if cell.wall_kind in LOGIC_KINDS else "#1a2a4a"
-                if position in getattr(state, "_logic_energized", set()):
+                background = "#2a3a5a" if cell.wall_kind in logic_kinds else "#1a2a4a"
+                if position in logic_energized:
                     style = "bold #7ad0ff"
             if board_visible and position in visible and position in board_traces:
-                live = board_values.get(position, position in state._logic_energized)
+                live = board_values.get(position, position in logic_energized)
                 background = "#263d43" if live else "#18262f"
                 # Components, entities and goals stay above traces.
-                if position not in board_nodes and not cell.solid and position not in entities_at and position not in items_at and position not in events_at and position != player_pos:
+                if position not in board_nodes and not cell.solid and entity_here is None and item_here is None and event_here is None and position != player_pos:
                     junctions = {1:"│", 2:"─", 3:"└", 4:"│", 5:"│", 6:"┌", 7:"├", 8:"─", 9:"┘", 10:"─", 11:"┴", 12:"┐", 13:"┤", 14:"┬", 15:"┼"}
                     glyph = ("╳" if len(board_traces[position]) > 1 else junctions.get(cell.wire, "·")) + " " if unicode_mode else "+ "
                     style = "bold #d4ba72" if live else "#607d8b"
                 if position in board_nodes:
                     node = board_nodes[position]
-                    if position != player_pos and position not in entities_at:
+                    if position != player_pos and entity_here is None:
                         style = "bold #d4ba72" if live else style
                     if node["op"] == "cube" and cell.wall_kind == "理念立方体":
                         style, background = "bold #87ddb0", "#224036"
-                    elif node["op"] in {"cube", "plate", "step"} and position != player_pos and position not in entities_at and position not in items_at and position not in events_at:
+                    elif node["op"] in {"cube", "plate", "step"} and position != player_pos and entity_here is None and item_here is None and event_here is None:
                         glyph = "□ " if unicode_mode else "o "
             tele = telegraphs.get(position)
             if tele is not None and position in visible:
@@ -574,7 +660,7 @@ def render_map(
                 # / 暗紫（效果场）垫底，随回合奇偶脉动——站在格子里就是站在
                 # 即将受影响的范围里。主动技能预警（cast/cast_path/field）
                 # 与旧 burst/bomb 样式并存，FX off 也可见。
-                if state.time % 2 == 0:
+                if tick_parity == 0:
                     backgrounds = {"burst": "#4a1414", "bomb": "#4a2c10", "field": "#3a1a3a"}
                 else:
                     backgrounds = {"burst": "#3a1010", "bomb": "#3a240c", "field": "#2e142e"}
@@ -587,14 +673,13 @@ def render_map(
             construct = construct_cells.get(position)
             if construct and position in visible:
                 mark, color, background, remaining = construct
-                if position != player_pos and position not in entities_at and position not in items_at and position not in events_at:
+                if position != player_pos and entity_here is None and item_here is None and event_here is None:
                     glyph, style = mark, f'bold {color}'
-            if markers and position in markers:
+            if has_markers and position in markers:
                 # 篡改对象的临时编号标记（docs §8.4）：只盖字形、保留格子底色，
                 # 不改变可见性/命中/结算；编号由草稿固定，刷新不跳号。
-                from ..core.sound_markers import marker_glyph
-                mark = marker_glyph(str(markers[position])[:1],
-                                    ascii_mode=effective_mode == "ascii")
+                mark = marker_glyph_fn(str(markers[position])[:1],
+                                       ascii_mode=effective_mode == "ascii")
                 glyph = mark + " " if cell_w > 1 else mark
                 style = "bold bright_yellow"
             style_with_bg = with_background(style, background)
@@ -608,22 +693,79 @@ def render_map(
             if continuous:
                 # 基础聚合墙铺满整个放大地格，横竖相邻格都保持连续墙面。
                 filled = set_cell_size(glyph_block * ((cell_w + 1) // 2), cell_w)
-                row_text.append(filled, style=style_with_bg)
-                if row_blank is not None:
-                    row_blank.append(filled, style=style_with_bg)
+                if visuals is not None:
+                    shown = filled.strip()
+                    if shown:
+                        visuals[(x, y)] = (shown, style_with_bg, background)
+                if visuals_only:
+                    # 只记事实：不 append、不建 span（这帧文本没人读）。
+                    continue
+                if fast_mode:
+                    if style_with_bg != run_style:
+                        if run_parts:
+                            row_text.append("".join(run_parts), style=run_style)
+                            run_parts.clear()
+                        run_style = style_with_bg
+                    run_parts.append(filled)
+                    if row_blank is not None:
+                        if style_with_bg != blank_style:
+                            if blank_parts:
+                                row_blank.append("".join(blank_parts), style=blank_style)
+                                blank_parts.clear()
+                            blank_style = style_with_bg
+                        blank_parts.append(filled)
+                else:
+                    row_text.append(filled, style=style_with_bg)
+                    if row_blank is not None:
+                        row_blank.append(filled, style=style_with_bg)
+                continue
+            if visuals is not None:
+                shown = glyph_block.strip()
+                if shown:
+                    # 图像后端直接消费：与旧路径「cell_ranges 反解 → strip 取首字」
+                    # 逐格等价（tests/test_image_scene_preparation_20261024.py）。
+                    visuals[(x, y)] = (shown, style_with_bg, background)
+            if visuals_only:
                 continue
             pad_total = max(0, cell_w - 2)
             left_pad = pad_total // 2
             right_pad = pad_total - left_pad
-            if left_pad:
-                row_text.append(" " * left_pad, style=style_with_bg)
-            row_text.append(glyph_block, style=style_with_bg)
-            if right_pad:
-                row_text.append(" " * right_pad, style=style_with_bg)
-            if row_blank is not None:
-                row_blank.append(" " * cell_w, style=style_with_bg)
+            if fast_mode:
+                fragment = (glyph_block if not pad_total
+                            else " " * left_pad + glyph_block + " " * right_pad)
+                if style_with_bg != run_style:
+                    if run_parts:
+                        row_text.append("".join(run_parts), style=run_style)
+                        run_parts.clear()
+                    run_style = style_with_bg
+                run_parts.append(fragment)
+                if row_blank is not None:
+                    if style_with_bg != blank_style:
+                        if blank_parts:
+                            row_blank.append("".join(blank_parts), style=blank_style)
+                            blank_parts.clear()
+                        blank_style = style_with_bg
+                    blank_parts.append(" " * cell_w)
+            else:
+                if left_pad:
+                    row_text.append(" " * left_pad, style=style_with_bg)
+                row_text.append(glyph_block, style=style_with_bg)
+                if right_pad:
+                    row_text.append(" " * right_pad, style=style_with_bg)
+                if row_blank is not None:
+                    row_blank.append(" " * cell_w, style=style_with_bg)
+        if visuals_only:
+            continue
+        if fast_mode:
+            if run_parts:
+                row_text.append("".join(run_parts), style=run_style)
+            if blank_parts and row_blank is not None:
+                row_blank.append("".join(blank_parts), style=blank_style)
         for r in range(cell_h):
             lines.append(row_text if r == (cell_h - 1) // 2 else row_blank)
+    if visuals_only:
+        # 逐格事实已经写完；这帧文本没有消费者（present_scene 直接吃 visuals）。
+        return Text()
     text = Text()
     for index, line in enumerate(lines):
         if index:

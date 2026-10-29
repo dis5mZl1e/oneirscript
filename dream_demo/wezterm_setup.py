@@ -13,6 +13,7 @@ import platform
 import stat
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -20,7 +21,8 @@ from pathlib import Path
 
 from .terminal_launch import (ATTACHED_FLAG, GAME_FONT_FAMILY, bundled_font_path,
                               ensure_windows_font, game_font_face)
-from .font_assets import persistent_font_dir, emoji_faces, game_icon_face, semantic_icon_faces, private_cache_dir
+from .font_assets import (copy_asset, persistent_font_dir, emoji_faces, game_icon_face,
+                          semantic_icon_faces, private_cache_dir)
 from .env_compat import name as env_name
 
 WEZTERM_TAG = "20240203-110809-5046fc22"
@@ -37,6 +39,16 @@ _SERIF_FALLBACK = {
 
 CELL_WIDTH = 1.18
 FONT_SIZE = 14.0
+# A broken WezTerm exits within a few hundred ms; waiting briefly lets the
+# launcher report why instead of silently handing off to a dead window.
+LAUNCH_GRACE_SECONDS = 2.0
+
+_last_failure: str | None = None
+
+
+def last_failure() -> str | None:
+    """本次 launch() 失败原因（含日志路径与尾部），成功时为 None。"""
+    return _last_failure
 
 
 def _platform_asset() -> tuple[str, str, str] | None:
@@ -144,6 +156,23 @@ def _lua_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _optional_faces(loader, directory: Path, label: str, *, default):
+    """图标／emoji 字体只是装饰：清单校验不通过时跳过，不连累整个推荐终端。
+
+    这些字体包各自带 ``sha256`` 自校验（:mod:`dream_demo.font_assets`），而
+    ``glyph-manifest.json`` 之类的清单由独立脚本重新生成。清单与字体文件的
+    写入彼此不同步（并行会话重刷图标、或打包正好落在两次写之间）时，校验
+    必然失败——旧实现让这个异常一路冒到 ``prefer_wezterm``，结果是**整个
+    WezTerm 交接被放弃**、退回 Windows Terminal，玩家看到的就是“没进
+    WezTerm”。字体缺失只该损失几排图标，不该换掉终端，所以这里降级处理。
+    """
+    try:
+        return loader(directory)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(f'{label}不可用，已跳过：{error}', file=sys.stderr)
+        return default
+
+
 def config_path(base: Path) -> Path:
     return base / ".wezterm" / "wezterm.lua"
 
@@ -165,15 +194,26 @@ def write_config(base: Path, game_command: list[str] | None = None, *, maximize:
     if font is not None:
         fonts=persistent_font_dir(font.parent,base)
         lines.append(f"config.font_dirs = {{ {_lua_string(str(fonts))} }}")
-        icons = game_icon_face(fonts)
-        if icons is not None:
+        icons = _optional_faces(game_icon_face, fonts, '游戏图标字体', default=None)
+        if icons and icons.get('family'):
             if not unified:
                 names_list.append(_lua_string(icons['family']))
             lines.append(f"config.set_environment_variables = {{ {env_name('ICONS')} = '1' }}")
         if not unified:
-            names_list.extend(_lua_string(item['family']) for item in semantic_icon_faces(fonts))
+            semantic = _optional_faces(semantic_icon_faces, fonts, '语义图标字体', default=[])
+            names_list.extend(_lua_string(item['family']) for item in semantic if item.get('family'))
+        # Only the two sidebar locks live in this monochrome emoji subset.
+        # Prefer it to system color emoji even when the terminal recognizes
+        # the codepoints as emoji presentation by default.
+        if (fonts / 'DreamStrataLockOutline.ttf').is_file():
+            names_list.append('{ family = "Dream Strata Lock Outline", assume_emoji_presentation = true }')
+        # 混乱专属异象的 👿 🖤 😇 三个单色线框 emoji（2026-10-27）：与锁图标
+        # 同一套字形来源与注册口径，优先于系统彩色 emoji。
+        if (fonts / 'DreamStrataChaosOutline.ttf').is_file():
+            names_list.append('{ family = "Dream Strata Chaos Outline", assume_emoji_presentation = true }')
+        emoji = _optional_faces(emoji_faces, fonts, '表情字体', default=[])
         names_list.extend('{ family = '+_lua_string(item['family'])+', assume_emoji_presentation = true, scale = 0.9 }'
-                          for item in emoji_faces(fonts))
+                          for item in emoji if item.get('family'))
     names_list.extend(_lua_string(name) for name in fallback[1:])
     names = ", ".join(names_list)
     lines.append(f"config.font = wezterm.font_with_fallback({{{names}}})")
@@ -182,21 +222,47 @@ def write_config(base: Path, game_command: list[str] | None = None, *, maximize:
     # faces for italic attributes in this game window; keep bold and colours.
     bold_names=[f'{{ family = {_lua_string(face.family)}, weight = "Bold", italic = false }}',*names_list[1:]]
     lines.append('local readable_bold = wezterm.font_with_fallback({'+', '.join(bold_names)+'})')
+    sans_manifest = fonts / 'interface-sans.json'
+    sans = None
+    if sans_manifest.is_file():
+        sans = json.loads(sans_manifest.read_text(encoding='utf-8'))
+        sans_path = fonts / sans['file']
+        if (Path(sans['file']).name != sans['file'] or not sans_path.is_file()
+                or hashlib.sha256(sans_path.read_bytes()).hexdigest() != sans['sha256']):
+            raise OSError('Interface font verification failed; extract the complete package again.')
+        sans_names = [f'{{ family = {_lua_string(sans["family"])}, italic = false }}', *names_list]
+        lines.append('local interface_sans = wezterm.font_with_fallback({'+', '.join(sans_names)+'})')
+        lines.append(f"config.set_environment_variables = config.set_environment_variables or {{}}")
+        lines.append(f"config.set_environment_variables.{env_name('UI_FONTS')} = '1'")
     lines.append('config.font_rules = {')
-    lines.append('  { italic = true, intensity = "Bold", font = readable_bold },')
-    lines.append('  { italic = true, intensity = "Half", font = config.font },')
-    lines.append('  { italic = true, font = config.font },')
+    if sans:
+        for intensity in ('Bold', 'Half', 'Normal'):
+            lines.append('  { italic = true, intensity = "'+intensity+'", font = interface_sans },')
+    else:
+        lines.append('  { italic = true, intensity = "Bold", font = readable_bold },')
+        lines.append('  { italic = true, intensity = "Half", font = config.font },')
+        lines.append('  { italic = true, font = config.font },')
     lines.append('}')
     lines.append(f"config.font_size = {FONT_SIZE}")
     lines.append(f"config.cell_width = {CELL_WIDTH}")
-    lines.append("config.allow_square_glyphs_to_overflow_width = 'WhenFollowedBySpace'")
+    # A glyph must not change size when the next terminal cell changes.  The
+    # conditional overflow rule rescales our one-column PUA icons depending on
+    # whether their neighbour happens to be a space (including during redraws).
+    lines.append("config.allow_square_glyphs_to_overflow_width = 'Never'")
     lines.append('config.unicode_version = 14')
+    if not sys.platform.startswith('win'):
+        # 游戏内「Kitty 图像协议（实验）」默认关闭；这里只让非 Windows WezTerm
+        # 解析 APC。Windows 的 ConPTY 会丢弃该序列，无需开启。
+        lines.append("config.enable_kitty_graphics = true")
     lines.append("config.use_fancy_tab_bar = false")
     lines.append("config.enable_tab_bar = false")
     lines.append("config.hide_tab_bar_if_only_one_tab = true")
     lines.append("config.initial_cols = 120")
     lines.append("config.initial_rows = 30")
     lines.append("config.window_decorations = 'TITLE|RESIZE'")
+    # 2026-10-27 玩家要求：右上角 X、Alt+F4、关闭窗口/标签页等所有关闭方式
+    # 都不再询问「进程仍在运行，是否关闭？」，直接关闭。
+    lines.append("config.window_close_confirmation = 'NeverPrompt'")
     lines.append("config.use_resize_increments = true")
     lines.append("config.adjust_window_size_when_changing_font_size = false")
     lines.append("config.window_padding = { left = 6, right = 6, top = 12, bottom = 8 }")
@@ -354,6 +420,7 @@ def _extract_zip(archive:zipfile.ZipFile,root:Path) -> None:
 
 def _usable_executable(executable:Path) -> Path | None:
     """Check before saving/exiting the caller; extract Linux AppImage without FUSE if needed."""
+    global _last_failure
     options=dict(stdin=subprocess.DEVNULL,capture_output=True,timeout=20)
     if sys.platform=='win32':
         options['creationflags']=subprocess.CREATE_NO_WINDOW
@@ -366,12 +433,21 @@ def _usable_executable(executable:Path) -> Path | None:
             if not extracted.is_file():
                 result=subprocess.run([str(executable),'--appimage-extract'],cwd=executable.parent,**options)
                 if result.returncode!=0:
+                    _last_failure=_version_failure(executable,result)
                     return None
             if extracted.is_file():
                 return _usable_executable(extracted)
-    except (OSError,subprocess.TimeoutExpired):
-        pass
+        _last_failure=_version_failure(executable,result)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        _last_failure=f'WezTerm 版本自检失败：{error}'
     return None
+
+
+def _version_failure(executable:Path,result:subprocess.CompletedProcess) -> str:
+    detail=(result.stderr or result.stdout or b'').decode('utf-8','replace').strip()
+    if not detail:
+        detail=f'退出码 {result.returncode}'
+    return f'WezTerm 无法运行（{executable}）：{detail[-800:]}'
 
 
 def _relocate_executable(root: Path, executable_name: str) -> Path | None:
@@ -415,21 +491,91 @@ def _rmtree_quiet(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def launch(base: Path, game_command: list[str] | None = None) -> Path | None:
-    """写配置并在 WezTerm 新窗口里启动游戏；返回所用可执行文件（失败 None）。"""
+def _user_font_dir() -> Path:
+    root = os.environ.get('XDG_DATA_HOME')
+    base = Path(root) if root else Path.home() / '.local' / 'share'
+    return base / 'fonts' / 'oneirscript'
+
+
+def register_bundled_fonts(directory: Path) -> Path | None:
+    """Mirror bundled faces into the user font dir for fontconfig >= 2.18.
+
+    That fontconfig release no longer honours the per-app ``font_dirs`` hook
+    WezTerm 20240203 relies on, so the window fails with
+    ``failed to get font metrics!?: FcResultNoMatch``. Copying the same files
+    into ``~/.local/share/fonts`` and refreshing the cache restores them
+    without touching system-wide font packages.
+    """
+    if not sys.platform.startswith('linux'):
+        return None
+    try:
+        faces = [item for item in directory.iterdir()
+                 if item.is_file() and item.suffix.lower() in ('.ttf', '.otf')]
+    except OSError:
+        return None
+    if not faces:
+        return None
+    target = _user_font_dir()
+    try:
+        for face in faces:
+            copy_asset(face, target / face.name)
+        subprocess.run(['fc-cache', '-f', str(target)],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return target
+
+
+def launch_log_path(base: Path) -> Path:
+    for candidate in (base / '.wezterm' / 'wezterm-launch.log',
+                      private_cache_dir() / 'wezterm-launch.log'):
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return Path(tempfile.gettempdir()) / 'oneirscript-wezterm-launch.log'
+
+
+def _log_tail(path: Path, limit: int = 1200) -> str:
+    try:
+        text = path.read_bytes().decode('utf-8', 'replace').strip()
+    except OSError:
+        return ''
+    return text[-limit:]
+
+
+def launch(base: Path, game_command: list[str] | None = None,
+           *, grace: float = LAUNCH_GRACE_SECONDS) -> Path | None:
+    """写配置并在 WezTerm 新窗口里启动游戏；返回所用可执行文件（失败 None）。
+
+    失败时把原因（含日志尾部）记入 :func:`last_failure`，并由 stderr 落盘到
+    ``.wezterm/wezterm-launch.log``；启动后 ``grace`` 秒内退出的进程视为失败，
+    避免父进程悄悄退出、玩家只看到兼容终端甚至什么都没有。
+    """
+    global _last_failure
+    _last_failure = None
     executable = find_wezterm(base)
     if executable is None:
+        _last_failure = '未找到 WezTerm 可执行文件（可能安装不完整）。'
         return None
     executable=_usable_executable(executable)
     if executable is None:
+        if _last_failure is None:
+            _last_failure = 'WezTerm 可执行文件自检未通过。'
         return None
     config = write_config(base, game_command)
+    font = bundled_font_path()
+    if font is not None and sys.platform.startswith('linux'):
+        register_bundled_fonts(persistent_font_dir(font.parent, base))
     environment = dict(os.environ)
     for name in list(environment):
         if name.startswith("_PYI_"):
             environment.pop(name)
     environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     environment["WEZTERM_CONFIG_FILE"] = str(config)
+    log_path = launch_log_path(base)
     flags = 0
     kwargs: dict = {}
     if sys.platform == "win32":
@@ -437,10 +583,28 @@ def launch(base: Path, game_command: list[str] | None = None) -> Path | None:
     else:
         kwargs["start_new_session"] = True
     try:
-        subprocess.Popen([str(executable),'--config-file',str(config),'start','--always-new-process','--cwd',str(base.resolve())], cwd=str(base), env=environment,
-                         creationflags=flags,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, **kwargs)
+        stderr = log_path.open('wb')
     except OSError:
+        stderr = None
+    try:
+        process = subprocess.Popen(
+            [str(executable),'--config-file',str(config),'start','--always-new-process','--cwd',str(base.resolve())],
+            cwd=str(base), env=environment, creationflags=flags,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=stderr if stderr is not None else subprocess.DEVNULL, **kwargs)
+    except OSError as error:
+        _last_failure = f'WezTerm 启动失败：{error}'
         return None
-    return executable
+    finally:
+        if stderr is not None:
+            stderr.close()
+    try:
+        status = process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        return executable
+    if status == 0:
+        return executable
+    detail = _log_tail(log_path)
+    _last_failure = (f'WezTerm 启动后立即退出（退出码 {status}）。日志：{log_path}'
+                     + (f'\n{detail}' if detail else ''))
+    return None

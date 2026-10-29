@@ -43,14 +43,16 @@ TIER_EFFECTS: dict[str, dict[str, Mapping[str, Any]]] = {
         "tail_echo": {"lucidity": 3, "mind": 2},
         "margin_ember": {"cells": 1},
     },
+    # 2026-10-27 玩家反馈「越接近 100 越危险」：只加重错乱／失序的数值，
+    # 前三档与事件池保持原样（避免全面加难度）。
     "错乱": {
-        "tail_echo": {"lucidity": 5, "mind": 3},
-        "margin_ember": {"cells": 2},
+        "tail_echo": {"lucidity": 6, "mind": 4},
+        "margin_ember": {"cells": 3},
         "omission_visitor": {"count": 1},
     },
     "失序": {
-        "tail_echo": {"lucidity": 8, "mind": 5},
-        "margin_ember": {"cells": 3},
+        "tail_echo": {"lucidity": 12, "mind": 7},
+        "margin_ember": {"cells": 4},
         "omission_visitor": {"count": 1},
     },
 }

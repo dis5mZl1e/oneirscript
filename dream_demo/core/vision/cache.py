@@ -60,3 +60,6 @@ def store(state: Any, key: tuple, cells: set[tuple[int, int]]) -> set[tuple[int,
 def invalidate(state: Any) -> None:
     """主动作废缓存（例如测试里手改地形后想立刻重算）。"""
     setattr(state, CACHE_ATTRIBUTE, None)
+    # 机械光延长表（core/vision/glow.py）与可见集同生共死：显式作废时一起清，
+    # 尽管它自己也按签名核对。
+    state._glow_frame = None

@@ -11,7 +11,12 @@ from .stable_identity import token as stable_token
 from ..materials import DOOR_KINDS, floor_effect_for, liquid_contact_noise, portent_def
 from ..symbols import entity_glyph
 from .constants import (
+    ANOMALY_REFRESH_ACTIVE_CAP,
+    ANOMALY_REFRESH_DROP_DECAY,
+    ANOMALY_REFRESH_FREE_DROP_WAVES,
     ATTACH_HUNT_BONUS_MAX,
+    NOISE_AMBIENT_RADIUS,
+    NOISE_AMBIENT_TURNS,
     CARRIED_IMAGE,
     CREATURE_PORTENT_DAMAGE_PERIOD,
     CORE_CONTROL_WINDOW,
@@ -23,9 +28,34 @@ from .constants import (
     WET_CONDUCT_COOLDOWN,
     portent_scaled_amount,
 )
-from .content import ANOMALY_DEFINITIONS, equipment_pool_for_depth
+from .content import ANOMALY_DEFINITIONS, ITEM_DEFINITIONS, equipment_pool_for_depth
 from .entities import Cell, Entity, WorldItem
 from .pathing import PursuitMixin
+
+
+def _late_spawn_drop_multiplier(enemy: Entity) -> float:
+    """本层后期补刷异象的掉落倍率（2026-10-27 玩家需求）。
+
+    spawn_wave == 0（随地图生成的首波/非补刷）与 wave <= FREE_WAVES（每层前几次
+    自然补刷）返回 1.0——掉落行为与旧版完全一致；此后每多一只补刷乘一次
+    ANOMALY_REFRESH_DROP_DECAY，即 DECAY ** (wave - FREE_WAVES) 的指数衰减。
+    """
+    wave = int(getattr(enemy, "spawn_wave", 0) or 0)
+    free = max(0, int(ANOMALY_REFRESH_FREE_DROP_WAVES))
+    if wave <= 0 or wave <= free:
+        return 1.0
+    return float(ANOMALY_REFRESH_DROP_DECAY) ** (wave - free)
+
+
+def _late_spawn_bonus_ok(rng: random.Random, multiplier: float) -> bool:
+    """小概率 bonus（台阶灰尘/键帽）在后期补刷时按倍率发放。
+
+    multiplier >= 1.0 时直接返回 True 且不消耗随机数，保证首波与前几次补刷的
+    随机序列和掉落结果与旧版逐位一致；衰减档才真正掷一次。
+    """
+    if multiplier >= 1.0:
+        return True
+    return rng.random() < multiplier
 
 
 def sound_sector(dx: int, dy: int) -> str:
@@ -101,15 +131,20 @@ class EnemyMixin(PursuitMixin):
         可覆盖。结算完必须判终局——反伤本身可能就是致命的那一击。
         """
         kind = effect_id or ("mind" if enemy.trauma_type == "心智创伤" else "lucidity")
-        if kind == "lucidity":
-            from .settlement import REASON_COMBAT, settle_delta
-            result = settle_delta(self, 'lucidity', -1, reason=REASON_COMBAT,
-                                  source=str(getattr(enemy, 'label', enemy.id)))
-            self._note_board_hurt('lucidity', -result.applied, source_id=enemy.id)
-            harm = "清醒创伤"
-        else:
-            self._lose_mind(1, combat=True, source_id=enemy.id)  # 反伤属于战斗创伤
-            harm = "心智创伤"
+        previous_indirect = getattr(self, '_presentation_indirect_trauma', False)
+        self._presentation_indirect_trauma = True
+        try:
+            if kind == "lucidity":
+                from .settlement import REASON_COMBAT, settle_delta
+                result = settle_delta(self, 'lucidity', -1, reason=REASON_COMBAT,
+                                      source=str(getattr(enemy, 'label', enemy.id)))
+                self._note_board_hurt('lucidity', -result.applied, source_id=enemy.id)
+                harm = "清醒创伤"
+            else:
+                self._lose_mind(1, combat=True, source_id=enemy.id)  # 反伤属于战斗创伤
+                harm = "心智创伤"
+        finally:
+            self._presentation_indirect_trauma = previous_indirect
         self.messages.append(tr("{enemy}把这一下反了回来，造成{harm}。", enemy=tr(enemy.label), harm=tr(harm)))
         self.last_harm_source = enemy.label
         self.last_harm_time = self.time
@@ -270,6 +305,8 @@ class EnemyMixin(PursuitMixin):
         """
         if target.integrity <= 0:
             return 0
+        from .expansion_consumables import on_collision
+        on_collision(self)
         if "spooked" in target.portents:
             # 惊散解除（docs §15.5）：被打一下立即惊醒并转为追踪，直奔声源
             # 之后的真实目标——玩家当前位置。
@@ -312,6 +349,11 @@ class EnemyMixin(PursuitMixin):
                 target = watcher
                 self.messages.append(tr("嘲讽把这一击引到了{watcher}身上！", watcher=tr(watcher.label)))
                 break
+        from ..equipment.expansion_runtime import construct_damage_bonus
+        damage += construct_damage_bonus(self, target)
+        if range_kind == 'melee' and not getattr(self, '_expansion_construct_cast', None):
+            from ..equipment.expansion_runtime import consume_melee_mark
+            damage += consume_melee_mark(self, target)
         # 纸折护身（折页人）：受到的创伤 −1（至少 1 点）。
         if target.trait == "paper_fold":
             damage = max(1, damage - 1)
@@ -456,6 +498,24 @@ class EnemyMixin(PursuitMixin):
         # 归因在这里记账——关系模块据此判「确认过的攻击」，任务据此认战斗解法。
         dealt = max(0, before_integrity - target.integrity)
         if dealt:
+            from ..equipment.expansion_runtime import action_conductive_field
+            action_conductive_field(self, action_plan, impact)
+            from .hit_events import note_hit
+            hit_dir = attack_dir
+            if real_ray and len(path) >= 2 and path[-1] == impact:
+                # 跳弹后取最后一段有效轨迹的方向，不能仍用最初 facing。
+                hit_dir = (impact[0] - path[-2][0], impact[1] - path[-2][1])
+            note_hit(
+                self,
+                kind="melee" if range_kind == "melee" else "ranged",
+                source=origin,
+                impact=impact,
+                target_id=target.id,
+                amount=dealt,
+                resource="integrity",
+                direction=hit_dir,
+                killed=target.integrity <= 0,
+            )
             from ..world import facts as world_facts
             from ..world import relations
 
@@ -463,6 +523,9 @@ class EnemyMixin(PursuitMixin):
                                target_uid=target.actor_uid or target.id, position=impact,
                                source_kind="direct_attack", cause_uid=f"attack:{range_kind}",
                                before=before_integrity, after=target.integrity, amount=dealt)
+        if dealt:
+            from ..equipment.expansion_runtime import on_construct_hit
+            on_construct_hit(self, target, killed=target.integrity <= 0)
         self._check_run_over()
         return phases
 
@@ -489,6 +552,7 @@ class EnemyMixin(PursuitMixin):
         thorns_per_segment: bool = False,
         thorns_scope: str = "any",
         thorns_effect: str = "",
+        spawn_wave: int = 0,
     ) -> Entity:
         x, y = self._find_open_cell(self.cells, x, y)
         # 汉字自带两列，再加空格就是三列——会把整行挤错位。一律过 entity_glyph 补齐/截断。
@@ -507,6 +571,7 @@ class EnemyMixin(PursuitMixin):
             trait=trait,
             counter_every=counter_every, counter_scope=counter_scope, counter_effect=counter_effect,
             thorns_per_segment=thorns_per_segment, thorns_scope=thorns_scope, thorns_effect=thorns_effect,
+            spawn_wave=spawn_wave,
         )
         self.next_enemy_id += 1
         self.enemies.append(enemy)
@@ -642,7 +707,9 @@ class EnemyMixin(PursuitMixin):
                     self.messages.append(tr(
                         "第 20 个强烈异象崩解了——它的残骸里留下一把冰冷的「门之钥」。"))
         # 循迹重生（纸页犬）：被解决后有 40% 概率在远处重新凝聚（耐久 1）。
-        if enemy.trait == "respawner" and random.Random(self.seed ^ (self.time * 17) ^ stable_token(enemy)).random() < 0.4:
+        if (enemy.trait == "respawner"
+                and self._natural_anomaly_count() < ANOMALY_REFRESH_ACTIVE_CAP
+                and random.Random(self.seed ^ (self.time * 17) ^ stable_token(enemy)).random() < 0.4):
             import random as _r
             far = [
                 (x, y)
@@ -723,7 +790,17 @@ class EnemyMixin(PursuitMixin):
         if enemy.drop_spawned:
             return
         enemy.drop_spawned = True
+        # 专属召唤异象（混乱/篡改召来，见 core.chaos_anomalies）：不留任何物品。
+        # 这里只补一条图鉴击杀记录；崩解奖励与击杀统计仍由 _resolve_enemy 的其他
+        # 分支处理，也不消耗本层掉落预算。
+        if bool((enemy.active_skill_state or {}).get("no_loot")):
+            self._record_catalog_kill(enemy, [])
+            return
         actual_drops: list[str] = []
+        # 本层后期补刷的掉落倍率（2026-10-27）：首波/非补刷（wave=0）与前
+        # ANOMALY_REFRESH_FREE_DROP_WAVES 只补刷都是 1.0（与旧版逐位一致），
+        # 此后按 ANOMALY_REFRESH_DROP_DECAY 指数衰减。
+        multiplier = _late_spawn_drop_multiplier(enemy)
         # 携带意象掉落：强烈异象/核心执念概率更高，普通异象小概率；
         # 受本层掉落预算（携带意象类）约束。放在普通掉落之前，无遗留物的
         # 强力异象同样可能留下携带意象。
@@ -733,23 +810,30 @@ class EnemyMixin(PursuitMixin):
         drop_chance = {"核心执念": 0.35, "强烈异象": 0.12}.get(enemy.anomaly_kind, 0.02)
         equip_rng = random.Random(self.seed ^ (self.time * 104729) ^ enemy_number)
         budget_key = f"{self.depth}:{CARRIED_IMAGE}"
-        if equip_rng.random() < drop_chance and (
+        if equip_rng.random() < drop_chance * multiplier and (
             self.layer_drop_counts.get(budget_key, 0) < 1 or (self.time + enemy_number) % 4 == 0
         ):
             self.layer_drop_counts[budget_key] = self.layer_drop_counts.get(budget_key, 0) + 1
             # 区域分层池（2026-10-07）：此前任何深度都只掉浅层 EQUIPMENT_POOL，
             # 25 层的强烈异象也会掉「削尖的钢笔」。改按层取池，与房间刷新同源。
             equip_pool = equipment_pool_for_depth(self.depth)
+            equip_pool = tuple(key for key in equip_pool
+                               if not ITEM_DEFINITIONS.get(key, {}).get('expansion_catalog_id'))
             equip_id = equip_pool[equip_rng.randrange(len(equip_pool))]
             self.world_items.append(WorldItem(self._make_item(equip_id), enemy.x, enemy.y))
             actual_drops.append(equip_id)
         # 书卷/残页：强力异象更高概率掉落。
         scroll_chance = {"核心执念": 0.3, "强烈异象": 0.12}.get(enemy.anomaly_kind, 0.0)
-        if equip_rng.random() < scroll_chance:
+        if equip_rng.random() < scroll_chance * multiplier:
             scroll_id = "spellbook" if equip_rng.random() < 0.4 else "torn_page"
             self.world_items.append(WorldItem(self._make_item(scroll_id), enemy.x, enemy.y))
             actual_drops.append(scroll_id)
         if not enemy.drop_id:
+            self._record_catalog_kill(enemy, actual_drops)
+            return
+        # 固定掉落（定义里 drop_id 的「必掉」）：后期补刷先按倍率过一道随机。
+        # multiplier >= 1.0（首波/前几次补刷）时不消耗随机数，仍然保持必掉。
+        if multiplier < 1.0 and equip_rng.random() >= multiplier:
             self._record_catalog_kill(enemy, actual_drops)
             return
         from .item_access import refusal as item_grant_refusal, record_grant
@@ -772,13 +856,17 @@ class EnemyMixin(PursuitMixin):
         record_grant(self, item.definition_id, source=source)
         self.world_items.append(WorldItem(item, enemy.x, enemy.y))
         actual_drops.append(item.definition_id)
-        if enemy.catalog_id == "anomaly.stair_echo" and (self.time + enemy_number) % 5 == 0:
+        if (enemy.catalog_id == "anomaly.stair_echo"
+                and (self.time + enemy_number) % 5 == 0
+                and _late_spawn_bonus_ok(equip_rng, multiplier)):
             bonus = self._make_item("attic_dust")
             self.world_items.append(WorldItem(bonus, enemy.x, enemy.y))
             actual_drops.append(bonus.definition_id)
             self.messages.append(tr("{enemy}的台阶缝隙里落下了一撮阁楼的灰尘。", enemy=tr(enemy.label)))
         bonus_tier = self.mind_tier
-        if bonus_tier and (self.time + enemy_number) % 3 < bonus_tier:
+        if (bonus_tier
+                and (self.time + enemy_number) % 3 < bonus_tier
+                and _late_spawn_bonus_ok(equip_rng, multiplier)):
             bonus = self._make_item("old_keycap")
             self.world_items.append(WorldItem(bonus, enemy.x, enemy.y))
             actual_drops.append(bonus.definition_id)
@@ -859,6 +947,8 @@ class EnemyMixin(PursuitMixin):
         if "honeyed" in enemy.portents:
             base *= 2  # 蜂蜜：上方生物移速减半
         base += self._entity_portent_move_penalty(enemy)
+        # 植物地形：拦慢追兵对异象同样成立（磁带须/装订须/缝线丛/千禧蒲草）。
+        base += self.plant_move_penalty_at(enemy.x, enemy.y)
         key = str(self.depth)
         if (enemy.x, enemy.y) in self.slick_cells.get(key, set()):
             base += 0.4
@@ -957,13 +1047,18 @@ class EnemyMixin(PursuitMixin):
 
     def _record_hearing_clue(self, x: int, y: int, category: str,
                              source: str, radius: int, field=None,
-                             residual: int | None = None) -> None:
+                             residual: int | None = None,
+                             relay: tuple[int, int] | None = None) -> None:
         """把一次真实脉冲记成玩家可见的粗略线索。
 
         已知位置与未知声源分开：未知只给八方位扇区与距离档，不写坐标、
         敌名或隐藏人数；同回合同类同向同档的重复声音聚合为一条。
         主动凝听并带听诊器时，穿过相邻实墙的声音额外记下入口墙格；
         只有真实近距（≤3）才附「近距」判断，远墙不靠悬停全图查询。
+
+        ``relay`` 是「这一声是被传声筒转过来的」那个**入口**坐标（见
+        ``_sound_pulse`` 的转发链）。它照记不误，但只有洞察「一声两种来处」
+        才去读（面板与等待时的读取都另按洞察判），所以关掉洞察时这条字段是死的。
         """
         if radius <= 0:
             return
@@ -983,8 +1078,9 @@ class EnemyMixin(PursuitMixin):
         band = sound_band(distance)
         strength = sound_strength(residual) if residual is not None else None
         entry = self._wall_sense_entry(field, x, y)
+        relayed = (int(relay[0]), int(relay[1])) if relay else None
         key = (sector, band, strength, category, source, known,
-               x if known else None, y if known else None, entry)
+               x if known else None, y if known else None, entry, relayed)
         for clue in clues:
             if int(clue.get("time", -1)) != self.time:
                 continue
@@ -993,7 +1089,8 @@ class EnemyMixin(PursuitMixin):
                      clue.get("source"), clue.get("known"),
                      clue.get("x") if clue.get("known") else None,
                      clue.get("y") if clue.get("known") else None,
-                     tuple(clue["entry"]) if clue.get("entry") else None)
+                     tuple(clue["entry"]) if clue.get("entry") else None,
+                     tuple(clue["relay"]) if clue.get("relay") else None)
             if other == key:
                 # 同区域多次响动只做提示，不累计成敌人数（§16.2）。
                 if (int(clue.get("x", -1)), int(clue.get("y", -1))) != (x, y):
@@ -1008,6 +1105,8 @@ class EnemyMixin(PursuitMixin):
         if entry is not None:
             clue["entry"] = entry
             clue["wall_near"] = distance <= 3
+        if relayed is not None:
+            clue["relay"] = [int(relayed[0]), int(relayed[1])]
         clues.append(clue)
 
     def _note_listen_evidence(self, x: int, y: int, category: str,
@@ -1076,6 +1175,44 @@ class EnemyMixin(PursuitMixin):
                 sources.append(tr("踩入{name}：液面接触 {n}", name=name, n=liquid))
         return base, sources
 
+    def _plant_step_quiet(self, x: int, y: int) -> int:
+        """这一格上的植物能压掉多少格脚步声（0–1，同类取最强）。
+
+        低草只压本格；留白絮压 R1；月光蕈只在本格没有机械照明时生效——
+        「亮灯反制」是设计的一部分，不能因为站在旁边就永远听不见。
+        """
+        from ..materials import plant_def_for, plant_step_quiet
+        best = 0
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return 0
+        cell = self.cell(x, y)
+        if cell.plant:
+            definition = plant_def_for(cell.plant)
+            quiet = plant_step_quiet(cell.plant)
+            if quiet and (not definition.step_quiet_dark or not self._cell_is_lit(x, y)):
+                best = max(best, quiet)
+        for ny in range(max(0, y - 1), min(self.height, y + 2)):
+            for nx in range(max(0, x - 1), min(self.width, x + 2)):
+                if (nx, ny) == (x, y):
+                    continue
+                defender = self.cells[ny][nx].plant
+                if not defender:
+                    continue
+                definition = plant_def_for(defender)
+                if not definition.step_quiet or definition.step_quiet_radius < 1:
+                    continue
+                if definition.step_quiet_dark and self._cell_is_lit(nx, ny):
+                    continue
+                best = max(best, definition.step_quiet)
+        return min(1, best)
+
+    def _cell_is_lit(self, x: int, y: int) -> bool:
+        from .vision.glow import lit as _lit
+        try:
+            return bool(_lit(self, x, y))
+        except Exception:
+            return False
+
     def _emit_step_noise(self, positions, *, emitter: Entity | None = None,
                          by_player: bool = False) -> None:
         """一次真实接触地面的移动，在每个新落脚点各发一次足音。
@@ -1092,6 +1229,14 @@ class EnemyMixin(PursuitMixin):
             base, _ = self._step_noise_breakdown(x, y)
             if emitter is not None and emitter.anomaly_kind == "强烈异象":
                 base += 1
+            # 植物消音：最低到 0（真的没有声音），不与「脚步准备」那条通道
+            # 相加——地表给的压制只取最强一次。
+            #
+            # 2026-10-26 用户实测：踏入时的「减声括号／慢行缠线」提示动画观感差、
+            # 又只是把格子详情里已有的数字再演一遍，已整体下线（连同装饰层轻摆）。
+            # 减声与加时本身照旧结算，只是不再有那层字。
+            quiet = self._plant_step_quiet(x, y)
+            base = max(0, base - quiet)
             if base <= 0:
                 continue
             self._step_noise_reduction = self._step_noise_reduction_for(x, y)
@@ -1245,7 +1390,9 @@ class EnemyMixin(PursuitMixin):
                      category: str = "generic", source: str = "",
                      triggers_rewards: bool = True, announce: bool = True,
                      emitter: Entity | None = None,
-                     affect_enemies: bool = True) -> None:
+                     affect_enemies: bool = True,
+                     chain: bool = False,
+                     relay: tuple[int, int] | None = None) -> None:
         """声波脉冲（docs §16.4 距离梯度）：两档听觉反应。
 
         - 内圈 ``≤ ⌈radius/2⌉``：未察觉/怀疑 → 追踪（原口径），freeze_near
@@ -1256,12 +1403,54 @@ class EnemyMixin(PursuitMixin):
         - 已处于追踪态的异象不受梯度影响；
         - ``full_alert=True``：强诱引道具（汽笛等）全员内圈待遇，不被梯度削弱。
         """
+        if not chain:
+            from .expansion_abilities import intercept_delayed_sound
+            if intercept_delayed_sound(self, x, y, radius, by_player=by_player,
+                    category=category, source=source, freeze_near=freeze_near,
+                    full_alert=full_alert, triggers_rewards=triggers_rewards,
+                    announce=announce, affect_enemies=affect_enemies):
+                return
         if emitter is None and by_player and (x, y) == (self.player.x, self.player.y):
             emitter = self.player
+        # 扩展包声源装备（2026-10-25）：空椅先吸一声、铁漏斗/指挥棒改向，
+        # 全部在既有传播之前完成；chain=True 表示这一声本身是转发或延迟重放，
+        # 不再触发吸收、改向与分账（否则会自激）。
+        from ..equipment import gear_tools
+        if not chain and gear_tools.absorb_into_chair(self, x, y, radius, category, source):
+            return
+        if not chain and by_player and category == "lure":
+            x, y, radius = gear_tools.redirect_lure(self, x, y, radius)
+            # 「返场」重放的是这一声**实际**落点（齿轮改向之后），不是玩家点的坐标；
+            # 重放本身（chain）不改写记录，否则一次诱引能被返场无限续命。
+            self.last_lure = {"x": int(x), "y": int(y), "radius": int(radius),
+                              "full_alert": bool(full_alert),
+                              "turn": int(getattr(self, "time", 0) or 0),
+                              "depth": int(getattr(self, "depth", 0) or 0)}
         radius, _ = self._pulse_radius_breakdown(x, y, radius, by_player=by_player,
                                                  category=category, emitter=emitter)
+        # 记忆碎片的缓冲（扩展包「地毯下的一粒沙」「门缝里的晚安」）：扣在**实际声径**
+        # 上，否则瓷墙／回声的倍率会把「少一格」重新放大回去。
+        # 转发/延迟重放（chain）不吃额度，否则一次碎裂能喂饱多条缓冲。
+        if not chain and (by_player or emitter is self.player or (
+                emitter is None and (x, y) == (self.player.x, self.player.y))):
+            from . import memory_buffers
+            radius = memory_buffers.reduce_noise(self, category, radius)
         if radius <= 0:
             return
+        if not chain and by_player and category == "lure":
+            gear_tools.schedule_echo(self, x, y, radius, source)
+        if not chain:
+            exit_point = gear_tools.pipe_exit(self, x, y)
+            if exit_point is not None:
+                # ``relay`` 记的是这一声**真正进来的那一头**（传声筒入口）：
+                # 线索里留下它，洞察「一声两种来处」才能说明「原声不在这一头」。
+                self._sound_pulse(exit_point[0], exit_point[1], radius,
+                                  freeze_near=freeze_near, by_player=by_player,
+                                  full_alert=full_alert, category=category,
+                                  source=source, triggers_rewards=False,
+                                  announce=False, emitter=None,
+                                  affect_enemies=affect_enemies, chain=True,
+                                  relay=(int(x), int(y)))
         # §22 C：一个声源只算一张最大余量声场，各接收者读取同一结果。
         from .acoustics import hears as _hears, propagate, residual_at
         from ..data.perception import perception_profile
@@ -1269,12 +1458,34 @@ class EnemyMixin(PursuitMixin):
         # §11 H1：按真实声路登记玩家线索；没传到的声音不产生线索。
         # 凝听期间接收阈值 −4（docs 261022 §16.3），不放大声源本身。
         player_residual = residual_at(field, self.player.x, self.player.y)
+        # 2026-10-25 噪音条：记录这次真实声场在玩家**周围区域**的强度，
+        # 供状态栏显示「我附近有多吵」——来源可以是任何生物/环境，不必是自己。
+        ambient = -10 ** 9
+        for (ax, ay), remaining in field.items():
+            if max(abs(ax - self.player.x), abs(ay - self.player.y)) <= NOISE_AMBIENT_RADIUS:
+                ambient = max(ambient, int(remaining))
+        events = getattr(self, "_ambient_noise_events", None)
+        if events is None:
+            events = []
+            self._ambient_noise_events = events
+        events[:] = [event for event in events
+                     if self.time - int(event[0]) < NOISE_AMBIENT_TURNS]
+        events.append((int(self.time), int(x), int(y), int(ambient),
+                       int(player_residual), int(radius), bool(by_player),
+                       str(category)))
+        if len(events) > 64:
+            del events[:-64]
         if player_residual >= self._listen_threshold():
             self._record_hearing_clue(x, y, category, source or category, radius,
-                                      field=field, residual=player_residual)
+                                      field=field, residual=player_residual,
+                                      relay=relay)
             self._note_listen_evidence(x, y, category, source or category, player_residual)
         if emitter is self.player:
             self._consume_sound_preparations(x, y, category)
+        if (not by_player and category=='lure' and (x,y)!=(self.player.x,self.player.y)
+                and player_residual>=self._listen_threshold() and self._masked_step_active()):
+            from . import memory_buffers
+            self.masked_step_until+=memory_buffers.spend(self,'preparation:masked_step')
         self._maybe_grant_masked_step(x, y, radius, field=field)
         inner = (radius + 1) // 2  # ⌈radius/2⌉
         reached = 0
@@ -1331,27 +1542,24 @@ class EnemyMixin(PursuitMixin):
             plan = enemy.path_plan
             if not (plan and plan[-1] == (x, y)):
                 self._plan_chase(enemy, x, y)
-        if announce and reached:
+        report_audible = (by_player or (player_residual >= self._listen_threshold()
+                          and abs(x-self.player.x)+abs(y-self.player.y) <= self._listen_cap()))
+        if announce and reached and report_audible:
             self.messages.append(tr("声波脉冲扫过，{count} 个失控意识听见了声源。", count=reached))
-        if announce and suspicious:
+        if announce and suspicious and report_audible:
             self.messages.append(tr("{count} 个失控意识起了疑心，正在靠近声源。", count=suspicious))
         if radius > 0:
             # 声波（docs §16.3 可读性）：登记最近一次脉冲供 UI 做低频可视化。
             # 纯演出字段，不入存档（读档后自然消失）；seq 供 UI 差分去重。
-            # 2026-10-22：不再播放扩散环；UI 只需「声场实际到达、且标准听阈
-            # 能听见的格子」与来源是否玩家自身动作。``field`` 的残量单位见
-            # core/acoustics.py；标准听阈为 0，残量 <0 只有更高听觉才会听见，
-            # 不作为默认蓝色可视化（避免把「只有极灵敏者能听见」的边角也画亮）。
+            # UI receives only the small, actually heard patch. Tail-only waves
+            # use a coarse local center instead of exposing the distant source.
+            from .sound_visuals import heard_wave
             self._sound_pulse_seq = getattr(self, "_sound_pulse_seq", 0) + 1
             self.last_sound_pulse = {
                 "seq": self._sound_pulse_seq,
                 "x": x, "y": y, "radius": radius, "world_time": self.time,
                 "by_player": bool(by_player),
-                # 玩家自身动作不渲染声音特效，连 cells 都不必生成/保存。
-                "cells": () if by_player else tuple(
-                    (int(cx), int(cy)) for (cx, cy), residual in field.items()
-                    if residual >= 0
-                ),
+                **heard_wave(self, field, x, y, by_player=by_player),
             }
         if by_player and triggers_rewards:
             if radius > 0:
@@ -1397,11 +1605,17 @@ class EnemyMixin(PursuitMixin):
                     due = max(due, harm)
                 enemy.portent_debt[key] = debt
             if due:
+                _damage_number_before = enemy.integrity
                 enemy.integrity = max(0, enemy.integrity - due)
+                from .hit_events import note_integrity_loss
+                note_integrity_loss(self, enemy, _damage_number_before)
                 enemy.alert_state = "追踪"
         # 连续性效果，与玩家侧同源：过电 + 脚下静电尘、可燃 + 紧邻火焰。
         if "charged" in enemy.portents and self._cell_holds_material(cell, "静电尘"):
+            _damage_number_before = enemy.integrity
             enemy.integrity = max(0, enemy.integrity - amount)
+            from .hit_events import note_integrity_loss
+            note_integrity_loss(self, enemy, _damage_number_before)
             enemy.alert_state = "追踪"
         if "volatile" in enemy.portents:
             burning = any(
@@ -1415,7 +1629,10 @@ class EnemyMixin(PursuitMixin):
                 if 0 <= nx < self.width and 0 <= ny < self.height
             )
             if burning:
+                _damage_number_before = enemy.integrity
                 enemy.integrity = max(0, enemy.integrity - amount)
+                from .hit_events import note_integrity_loss
+                note_integrity_loss(self, enemy, _damage_number_before)
                 enemy.alert_state = "追踪"
 
     # ------------------------------------------------------------------
@@ -1528,6 +1745,10 @@ class EnemyMixin(PursuitMixin):
             for other in self.enemies
         ) and enemy.trait == "pack_weave":
             power += 1
+        # 异象的贴身打击本身也有世界噪音：越重的一击传得越远。
+        self._sound_pulse(enemy.x, enemy.y, 3 + min(3, power),
+                          category="enemy_attack", source=tr(enemy.label),
+                          announce=False, triggers_rewards=False)
         if getattr(self, "stasis_turns", 0) > 0:
             # 凝滞：时间在体表结成壳——创伤与附加征兆全部被吸收。
             self.messages.append(tr("凝滞的硬壳吸收了这一击。"))
@@ -1552,6 +1773,12 @@ class EnemyMixin(PursuitMixin):
             # 镜面格挡：每段各挡一次（反击震毙攻击者则剩余段作废）。
             if self.parry_charges > 0:
                 self.parry_charges -= 1
+                from .hit_events import note_hit
+                note_hit(
+                    self, kind="enemy_strike", source=(enemy.x, enemy.y),
+                    impact=(self.player.x, self.player.y), target_id=self.player.id,
+                    amount=0, resource="blocked", blocked=True,
+                )
                 if self.parry_charges <= 0:
                     # §17：次数型征兆真正用完，同样进入结束后保护。
                     self.parry_until = 0
@@ -1569,6 +1796,12 @@ class EnemyMixin(PursuitMixin):
                 self.inventory.remove(hung)
                 self.hang_item_id = None
                 self._refresh_hang()
+                from .hit_events import note_hit
+                note_hit(
+                    self, kind="enemy_strike", source=(enemy.x, enemy.y),
+                    impact=(self.player.x, self.player.y), target_id=self.player.id,
+                    amount=0, resource="blocked", blocked=True,
+                )
                 self.messages.append(tr("打击落在了挂着的{hung}上，替你挡下了这次创伤。", hung=tr(hung.name)))
                 enemy.alert_state = "追踪"
                 continue
@@ -1590,7 +1823,27 @@ class EnemyMixin(PursuitMixin):
                     trauma = 9 + (trauma - 9) // 2
                 if lucidity_trauma >= 9:
                     lucidity_trauma = 9 + (lucidity_trauma - 9) // 2
+            before_mind, before_lucidity = self.mind, self.lucidity
             self._identity_direct_trauma(enemy, trauma, lucidity_trauma)
+            lost_mind = max(0, before_mind - self.mind)
+            lost_lucidity = max(0, before_lucidity - self.lucidity)
+            if lost_mind or lost_lucidity:
+                from .hit_events import note_hit
+                note_hit(
+                    self, kind="enemy_strike", source=(enemy.x, enemy.y),
+                    impact=(self.player.x, self.player.y), target_id=self.player.id,
+                    amount=lost_mind + lost_lucidity,
+                    resource="mind" if lost_mind else "lucidity",
+                    origin=enemy.anomaly_kind or enemy.label,
+                    damage_type=enemy.trauma_type,
+                    killed=bool(self.run_over),
+                )
+                if "电" not in str(getattr(enemy, "trauma_type", "")):
+                    from ..equipment.expansion_runtime import reactive_field
+                    field_cells = reactive_field(self, enemy)
+                    if field_cells:
+                        self.messages.append(tr("反扣的接地腕带沿导电介质接通了 {n} 格电场。",
+                                                n=field_cells))
             landed += 1
             if self.run_over:
                 # 玩家已沉没：不再结算剩余段。
@@ -1742,6 +1995,11 @@ class EnemyMixin(PursuitMixin):
                 continue
             # §22 B：调查任务按世界回合过期；读档不重抽、不延长。
             self._prune_investigations(enemy)
+            if enemy.relation == "玩偶意识体":
+                # Tutorial targets are fixed props, including while spooked.
+                enemy.move_clock = 0.0
+                enemy.path_plan.clear()
+                continue
             if "spooked" in enemy.portents:
                 # 惊散（docs §15.5，地图侧篡改「退散」）：不索敌、不攻击、
                 # 不用技能，每步选择使与玩家距离增大的可通行格；无路可退
@@ -1751,28 +2009,6 @@ class EnemyMixin(PursuitMixin):
                 while enemy.move_clock + 1e-9 >= move_time:
                     enemy.move_clock -= move_time
                     if not self._spooked_flee_step(enemy):
-                        break
-                continue
-            if enemy.relation == "玩偶意识体":
-                # 玩偶意识体（教学层）：不索敌、不攻击，只按自己的迟缓节拍
-                # 原地附近踱步，让这张固定地图看着有一点生气。
-                enemy.move_clock += amount
-                move_time = self._effective_move_time(enemy)
-                while enemy.move_clock + 1e-9 >= move_time:
-                    enemy.move_clock -= move_time
-                    import random as _random
-
-                    step_rng = _random.Random(self.seed ^ (self.time * 131) ^ stable_token(enemy))
-                    order = list(((1, 0), (-1, 0), (0, 1), (0, -1)))
-                    step_rng.shuffle(order)
-                    for nx, ny in ((enemy.x + dx, enemy.y + dy) for dx, dy in order):
-                        if not (0 < nx < self.width - 1 and 0 < ny < self.height - 1):
-                            continue
-                        if self.cell(nx, ny).solid or self.entity_at(nx, ny) is not None:
-                            continue
-                        if (nx, ny) == (self.player.x, self.player.y):
-                            continue
-                        enemy.x, enemy.y = nx, ny
                         break
                 continue
             # ---- 主动技能（2026-10-08）：数据层绑定的异象走新机制 ----
@@ -2023,6 +2259,20 @@ class EnemyMixin(PursuitMixin):
             self.last_harm_source = enemy.label
             self.last_harm_time = self.time
 
+    @staticmethod
+    def _enemy_skill_noise(kind: str, spec: dict) -> int:
+        base = {
+            "ranged": 6, "aoe_burst": 8, "ignite": 5, "bomb": 6,
+            "clear_terrain": 5, "erode_walls": 7, "emanate": 4,
+        }.get(kind, 5)
+        return max(3, min(12, base + max(0, int(spec.get("radius", 0) or 0))))
+
+    def _emit_enemy_skill_noise(self, enemy: Entity, kind: str, spec: dict) -> None:
+        self._sound_pulse(enemy.x, enemy.y,
+                          self._enemy_skill_noise(kind, spec),
+                          category="enemy_skill", source=tr(enemy.label),
+                          announce=False, triggers_rewards=False)
+
     def _enemy_skills(self, enemy: Entity, amount: int) -> None:
         """异象技能 v3（2026-09-22）：定义表 "skills" 驱动的周期技能组。
 
@@ -2114,6 +2364,8 @@ class EnemyMixin(PursuitMixin):
             elif kind == "emanate":
                 fired = True
                 self._skill_emanate(enemy, spec)
+            if fired:
+                self._emit_enemy_skill_noise(enemy, kind, spec)
             enemy.skill_clocks[key] = 0.0 if fired else min(clock, every)
 
     @animate_legacy('ranged', 'needle', 'line')
@@ -2132,6 +2384,9 @@ class EnemyMixin(PursuitMixin):
                  for x in range(center[0]-radius, center[0]+radius+1) if self.inside_board(x, y)]
         emit_cast(self, CastVisual('blast', 'blast'), 'legacy:aoe_burst',
                   center, cells, source_id=enemy.id)
+        self._sound_pulse(center[0], center[1], max(6, radius + 5),
+                          category="enemy_skill", source=tr(enemy.label),
+                          announce=False, triggers_rewards=False)
         if max(abs(self.player.x - enemy.aoe_tx), abs(self.player.y - enemy.aoe_ty)) <= radius:
             self._skill_trauma(enemy, power)
             self.messages.append(tr("冲击波扫过——{enemy}的震波命中了你！", enemy=tr(enemy.label)))

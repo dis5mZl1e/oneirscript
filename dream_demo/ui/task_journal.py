@@ -159,8 +159,8 @@ def journal_lines(state: Any, *, width: int, actionable: bool = False,
         if quest=='active':
             uid=state.tutorial.get('practice_item_uid')
             have=any(i.instance_id==uid for i in state.inventory)
-            add(Text(tr('练习委托：{status}；在物品区取练习玻璃杯，交给出口纸偶。',
-                        status=tr('待交付' if have else '缺少练习玻璃杯')),style=FC['condition']))
+            add(Text(tr('练习委托：{status}；在物品区取练习玻璃瓶，交给出口纸偶。',
+                        status=tr('待交付' if have else '缺少练习玻璃瓶')),style=FC['condition']))
         for key,label in course_controls(state):
             index=offset+len(modules)
             offset+=1
@@ -183,7 +183,12 @@ def course_controls(state):
     controls=[('pause','展开／收起教学提示'),('reset','归还遗失教材／恢复练习资源'),
               ('noise','开始／重置声音练习（G 区）'),('environment','开始／重置环境练习（H 区）'),
               ('hearing','开始／重置听闻练习（G 区）'),
-              ('tamper_samples','准备篡改液体样本（F 区）'),('passives','借用记忆与洞察教材（本层有效）')]
+              ('tamper_samples','准备篡改液体样本（F 区）'),('passives','借用记忆与洞察教材（本层有效）'),
+              ('event','开始／重置事件练习（A 区）'),('plants','开始／重置植物练习（E 区）'),
+              ('reaction','准备材料反应样本（E 区）'),('magazine','借出弹匣武器（练习）'),
+              ('drug','借出浓缩咖啡因（练习）'),('anomaly','开始／重置异象练习（E 区）'),
+              ('spark','借出火花构想（本层有效）'),('circuit','开始／重置机关电路练习（E 区）'),
+              ('trap','开始／重置陷阱练习（E 区）')]
     if state.tutorial.get('practice_quest')=='active': controls.append(('abandon','放弃练习委托（可重接）'))
     return controls
 

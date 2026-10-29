@@ -40,9 +40,16 @@ _STRUCTURE_WALL = "千层叠岩"
 _INNER_WALL = "坚硬聚合墙"
 _PERLIN_WALLS = ("坚硬聚合墙", "千层叠岩", "梦魇岩")
 
-# 内层覆盖区尺寸（v1 草图比例）——**上限**：实际按几何轮廓能容纳的最大内接
-# 正方形落位，模板再等比缩放（见 _inner_placement / _stamp_inner_template）。
-_INNER_SIZE = {28: (110, 110), 29: (120, 120), 30: (96, 96)}
+# 内层覆盖区尺寸——**上限**：实际按几何轮廓能容纳的最大内接矩形落位，
+# 模板再等比缩放（见 _inner_placement / _stamp_inner_template）。
+# 2026-10 收尾层压缩：剧情区不再铺满整个内圈，改为紧凑内接矩形（最小边 ≥60），
+# 让终局演出更集中、跑图更短，同时仍给内层 vault 留出落位空间。
+_INNER_SIZE = {28: (84, 80), 29: (92, 92), 30: (76, 76)}
+
+# 内层草图模板的参考画布：模板坐标仍按 v1 设计稿书写，再等比缩放到实际
+# 覆盖区。_INNER_SIZE 收小后模板与固定 vault 位一起按比例缩进，坐标无需重写
+#（参考画布大于覆盖区上限，缩放系数 kx/ky ≤ 1，模板不会越出覆盖区）。
+_TEMPLATE_REF = {28: (110, 110), 29: (120, 120), 30: (96, 96)}
 
 # 深层内容预算：外层 vault 位 / 液体池 / 气团 / 异象区间 / 小事件数。
 EPILOGUE_BUDGET: dict[int, dict] = {
@@ -278,6 +285,114 @@ def _is_circuit_vault(vault) -> bool:
         if kind in TEMPLATE_ONLY_CIRCUIT_WALLS or kind == TRAP_PLATFORM
     } | {WIRE_CHAR, PRESSURE_CHAR}
     return any(set(row) & forbidden for row in vault.pattern)
+
+
+# 外层墙种补全的分块尺寸：整图直接交给主梦的 _assign_wall_kinds 会因为
+# 「清醒石」候选的 O(实心格²) 邻域检查在 200×200 画布上耗时十余秒；按块调用
+# 把每次的实心格数压到几百，结果仍是同一套区域生长规则。
+_OUTER_WALL_TILE = 40
+
+
+def _enrich_outer_walls(
+    cells: list[list[object]],
+    width: int,
+    height: int,
+    depth: int,
+    seed: int,
+    inner_rect: tuple[int, int, int, int],
+) -> int:
+    """给外层 Perlin 裸墙补上主梦那套墙种层次（不改变实心性/轮廓）。
+
+    意识边界、内层模板结构、vault/桌面/门/容器都经 vault_kinds 原样保留；
+    只改写当前墙种仍是 _PERLIN_WALLS 的外层格。返回被改写的格数。
+    """
+    from ..core.generation import GenerationMixin as _Generation
+    from ..materials import WALKABLE_FEATURE_WALLS
+    from ..materials.logic import AMPLIFIER_WALL, LOGIC_KINDS, TRAP_PLATFORM
+    from ..materials.walls import wall_pool_for_depth
+
+    perlin_kinds = set(_PERLIN_WALLS)
+    # 可步行特征墙（云块/枕木）的 configure_wall 会把 solid 置 False——外层墙
+    # 补色绝不能选到它们，否则实心岩墙会被挖出可穿行洞（连通性与轮廓都变了）。
+    forbidden = (set(LOGIC_KINDS) | {AMPLIFIER_WALL, TRAP_PLATFORM, "意识边界"}
+                 | set(WALKABLE_FEATURE_WALLS))
+    ix, iy, iw, ih = inner_rect
+    rng = random.Random(seed ^ (depth * 0x77A11))
+    enriched = 0
+    for tile_y in range(0, height, _OUTER_WALL_TILE):
+        tile_h = min(_OUTER_WALL_TILE, height - tile_y)
+        for tile_x in range(0, width, _OUTER_WALL_TILE):
+            tile_w = min(_OUTER_WALL_TILE, width - tile_x)
+            local_mask = [[False] * tile_w for _ in range(tile_h)]
+            protected_kinds: dict[tuple[int, int], str] = {}
+            eligible = False
+            for ly in range(tile_h):
+                gy = tile_y + ly
+                for lx in range(tile_w):
+                    gx = tile_x + lx
+                    cell = cells[gy][gx]
+                    if not cell.solid:
+                        continue
+                    local_mask[ly][lx] = True
+                    in_inner = ix <= gx < ix + iw and iy <= gy < iy + ih
+                    if in_inner or not cell.wall_kind or cell.wall_kind not in perlin_kinds:
+                        if cell.wall_kind:
+                            protected_kinds[(lx, ly)] = cell.wall_kind
+                    else:
+                        eligible = True
+            if not eligible:
+                continue
+            assignment = _Generation._assign_wall_kinds(
+                rng, local_mask, tile_w, tile_h, depth,
+                door_positions=set(), vault_kinds=protected_kinds, realm_id="",
+            )
+            for (lx, ly), kind in assignment.items():
+                cell = cells[tile_y + ly][tile_x + lx]
+                if not cell.solid or cell.wall_kind not in perlin_kinds:
+                    continue
+                if kind in forbidden or "导电" in kind or "逻辑" in kind:
+                    continue
+                if kind != cell.wall_kind:
+                    _configure(cell, kind)
+                    enriched += 1
+    # ---- 分块接缝补染 ----
+    # 每块只处理块内 1..w-2 的行列，块边界会留下原 Perlin 墙种，肉眼上是
+    # 40×40 的旧墙网格。这里把「仍是 Perlin 墙、且贴着已染正常墙」的接缝格
+    # 改染成邻格里出现最多的正常墙种；只换材质，不换实心性与轮廓。
+    source_kinds = (
+        set(wall_pool_for_depth(depth, realm_id="")) - forbidden - perlin_kinds
+    )
+    # 接缝是一圈一圈的：第一圈补染后会成为第二圈的来源，迭代到稳定为止
+    #（层高/层宽有界，最多 40 圈即收敛；实际 2–4 圈）。
+    for _ in range(_OUTER_WALL_TILE + 2):
+        leftover = [
+            (x, y)
+            for y in range(height)
+            for x in range(width)
+            if cells[y][x].solid and cells[y][x].wall_kind in perlin_kinds
+            and not (ix <= x < ix + iw and iy <= y < iy + ih)
+        ]
+        changed = 0
+        for x, y in leftover:
+            counts: dict[str, int] = {}
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
+                           (x + 1, y + 1), (x - 1, y - 1), (x + 1, y - 1), (x - 1, y + 1)):
+                if not (0 <= nx < width and 0 <= ny < height):
+                    continue
+                neighbor = cells[ny][nx]
+                if not neighbor.solid or neighbor.wall_kind not in source_kinds:
+                    continue
+                counts[neighbor.wall_kind] = counts.get(neighbor.wall_kind, 0) + 1
+            if not counts:
+                continue
+            # 并列时按墙种名排序取第一个，保证确定性（不依赖 dict 插入序）。
+            best = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+            _configure(cells[y][x], best)
+            changed += 1
+        enriched += changed
+        if not changed:
+            break
+    return enriched
 
 
 def generate_epilogue_layer(depth: int, seed: int) -> tuple[list[list[object]], dict]:
@@ -524,6 +639,23 @@ def generate_epilogue_layer(depth: int, seed: int) -> tuple[list[list[object]], 
                     loot_spots.append(loot)
                 break
 
+    # 兜底遗物落点：构造类模板没有 loot 台、街边神龛又塞不进位内时，仍要在
+    # 每个固定 vault 位留一个可拾取落点（位内可达开放格即可，宁缺毋滥）。
+    connected = reachable(cells, info["spawn"])
+    for pl, pt, pr, pb in info["loot_inner"]:
+        if any(pl <= lx <= pr and pt <= ly <= pb for lx, ly in loot_spots):
+            continue
+        fallback = [
+            (x, y)
+            for y in range(pt, pb + 1)
+            for x in range(pl, pr + 1)
+            if (x, y) in connected
+            and not cells[y][x].solid
+            and not cells[y][x].wall_kind
+        ]
+        if fallback:
+            loot_spots.append(fallback[rng.randrange(len(fallback))])
+
     # ---- 内层散墙微生长：覆盖区开放格撒少量小墙簇（deep-boundary-plan §2.4）----
     # 只落在无墙种的开放格，避开锚点（切比雪夫 ≤2）与内层 vault 保护罩；
     # 即便挡路，收尾 connect_anchors 还会自动凿通。
@@ -635,6 +767,15 @@ def generate_epilogue_layer(depth: int, seed: int) -> tuple[list[list[object]], 
     info["loot_spots"] = [spot for spot in loot_spots if spot not in sealed]
     info["inner"] = (inner_x, inner_y, inner_w, inner_h)
 
+    # ---- 外层裸墙补全墙种 ----
+    # 外层此前只有三种 Perlin 墙，缺少主梦那种连片功能墙/外露墙的层次，看起来
+    # 就是一片同色石墙。复用主梦的区域生长分配，但只改写外层 Perlin 墙：意识
+    # 边界、内层模板结构、vault/桌面/门/容器全部原样保留，逻辑/电路墙种丢弃。
+    info["outer_wall_kinds"] = _enrich_outer_walls(
+        cells, width, height, depth, seed,
+        (inner_x, inner_y, inner_w, inner_h),
+    )
+
     # ---- 模板锚点脱离意识边界 ----
     # 覆盖区的边界行列已验证可玩，但内接矩形放宽后，几何凹陷（如 28 层雪花
     # 底边的科赫湾谷）仍会穿入矩形内部——模板锚点可能恰好落在意识边界格上。
@@ -710,6 +851,47 @@ def generate_epilogue_layer(depth: int, seed: int) -> tuple[list[list[object]], 
     for _ in range(spec["gases"]):
         patch(spec["gas_kinds"][rng.randrange(len(spec["gas_kinds"]))], False)
 
+    # ---- 常规环境填充（地板变体 / 植物 / 地面容器 / 液体 / 气体）----
+    # 深层边界自带的地形生成只搭骨架；这里接回主梦的常规内容流水线。
+    # 必须在 connect_anchors 之前：地面容器是固体，收尾连通修复需要绕开/凿通。
+    # 受保护格 = 全部剧情锚点 + 内层固定 vault 位外扩 1 格，填充前后保持原样。
+    from ..core.realm_environment import REALM_FLOOR_PALETTES, fill_environment
+
+    protected: set[tuple[int, int]] = {info["spawn"]}
+    protected.update(info["events"].values())
+    protected.update(info["accept"])
+    protected.update((px, py) for px, py, _ in info["enemies"])
+    protected.update(info["loot_spots"])
+    if info["npc"]:
+        protected.add(info["npc"])
+    protected.update((entry["x"], entry["y"]) for entry in info["scene_events"])
+    protected.update(pos for pos, _ in info["structure_npcs"])
+    for pl, pt, pr, pb in info["loot_inner"]:
+        for py in range(pt - 1, pb + 2):
+            for px in range(pl - 1, pr + 2):
+                protected.add((px, py))
+    protected = {
+        (px, py) for px, py in protected
+        if 0 <= px < width and 0 <= py < height
+    }
+    info["environment"] = fill_environment(
+        cells,
+        seed=seed,
+        depth=depth,
+        realm_id="epilogue",
+        protected=protected,
+        palette=REALM_FLOOR_PALETTES["epilogue"],
+        base_coverage=0.55,
+        plants=True,
+        plant_coverage=0.055,
+        containers=True,
+        doorway_guard=True,
+        liquids=True,
+        liquid_patch_count=max(4, len(open_cells) // 1800),
+        gases=True,
+        spawn=info["spawn"],
+    )
+
     info["width"], info["height"] = width, height
     from .epilogue_paths import connect_anchors
     connected = connect_anchors(cells, info)
@@ -732,15 +914,16 @@ def _stamp_inner_template(
 ) -> dict:
     """把内层草图模板盖在画布上，返回 info（锚点/NPC/异象清单）。
 
-    模板用**参考坐标系**（`_INNER_SIZE[depth]` 见方）书写，再按实际覆盖区尺寸等比
-    缩放落格——几何轮廓能容纳多大的内接正方形，模板就自动缩到多大，不会因为尺寸
-    不符而把意识边界轮廓凿穿。
+    模板用**参考坐标系**（`_TEMPLATE_REF[depth]` 见方，即 v1 设计稿尺寸）书写，
+    再按实际覆盖区尺寸等比缩放落格——几何轮廓能容纳多大的内接矩形，模板就自动
+    缩到多大，不会因为尺寸不符而把意识边界轮廓凿穿。参考画布与覆盖区上限分开
+    后，收窄覆盖区（_INNER_SIZE）无需重写模板坐标。
 
     覆盖区先整体清空——剧情模板优先级最高，强制覆写一切既有地形。
     """
     from ..core.entities import Cell
 
-    ref_w, ref_h = _INNER_SIZE[depth]
+    ref_w, ref_h = _TEMPLATE_REF[depth]
     kx, ky = w / ref_w, h / ref_h
 
     def X(rx: int) -> int:
@@ -807,6 +990,19 @@ def _stamp_inner_template(
         info["events"]["gate"] = (X(cx), Y(hall_top + 3))
         info["npc"] = (X(left + 6), Y(bottom - 2))
         info["spawn"] = (X(cx), Y(bottom - 2))
+        # 档案大厅加压：中央门厅直通之外，两侧各加一列带缺口的书架隔断，
+        # 贴外墙再排几处壁龛；门厅→出生点、三展室→归档门的动线保持畅通。
+        hall_lo, hall_hi = hall_top + 4, bottom - 5
+        shelf_gaps = tuple(range(hall_lo + 6, hall_hi, 8))
+        for rx in (cx - 20, cx + 20):
+            vline(hall_lo, hall_hi, rx, gaps=shelf_gaps)
+        for ry in range(hall_lo + 3, hall_hi, 11):
+            hline(left, left + 7, ry)
+            hline(right - 7, right, ry)
+        # 展室之间的壁柱（只落在房间间隙，不侵入三间展室的 vault 位）。
+        for rx in (starts[0] + room_w + 3, starts[1] + room_w + 3):
+            vline(top + 4, top + room_h - 4, rx,
+                  gaps=tuple(range(top + 8, top + room_h - 4, 8)))
         # 内层南墙缝隙口（外层 → 内层入口）
         hline(0, ref_w - 1, ref_h - 1, gaps=(cx - 4, cx, cx + 4))
     elif depth == 29:
@@ -842,6 +1038,15 @@ def _stamp_inner_template(
         hline(c0, c0 + cs, c1)
         hline(c0, c0 + cs, c1 + cs, gaps=(c0 + cs // 2,))
         info["events"]["gate"] = (X(c0 + cs // 2), Y(c1 + cs // 2))
+        # 审判庭内部加压：判席长排 + 四角列柱，中央中轴与两处门位的连线
+        #（西门 → 承担点、南门 → 承担点）保持整行/整列无墙。
+        mid = c0 + cs // 2
+        for ry in (c1 + 10, c1 + cs - 10):
+            hline(c0 + 4, mid - 5, ry)
+            hline(mid + 5, c0 + cs - 4, ry)
+        for rx in (c0 + 10, c0 + cs - 10):
+            for ry0 in (c1 + 5, c1 + cs - 12):
+                vline(ry0, ry0 + 3, rx)
         info["npc"] = (X(left + 8), Y(bottom - 2))
         info["spawn"] = (X(cx), Y(bottom - 2))
         hline(0, ref_w - 1, ref_h - 1, gaps=(cx - 3, cx, cx + 3))
@@ -874,11 +1079,36 @@ def _stamp_inner_template(
         info["enemies"].append((X(cx), Y(ch_top + 8), "anomaly.scribe"))
         info["events"]["desk"] = (X(cx), Y(ch_bottom - 3))
         info["spawn"] = (X(cx), Y(bottom - 2))
+        # 外环壁龛：从外墙向环廊内伸出的短龛，给空旷外环一点建筑节奏。
+        for ry in range(top + 8, bottom - 6, 9):
+            hline(left, left + 2, ry)
+            hline(right - 2, right, ry)
+        for rx in range(left + 12, right - 10, 12):
+            vline(top, top + 2, rx)
+            vline(bottom - 2, bottom, rx)
+        # 记忆回廊书架：上/下两条书列 + 内侧短书架；行位避开两侧固定 vault
+        # 位（参考坐标 y37–68）与四段记忆锚点所在行，缺口留作通行。
+        for ry in (mid_top + 4, mid_top + 12, mid_bottom - 8, mid_bottom - 4):
+            hline(mid_left + 4, mid_right - 4, ry,
+                  gaps=tuple(range(mid_left + 10, mid_right - 4, 12)))
+        for rx in (mid_left + 2, mid_right - 2):
+            vline(mid_top + 4, mid_top + 12, rx)
+            vline(mid_bottom - 8, mid_bottom - 4, rx)
         hline(0, ref_w - 1, ref_h - 1, gaps=(cx - 2, cx, cx + 2))
 
     for x, y in openings:
         if ox <= x < ox + w and oy <= y < oy + h:
             clear(x, y)
+
+    # 加压结构不得压住剧情锚点：全部结构落笔完成后，把锚点格统一清空
+    #（包括内坛执笔者站位；connect_anchors 也会兜底，但生成期就该留空）。
+    story_anchors = [info["spawn"], *info["events"].values(), *info["accept"]]
+    if info["npc"]:
+        story_anchors.append(info["npc"])
+    story_anchors.extend((x, y) for x, y, _ in info["enemies"])
+    for ax, ay in story_anchors:
+        if ox <= ax < ox + w and oy <= ay < oy + h:
+            clear(ax, ay)
     return info
 
 

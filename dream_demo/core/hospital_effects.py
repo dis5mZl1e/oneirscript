@@ -300,7 +300,10 @@ class HospitalEffectMixin:
                 st['lymph_credit'] = st.get('lymph_credit', 0) + 1
                 if st['lymph_credit'] >= 2:
                     st['lymph_credit'] -= 2
+                    _damage_number_before = holder.integrity
                     holder.integrity = max(0, holder.integrity - 2)
+                    from .hit_events import note_integrity_loss
+                    note_integrity_loss(self, holder, _damage_number_before)
             else:
                 st['lymph_credit'] = 0
             wash = cell.liquid_kind == '洗兆液' and cell.liquid >= 4

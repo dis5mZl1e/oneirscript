@@ -131,8 +131,15 @@ class I18nFooter(Footer):
         nodes = list(super().compose())
         # 地图篡改键不是 Textual Binding（避免新游戏里按 C 前进时误触发世界面板）；
         # 这里手工放一个 FooterKey，点击走 action_world_tamper，键盘仍由 on_key 处理。
+        # 2026-10-24 键位治理 B6：键名与显示都读实际绑定（key_tamper），不再写死 C；
+        # 极简宿主（无 config 属性的 Demo app）回落默认 'c'。
         from textual.widgets._footer import FooterKey
-        nodes.append(FooterKey('c', 'C', tr('篡改'), 'world_tamper'))
+        try:
+            tamper_key = str(self.app.config.get("key_tamper") or "c")
+        except AttributeError:  # pragma: no cover - 极简宿主没有配置管理器
+            tamper_key = "c"
+        self._tamper_footer_key = tamper_key
+        nodes.append(FooterKey(tamper_key, tamper_key.upper(), tr('篡改'), 'world_tamper'))
         nodes = self._order_nodes(nodes)
         self._fit_grid(nodes=nodes)
         for node in nodes:
@@ -149,7 +156,13 @@ class I18nFooter(Footer):
 
     def _order_nodes(self, nodes):
         """常用键按 PREFERRED_KEYS 置顶，其余键保持传入的声明顺序。"""
-        order = {key: index for index, key in enumerate(self.PREFERRED_KEYS)}
+        preferred = list(self.PREFERRED_KEYS)
+        # 篡改键可重绑定（2026-10-24 键位治理 B6）：常用键表里的占位 'c'
+        # 换成 compose 时记下的实际键名，重绑定后篡改键仍排常驻首行。
+        tamper = str(getattr(self, "_tamper_footer_key", "") or "c")
+        if "c" in preferred:
+            preferred[preferred.index("c")] = tamper
+        order = {key: index for index, key in enumerate(preferred)}
         return sorted(nodes, key=lambda node: order.get(getattr(node, "key", None), len(order)))
 
     def _common_prefix(self, nodes) -> int:

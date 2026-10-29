@@ -19,10 +19,16 @@ def _weighted_pick(rng: random.Random, ids):
     return rng.choices(list(ids), weights=weights, k=1)[0]
 
 
+def _eligible(state, ids):
+    """书本三选一与随机习得共用同一资格口径（见 item_access.ability_learnable）。"""
+    from .item_access import ability_learnable
+    return [key for key in ids if ability_learnable(state, key)]
+
+
 def _combat_candidates(state, pool: str) -> tuple[str, ...]:
     """§13 学习经济：旧池 ≥3 时新组最多占 1/3（40% 概率）；旧池不足时补齐。"""
-    ids = sorted(key for key, definition in ABILITY_DEFINITIONS.items()
-                 if definition.get('acquire_pool', 'general') == pool)
+    ids = _eligible(state, sorted(key for key, definition in ABILITY_DEFINITIONS.items()
+                                  if definition.get('acquire_pool', 'general') == pool))
     rng = random.Random(f'{state.seed}:book:{getattr(state, "book_offer_sequence", 0)}:{pool}')
     old = [key for key in ids if not _is_combat_learning(key) and key not in state.abilities]
     new = [key for key in ids if _is_combat_learning(key) and key not in state.abilities]
@@ -43,8 +49,8 @@ def _combat_candidates(state, pool: str) -> tuple[str, ...]:
 def candidates(state, pool='general'):
     if pool == 'general':
         return _combat_candidates(state, pool)
-    ids = sorted(key for key, definition in ABILITY_DEFINITIONS.items()
-                 if definition.get('acquire_pool', 'general') == pool)
+    ids = _eligible(state, sorted(key for key, definition in ABILITY_DEFINITIONS.items()
+                                  if definition.get('acquire_pool', 'general') == pool))
     random.Random(f'{state.seed}:book:{getattr(state, "book_offer_sequence", 0)}:{pool}').shuffle(ids)
     return tuple(key for key in ids if key not in state.abilities)[:3]
 

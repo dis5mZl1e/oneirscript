@@ -7,12 +7,11 @@
 
 - 中英文各用各的句末标点（。 / .）与并列分隔（，、 / , ）；
 - 动作子句先去句末标点，条件子句去前导逗号，避免重复标点；
-- 程度以自然短语跟在动作后，不再用「词名：句子」的菜单格式；
+- 程度不再是句尾的「用的是『X』的力道」；程度词由动作子句自己放在谓语
+  中间（2026-10-28 用户要求：形容词副词在句子中间，语序符合中文习惯）；
 - 名称/引用里的标点不擅自改写，只处理子句边界。
 """
 from __future__ import annotations
-
-from ..i18n import tr
 
 _TERMINAL_PUNCT = "。．.!！?？;；"
 _LEADING_PUNCT = "，,、;；:： \t"
@@ -35,16 +34,16 @@ def clause_separator(language: str = "zh") -> str:
     return ", " if str(language).startswith("en") else "，"
 
 
-def assemble_sentence(base: str, *, degree: str | None = None,
+def assemble_sentence(base: str, *,
                       clauses: tuple[str, ...] | list[str] = (),
                       language: str = "zh") -> str:
-    """动作子句 + 程度 + 条件子句 → 恰好一个句末标点的完整句子。"""
+    """动作子句 + 条件子句 → 恰好一个句末标点的完整句子。
+
+    程度词不再由这里追加到句尾：它属于动作子句的谓语成分，必须和动词一起
+    出现在句子中间（见 core/tamper_world.py 的 insertion_preview）。这里只负责
+    条件子句的并列与统一句末标点。
+    """
     text = strip_terminal(base)
-    if degree:
-        if str(language).startswith("en"):
-            text = f'{text}, with the force of "{degree}"'
-        else:
-            text = tr('{sentence}，用的是「{name}」的力道', sentence=text, name=degree)
     cleaned = [strip_leading_clause_punct(clause) for clause in clauses if str(clause).strip()]
     cleaned = [clause for clause in cleaned if clause]
     unique: list[str] = []

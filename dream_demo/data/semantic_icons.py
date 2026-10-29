@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from rich.cells import set_cell_size
+from ..cell_size import set_cell_size
 from ..env_compat import flag as env_flag
 
 FIRST_BATCH = 69
@@ -54,6 +54,22 @@ def icons() -> dict[str, dict]:
             source = original.get(alias.get('reuse'))
             if source is not None and alias['key'] not in result:
                 result[alias['key']] = {**source, **alias}
+    # Growth pages request semantic keys, while expansion drawings live in the
+    # main game font. Register the actual call-site aliases, including both
+    # localized insight names, without copying or renumbering their outlines.
+    from .expansion.catalog import ENTRIES
+    for item in ENTRIES:
+        if item['category'] not in ('ability', 'insight', 'memory'):
+            continue
+        keys = (('ability.' + item['id'],) if item['category'] == 'ability' else
+                ('memory.' + item['id'],) if item['category'] == 'memory' else (
+            'insight.' + item['name_zh'], 'insight.' + item['name_en'],
+            'insight.' + item['id']))
+        for key in keys:
+            result[key] = dict(key=key, codepoint=f"U+{item['icon_codepoint']:04X}",
+                               font='Dream Strata Icons', color=item['icon_color'],
+                               source_character=item['source_character'],
+                               reason=item['icon_reason'])
     return result
 
 

@@ -93,6 +93,8 @@ FIELD_COLORS = {
     'effects': _PANEL_FIELDS['board_effects'],
     'cursor': _PANEL_FIELDS['board_cursor'], 'rotation': _PANEL_FIELDS['rotation'],
     'grammar': _PANEL_FIELDS['grammar'],
+    'effect_row': _PANEL_FIELDS['degree'], 'sentence_effect': _PANEL_FIELDS['effect'],
+    'selected': _PANEL_FIELDS['word'],
 }
 
 
@@ -619,9 +621,10 @@ class BoardEditorController:
                 word.was_focus = False
         self.message = tr('原意已写出，确认后生效。') if word.sentence_written else tr('原意已撤回：只占空间，不提供效果或语义。')
 
-    def render_inspect(self):
+    def render_inspect(self, width=40):
         word = self._selected_word()
-        text = Text(tr('选中意象'), style='bold ' + FIELD_COLORS['effects'])
+        from .panels import zone_strip
+        text = zone_strip(tr('选中意象'), width, color=FIELD_COLORS['selected'])
         if word is not None:
             text.append('\n' + self.item_name(word.definition_id, word.instance_id), style=CARRIED_IMAGE_STYLE)
             rotation = self.rotation if isinstance(word, Held) else word.rotation
@@ -637,24 +640,24 @@ class BoardEditorController:
                               if voice.response.role in COLUMN_ROLES else '未采用联想')
                 text.append('\n' + tr('({x},{y}) {role}：{meaning}',
                                       x=voice.x, y=voice.y, role=tr(role_label),
-                                      meaning=voice_text(voice)), style=FIELD_COLORS['effects'])
+                                      meaning=voice_text(voice)), style=_PANEL_FIELDS['condition'])
             if not voices:
-                text.append('\n' + tr('移动或旋转后，按占据的列自动解释。'), style=FIELD_COLORS['effects'])
-            text.append('\n' + tr('同一实例多格发声，数值只计一次。'), style=FIELD_COLORS['effects'])
+                text.append('\n' + tr('移动或旋转后，按占据的列自动解释。'), style=_PANEL_FIELDS['condition'])
+            text.append('\n' + tr('同一实例多格发声，数值只计一次。'), style=_PANEL_FIELDS['condition'])
         else:
             piece = self._piece_at_cursor()
             tool = self.tool
             piece_id = piece.piece_id if piece else tool[1] if tool and tool[0] == 'piece' else ''
             if piece_id:
                 spec = PIECE_SPECS[piece_id]
-                text.append('\n' + tr(spec.label) + '\n' + tr(spec.detail), style=FIELD_COLORS['effects'])
+                text.append('\n' + tr(spec.label) + '\n' + tr(spec.detail), style=_PANEL_FIELDS['condition'])
                 if spec.delay:
-                    text.append('\n' + tr('存下这一刻不耗想象力；释放时采用后续标点的消耗与冷却。'), style=FIELD_COLORS['effects'])
+                    text.append('\n' + tr('存下这一刻不耗想象力；释放时采用后续标点的消耗与冷却。'), style=_PANEL_FIELDS['condition'])
                 elif spec.feedback:
                     text.append('\n' + tr('想象 {cost} · 冷却 {cd}', cost=spec.cost,
-                                          cd=spec.cooldown), style=FIELD_COLORS['effects'])
+                                          cd=spec.cooldown), style=_PANEL_FIELDS['condition'])
             else:
-                text.append('\n' + tr('移动或旋转后，按占据的列自动解释。'), style=FIELD_COLORS['effects'])
+                text.append('\n' + tr('移动或旋转后，按占据的列自动解释。'), style=_PANEL_FIELDS['condition'])
         return text
 
     # ---- 渲染 ----
@@ -688,40 +691,65 @@ class BoardEditorController:
         text.append(tr('旋转 {rotation}°', rotation=self.rotation), style=FIELD_COLORS['rotation'])
         return self._wrap_fields(text, width)
 
+    def sentence_fragments(self, compiled=None) -> tuple[tuple[str, str], ...]:
+        """Main editor only: real board row coordinates and colored sentences."""
+        compiled = self._preview_compiled() if compiled is None else compiled
+        colors = (_PANEL_FIELDS['grammar'], _PANEL_FIELDS['word'],
+                  _PANEL_FIELDS['effect'], _PANEL_FIELDS['identity'])
+        fragments = []
+        for index, sentence in enumerate(compiled.sentences):
+            if index:
+                fragments.append(('\n', _PANEL_FIELDS['text']))
+            if sentence.source_rows:
+                rows = tr('、').join(str(row) for row in sentence.source_rows)
+                fragments.append((rows + ' ', _PANEL_FIELDS['text']))
+            fragments.append((sentence.text, colors[index % len(colors)]))
+        return tuple(fragments) or ((compiled.text, _PANEL_FIELDS['muted']),)
+
     def render_effects(self, width=80) -> Text:
-        """Actual draft contributions and conditions, separate from item lists."""
+        """Separate each sentence's effects, keeping heading and row colors distinct."""
+        width = max(1, width)
         compiled = self._preview_compiled()
-        lines = [tr('效果明细（确认后生效）')]
+        from .panels import zone_strip
+        text = zone_strip(tr('效果明细（确认后生效）'), width, color=FIELD_COLORS['effects'])
+
+        def add(value, color=FIELD_COLORS['sentence_effect']):
+            text.append('\n')
+            text.append(value, style=color)
+
         from ..equipment.positional import compile_formation
         from ..equipment.runtime import plan_action
         preview = plan_action(compile_formation(self.draft, column_roles=board_roles(self.draft)), self.state, 'melee')
         if preview.valid:
-            lines.append(tr('近战：基础 1 + 装备 {bonus} · 耗时 {time}',
-                            bonus=f'{preview.damage_increment:.3f}', time=f'{preview.base_time:g}'))
+            add(tr('近战：基础 1 + 装备 {bonus} · 耗时 {time}',
+                   bonus=f'{preview.damage_increment:.3f}', time=f'{preview.base_time:g}'))
         for sentence in compiled.sentences:
-            rows = '、'.join(str(row + 1) for row in sentence.source_rows)
-            lines.append(tr('第 {rows} 行 · {status}', rows=rows, status=tr(sentence.status)))
-            lines.extend(tr(detail) for detail in sentence.details)
+            rows = tr('、').join(str(row) for row in sentence.source_rows)
+            add(tr('第 {rows} 行 · {status}', rows=rows, status=tr(sentence.status)),
+                'bold ' + FIELD_COLORS['effect_row'])
+            for detail in sentence.details:
+                add(tr(detail))
             if sentence.reason:
-                lines.append(tr(sentence.reason))
+                add(tr(sentence.reason), _PANEL_FIELDS['muted'])
             if sentence.cost:
-                lines.append(tr(sentence.cost))
+                add(tr(sentence.cost), _PANEL_FIELDS['cost'])
+            add('─' * width, _PANEL_FIELDS['track'])
         effects = set()
         for placement in self.draft.placements:
             sense = default_sense(placement.definition_id)
             if sense.effect not in effects:
                 note = self._diminish_note(compiled, sense)
                 if note:
-                    lines.append(note)
+                    add(note)
                 effects.add(sense.effect)
         if not compiled.sentences:
-            lines.append(tr('逐行成句；位置与旋转改变含义，缺少行为则休眠。'))
+            add(tr('逐行成句；位置与旋转改变含义，缺少行为则休眠。'), _PANEL_FIELDS['muted'])
         note = self.piece_note()
         if note:
-            lines.append(note)
+            add(note, _PANEL_FIELDS['muted'])
         if self.message:
-            lines.append(self.message)
-        return self._wrap_fields(Text('\n'.join(lines), style=FIELD_COLORS['effects']), width)
+            add(self.message, _PANEL_FIELDS['muted'])
+        return self._wrap_fields(text, width)
 
     def hit_side(self, row: int, column: int) -> BoardListHit | None:
         return next((hit for hit in self.side_hits
@@ -756,8 +784,9 @@ class BoardEditorController:
                 if target and length:
                     self.side_hits.append(BoardListHit(row, start, start + length, source, target[0], target[1]))
 
-        left_heading = folded(Text(tr('盘上意象'), style='bold ' + FIELD_COLORS['grammar']), left_width)
-        right_heading = folded(Text(tr('行囊意象'), style='bold ' + FIELD_COLORS['grammar']), right_width)
+        from .panels import zone_strip
+        left_heading = [zone_strip(tr('盘上意象'), left_width, color=FIELD_COLORS['grammar'])]
+        right_heading = [zone_strip(tr('行囊意象'), right_width, color=FIELD_COLORS['grammar'])]
         for row in range(max(len(left_heading), len(right_heading))):
             pair(left_heading[row] if row < len(left_heading) else Text(),
                  right_heading[row] if row < len(right_heading) else Text())
@@ -1052,12 +1081,13 @@ class BoardEditorController:
                              str(span.style) if span.style else "grey66")
                             for span in sentence_line.spans])
                 if len(sentence.source_rows) > 1:
-                    row_numbers = "、".join(str(row + 1) for row in sentence.source_rows)
+                    row_numbers = tr('、').join(str(row + 1) for row in sentence.source_rows)
                     source_label = ("这项持续效果" if sentence.kind == "contract" else
                                     "这条反应" if sentence.kind == "reaction" else "这条语句")
-                    out.append(segments('  ' + source_label + '来自盘面第 ' + row_numbers + ' 行'))
+                    out.append(segments('  ' + tr('{source}来自盘面第 {rows} 行',
+                                    source=tr(source_label), rows=row_numbers)))
                 for detail in sentence.details:
-                    out.append(segments('  效果详情：' + detail))
+                    out.append(segments('  ' + tr('效果详情：') + tr(detail)))
                 out.append(segments('  ' + tr(sentence.status)))
                 if sentence.reason:
                     out.append(segments('  ' + sentence.reason))

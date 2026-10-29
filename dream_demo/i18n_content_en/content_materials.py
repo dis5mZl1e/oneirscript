@@ -408,8 +408,8 @@ EN_MATERIALS_SEP18: dict[str, str] = {
         "A gear lifted from the sanctum's hinge: doors swing smooth in your grip (vision +4).",
     "回廊里唯一的光。掷出去，炸成一圈更旺的火。":
         "The only light in the corridor. Throw it — it bursts into a fiercer ring of fire.",
-    "没有门框的环。戴着它，每一次崩解都推得更深（崩解推进 +4）。":
-        "A ring with no frame. Wear it and every dissolution digs deeper (dissolution gain +4).",
+    "没有门框的环。戴着它，每一次崩解都推得更深（崩解推进 +6）。":
+        "A ring with no frame. Wear it and every dissolution digs deeper (dissolution gain +6).",
     "无数门的呼吸": "The breathing of countless doors",
     "圣所门槛上渗出的泪。蹚过：想象力每 4 回合 +1。": "Tears seeping from the sanctum threshold: imagination +1 every 4 rounds.",
     "门之泪": "Door Tears",
@@ -586,8 +586,8 @@ EN_MATERIALS_SEP18: dict[str, str] = {
     "指尖涂着防滑的石墨粉。近战与弹体伤害 +1，且出手比常人快半拍（攻击基础耗时 −0.2）。":
         "Graphite-dusted fingertips. Melee and projectile damage +1, and you strike half a beat faster (attack base time −0.2).",
     "碑文护腕": "Epitaph Wristband",
-    "刻着一整圈墓志铭的旧表带：读得越熟，越分不清自己是不是碑里的人。心智创伤与清醒创伤各 −1。":
-        "An old wristband engraved with epitaphs: the better you know them, the less sure you are which side of the stone you're on. Mind and lucidity trauma −1 each.",
+    "刻着一整圈墓志铭的旧表带：读得越熟，越分不清自己是不是碑里的人。心智创伤与清醒创伤各 −2。":
+        "An old wristband engraved with epitaphs: the better you know them, the less sure you are which side of the stone you're on. Mind and lucidity trauma −2 each.",
     "逆行的沙漏": "Reversed Hourglass",
     "沙子往上落。戴它的人总觉得自己还有更多时间——清醒创伤 −2。":
         "The sand falls upward. Whoever wears it feels they have more time — lucidity trauma −2.",
@@ -609,4 +609,73 @@ EN_MATERIALS_SEP18: dict[str, str] = {
     "微型雷管": "Micro Detonator",
     "迷你版雷管：威力小些，胜在便宜、常见、舍得扔。":
         "A pocket-sized detonator: weaker, but cheap, common, and easy to part with.",
+    # ---- 被动/技能行补译（2026-10-24）----
+    "破墙续行｜挡路的低硬度墙体被它直接撞碎（「不绕开任何人」是字面意思）。":
+        "Wallbreaker | low-hardness walls in its path are simply smashed through ('goes around no one' is meant literally).",
+    "沉钟震波｜每 9 拍蓄力 2 拍后震荡身边 3×3（红底预警，快跑）。":
+        "Sunken Toll | every 9 beats it charges for 2 beats, then quakes the 3×3 around it (red warning tiles — run).",
+    "边缘侵蚀｜每 7 拍侵蚀身边 5×5 的墙体，剥落至塌。":
+        "Edge Erosion | every 7 beats it erodes the walls in a 5×5 around it, flaking them until they collapse.",
+    "蓝屏脉冲｜每 5 拍向周围一圈散出一次心智冲击。":
+        "Blue-screen Pulse | every 5 beats it emits a mind shock into the ring around it.",
+    "倒带｜命中你时把你沿攻击方向推回两格。":
+        "Rewind | on hit it pushes you two cells back along the attack.",
+    "传呼｜每 6 拍向视野内所有异象告知你的位置。":
+        "Pager | every 6 beats it pages your position to every anomaly in its sight.",
+    "雪花屏｜你看向它时，它的雪花会糊住你的视线。":
+        "Static Screen | when you look at it, its static blurs your sight.",
+    "存档｜静止时与一堆软盘没有区别；被击中后立刻读碟启动。":
+        "Save State | standing still it is just a pile of floppy disks; once hit it spins up at once.",
+    "屏保｜无碰撞漂浮，碰到你和异象都会把双方弹开一小段。":
+        "Screensaver | drifts without collision; touching you or an anomaly bounces both apart a little.",
+    "合唱｜与它同行的异象都不会轻易放弃追击。":
+        "Startup Chorus | anomalies traveling with it rarely give up the chase.",
+    "断链重连｜被解决后有概率在远处重新连线上线。":
+        "Reconnect | may re-link and come back online far away after being resolved.",
+    "渗墨｜身边不断积起黑墨（打碎它同样满地是墨）。":
+        "Ink Seep | black ink keeps pooling around it (smashing it spills just as much).",
+    "长镜凝视｜每 2 拍沿视线打击 4 格内的你。":
+        "Long Take | every 2 beats it strikes you along its line of sight, up to 4 cells away.",
+    "引燃咏叹｜每 6 拍点燃它最后一次看见你的地方（3×3）。":
+        "Pyre Aria | every 6 beats it ignites the last place it saw you (3×3).",
+    "拆封投掷｜每 8 拍朝你扔一份会炸的礼盒（落点橙底预警，两拍后爆炸）。":
+        "Unwrapping Throw | every 8 beats it lobs an explosive gift at you (orange warning tile; it explodes two beats later).",
+    "浊雾呼吸｜身边不断积起回声雾（走进去就会被它摸到位置）。":
+        "Fog Breath | echo fog keeps gathering around it (step in and it feels out your position).",
+    "衣壳针线｜射出至多五格的针线，命中一次清醒创伤6；实体墙会截断针线。":
+        "Capsid Thread | fires a thread up to five cells; a hit deals 6 lucidity trauma. Solid walls cut the thread.",
+    "有限产尘｜抖出胞尘：孢芽团每次4单位、分至多两格，孢子冠每次6单位、分至多四格；一场至多抖出12单位。":
+        "Dust Reserve | shakes out spore dust: spore buds 4 units over at most two cells, spore crowns 6 over at most four; 12 units at most per encounter.",
+    "菌丝迟线｜在目标附近布下至多两格菌丝迟线；踩中的目标拖上两回合迟拍。":
+        "Mycelium Delay | lays up to two cells of hypha thread near its target; stepping on one adds two slow beats.",
+    "注射推进｜沿直线推进至多两格，撞上实体便停；警示线上的目标吃一次清醒创伤7。":
+        "Injection Dash | lunges up to two cells in a line and stops at anything solid; targets on its warning line take 7 lucidity trauma.",
+    "缝合牵引｜预告之后，把仍留在短线上的目标拖近一格；拖不进墙，也不挤进已有人的格子。":
+        "Suture Haul | after a warning, it drags a target still on its short line one cell closer; never into walls or occupied cells.",
+    "听诊广播｜把它最后一次看清的位置广播给同伴；广播之后不再更新。":
+        "Stethoscope Broadcast | announces the last place it saw you clearly to its peers; it is never updated afterwards.",
+    "脑脊滴注｜往至多三格滴下共2单位脑脊液；一场至多滴6单位。":
+        "Spinal Drip | drips 2 units of cerebrospinal fluid across up to three cells; 6 units at most per encounter.",
+    "有限产尘｜抖出胞尘：孢芽团每次4单位、分至多两格，孢子冠每次6单位、分至多四格；一场至多抖出12单位。；短时菌膜｜给自己裹上三回合菌膜；替它挡下一次命中的1点创伤。菌膜可以洗掉。":
+        "Dust Reserve | shakes out spore dust: spore buds 4 units over at most two cells, spore crowns 6 over at most four; 12 units at most per encounter. Brief Membrane | wraps itself in a film for three rounds; it blocks one hit of 1 trauma. The film can be washed off.",
+    "刀片弧扫｜沿目标附近三格扫出一道弧，命中一次清醒创伤10；扫完至少停一回合。":
+        "Blade Arc | sweeps an arc across three cells near its target; a hit deals 10 lucidity trauma, then it rests at least one round.",
+    "局部过曝扫描｜射出至多六格扫描线，命中清醒创伤9；它自己周围半径2被照亮，三回合后恢复。":
+        "Overexposed Scan | fires a scan line up to six cells; a hit deals 9 lucidity trauma. Radius 2 around it lights up, recovering after three rounds.",
+    "白昼切线｜锁定至多七格细线，落线时命中一次清醒创伤9。；净相环洗｜预告两回合后，在周围八格扬起一圈稀疏水环；敌我的一项可洗征兆被缩短3，并受心智创伤5。；回流配液｜往首次确定的至多三个槽格注液，每次6单位、总量12；流出的脑脊液对敌我都有帮助。；重开耗材｜第二阶段起，预告两回合后召出一只膜泡球（完整度6、清醒创伤3）；至多两次，同时至多一只，膜泡没有溶解奖励。":
+        "Daylight Line | locks a thin line of up to seven cells; when it lands, a hit deals 9 lucidity trauma. Rinse Ring | two rounds after a warning, it raises a sparse water ring across the eight cells around it; one washable omen on friend or foe is shortened by 3 and they take 5 mind trauma. Reflux Drip | fills up to three slots fixed at first use, 6 units each, 12 in all; the cerebrospinal fluid that flows out helps friend and foe alike. Restock | from phase two, two rounds after a warning it summons a membrane bubble (integrity 6, 3 lucidity trauma); at most twice, one at a time, and membranes grant no dissolution reward.",
+    "划线、校订": "Underline, Proofread",
+    "归目、异文誊影、删改、最后一页": "Cataloguing, Variant Copies, Deletion, The Final Page",
+    "吞音：它停住脚步，张开没有声音的口。你刚想起的词开始变淡。":
+        "Swallowed Syllable: it stops mid-step and opens a soundless mouth. Words you just recalled begin to fade.",
+    "冷凝抽干｜每 8 拍抽干身边 3×3 的气体与液体。":
+        "Condensing Drain | every 8 beats it drains gas and liquid from the 3×3 around it.",
+    "孵化请求、进程繁殖、系统迁移｜完整度下降时进入三阶段，全程召唤千禧园的低阶异象护卫自己；末段还会瞬移脱战。":
+        "Spawning Request, Process Breeding, System Migration | enters three phases as its integrity drops, summoning low-tier Millennium Garden anomalies to guard it throughout; the final phase also lets it blink out of combat.",
+    "指针锁定｜一旦进入追踪，移动耗时减半（箭头直奔目标）。":
+        "Cursor Lock | once tracking, its move cost halves (the arrow runs straight at its target).",
+    "阅读射线｜每 3 拍沿视线打击 4 格内的你。":
+        "Reading Ray | every 3 beats it strikes you along its line of sight, up to 4 cells away.",
+    "频闪｜它视野内的你视野减半（迪斯科球在转）。":
+        "Strobe | your sight is halved inside its vision (the disco ball is spinning).",
 }

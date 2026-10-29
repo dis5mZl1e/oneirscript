@@ -181,3 +181,234 @@ EN_EQUIPMENT = {
     "联想 {paths} 句 · 未写下 {broken} 词 · [ 整理": "{paths} responses · {broken} unwritten words · [ Arrange",
     "m 切换本义与借意 · c 写下或收起这个词\n本义使用装备本来的能力；借意把它的含义交给标点。": "m true / borrowed meaning · c write or withdraw this word\nTrue meaning gives the original ability; borrowed meaning gives punctuation its imagery.",
 }
+
+# ---- 联想盘功能词与句子来源行（2026-10-24 玩家可见英文补漏）----
+EN_EQUIPMENT.update({
+    # 功能词标签（盘面工具/手里/检视）
+    '被': 'by',
+    '向': 'to',
+    '从': 'from',
+    '只': 'only',
+    # 功能词说明（检视面板逐词解释）
+    '让左右两侧共同构成一次行动；同一次行动不会重复计算消耗。':
+        'Both sides form one action; that action does not pay twice.',
+    '每次只能选择一侧的行为；两侧不会同时生效。':
+        'Choose one side each time; both sides never take effect together.',
+    '满足关联装备提供的条件时，才执行后面的行为；“如果”本身不提供条件。':
+        "Run the action only when the linked equipment's condition holds; IF itself supplies no condition.",
+    '对应的“如果”条件不满足时才执行这里的行为；行动资源不足不会转入“否则”分支。':
+        'Run this branch only when the matching IF condition is false; insufficient resources do not fall through.',
+    '把后面的内容交给行为作用，例如把刀痕印在目标上，或把瓶中材料喷向目标。':
+        'Hand the payload to the action, such as imprinting a mark or spraying material from a bottle.',
+    '左侧装备改为受击响应，右侧装备决定响应哪类创伤；相应创伤实际结算后才会触发。':
+        'Turn the left equipment into a hit response; the right side selects the damage kind that triggers it.',
+    '指定行动瞄准的目标；原有射程和视线限制仍然有效。':
+        "Set the action's target; existing range and line-of-sight limits still apply.",
+    '从后面的容器取用已有液体或气体，再交给对应装备喷射；容器为空时不会凭空产生材料。':
+        'Draw existing liquid or gas from the container for the linked action; empty containers create nothing.',
+    '把前面装备切换为属性来源，修饰后面的行为：刀锋增加锋利，余温或静电附加命中反馈，节拍让本次行为更快；属性来源不会额外执行自身行为。':
+        'Treat the left equipment as a property source for the action; it does not perform a second action.',
+    '把前面装备切换为行为方式，例如用饰品的轻快节拍缩短后续攻击耗时；方式只修饰关联行为，不支持的组合无法成句。':
+        'Turn the left equipment into a manner for the action; unsupported combinations cannot form a sentence.',
+    '只让选定的那件事发生；同句里用于修饰或附加效果的其他词义这一回都不参与。':
+        'Only the selected action happens; other modifiers or feedback in the row do not participate this time.',
+    '前一次确实造成创伤后，才会追加一次；追加前会重新检查资源，两次共用本次行动的消耗和创伤额度。':
+        'Append one more attempt only after the first actually dealt damage; resources are rechecked and both share the budget.',
+    # 行为词/标点/线材说明
+    '放在“行为”列，并搭配能执行这项动作的意象；单独放置不会生效。':
+        'Place it in the Action column together with an image that can perform the action; alone it does nothing.',
+    '借助湿的意象，把触发格中最多 5 单位导电液体移向有容量的相邻位置。':
+        'With damp imagery, move up to 5 units of conductive liquid from the triggered cell to a neighbour with capacity.',
+    # 说明区「来源行」与效果详情前缀
+    '{source}来自盘面第 {rows} 行': '{source} comes from board rows {rows}',
+    '这项持续效果': 'This ongoing effect',
+    '这条反应': 'This response',
+    '这条语句': 'This sentence',
+    '效果详情：': 'Effect: ',
+    # 医院装备词义（检视/成句共用）
+    '相接': 'adjacent',
+    '病原体': 'pathogen',
+})
+
+# ---- 联想盘句子明细、可读原因与持续效果短语（2026-10-24 英文补漏）----
+EN_EQUIPMENT.update({
+    # 句子明细模板
+    '这行还没有组成完整意思。': 'This row does not form a complete meaning yet.',
+    '这组意象暂时无法组合，请调整相关装备或功能词的位置。':
+        'These images cannot be combined yet; adjust the equipment or grammar words.',
+    '补语只随持续契约生效；这一句是即时行为，补语暂不参与。':
+        'A complement only applies to a sustained contract; this clause is an instant action, so the complement sits out.',
+    '留白带来的额外回流合计最多 3 点；多件装备按各自的想象力门槛生效，并沿用递减。':
+        'Blank-space inflow totals at most 3 points; multiple items apply at their own Imagination thresholds with diminishing returns.',
+    '两次出手共用一次行动的创伤上限，总创伤不会增加。':
+        "Both strikes share one action's trauma cap, so total trauma does not increase.",
+    '随句补足：{item}——{ending}': 'Supplied with the clause: {item} — {ending}',
+    '词义切换：{item}的节拍只缩短关联攻击的耗时；同一装备已提供持续攻速时，不重复叠加。':
+        "Meaning switch: {item}'s beat only shortens the linked attack; an ongoing attack-speed effect from the same item does not stack.",
+    '未采用：{item}提供的“{modifier}”{label}不生效。':
+        'Not used: the “{modifier}” {label} from {item} has no effect.',
+    '{item}让本句喷射多带出材料；仅从容器取材时生效，不超过容器余量。同一件装备的持续效果不重复计算。':
+        "{item} makes this spray carry more material; it works only when drawing from a container and never beyond its contents. The same item's ongoing effect is not counted twice.",
+    '{item}让本句修缮补得更多；仍消耗原有工具，完整度不超过墙体上限。同一件装备的持续效果不重复计算。':
+        "{item} makes this repair restore more; it still consumes the usual tool and never exceeds the wall's integrity cap. The same item's ongoing effect is not counted twice.",
+    '{item}让本句弹体多一分穿透；遇墙仍会耗去穿透额度，免疫弹体的墙体不受影响。同一件装备的持续效果不重复计算。':
+        "{item} gives this shot one more point of penetration; walls still spend that allowance, and walls immune to projectiles are unaffected. The same item's ongoing effect is not counted twice.",
+    '{item}让本句攻击认出残留的附着；目标仍有附着时，创伤至多多 1 点。同一件装备的持续效果不重复计算。':
+        "{item} lets this attack recognise lingering attachment; if the target is still attached, trauma is at most 1 higher. The same item's ongoing effect is not counted twice.",
+    '{item}让本句命中或喷射落点借液体传导；落点和附近目标都须有导电液体，只多传 1 点创伤。成功消耗 1 点想象力，并受反馈冷却限制。':
+        '{item} lets this hit or spray conduct through liquid; the landing cell and nearby targets need conductive liquid, for at most 1 extra trauma. A success costs 1 Imagination and respects feedback cooldown.',
+    '{item}让本句命中带出余温；只在有可燃材料的位置点火。成功消耗 1 点想象力，并受反馈冷却限制；不凭空生成燃料。':
+        '{item} leaves an ember on this hit; it ignites only where there is flammable material. A success costs 1 Imagination and respects feedback cooldown; no fuel is created.',
+    '{item}让本句命中带出余爆，最多波及附近一个可见目标 1 点创伤；不穿墙。成功消耗 1 点想象力，并受反馈冷却限制。':
+        '{item} adds a small blast to this hit, dealing at most 1 trauma to one nearby visible target; it does not pass through walls. A success costs 1 Imagination and respects feedback cooldown.',
+    '{item}借甩手的力道强化本句攻击，与武器创伤按原有规则共同计算；只修饰本句，不额外投出或消耗一件物品。':
+        '{item} strengthens this attack through a throwing motion and combines with weapon trauma under the usual rules; it modifies this clause only and throws or consumes nothing extra.',
+    # 可读原因（内部原因键；readable_reason 在英文模式优先取这些）
+    '缺少行为': 'The sentence has no executable action yet.',
+    '盘面物理无效': 'The layout conflicts; adjust the positions of the images or grammar words.',
+    '缺少真实载体或效果载荷': 'There is no item here that can perform this action.',
+    '这个载体不能形成持续契约': 'This item cannot serve as an ongoing effect source.',
+    '这个行为不能改成持续契约': 'This action cannot be sustained with “maintain”.',
+    '披覆需要护持载荷': '“Cover” needs a protective effect to pair with.',
+    '载体没有可用行为': 'The current item position has no executable action.',
+    '点燃不接受这种载荷': '“Ignite” only accepts heat-type payloads.',
+    '持续行为与对象类型不相容': 'This ongoing effect cannot apply to that object type.',
+    # 持续效果短语（随句补足 / 省示）
+    '涉水时侵扰减轻': 'Less harassment while wading',
+    '出手更轻快': 'Strike more swiftly',
+    '心智的伤口浅一些': 'Mind wounds are shallower',
+    '清醒的伤口浅一些': 'Lucidity wounds are shallower',
+    '心智与清醒的伤口都浅一些': 'Mind and Lucidity wounds are both shallower',
+    '它替你留意着心智': 'It watches over your Mind',
+    '火燎上来时轻一些': 'Less burning when fire catches',
+    '静电不再跳到你身上': 'Static no longer jumps to you',
+    '脚步声轻了': 'Lighter footsteps',
+    '太吵的地方它替你挡一半': 'It halves the noise in loud places',
+    '靠近它的东西慢半拍': 'Things near it slow by half a beat',
+    '照亮更远处': 'Lights farther away',
+    '隔着墙也听得出虚实': 'Sense through walls',
+    '修补得更彻底': 'Repairs more thoroughly',
+    '看得更远': 'See farther',
+    '靠近你的静电会跳': 'Static near you arcs',
+    '爆裂波及更宽': 'Blasts spread wider',
+    '点火时火势更旺': 'Fires burn hotter when lit',
+    '针脚扎得更深': 'Stitches bite deeper',
+    '捡拾更快': 'Pick up faster',
+    '喷得更足': 'Spray more',
+    '沾过气味的逃不远': 'Scented prey cannot flee far',
+    '湿处也照常导电': 'Conducts even when wet',
+    '散场时的收获多一分': 'A little more loot when the show ends',
+    '下一次创伤轻一点': 'The next wound is lighter',
+    '身上的附着它一直滤着': 'It keeps filtering what clings to you',
+    '构想展开后，想象力回得快': 'Imagination returns faster after a conception',
+    '挨了打，它帮你洗短征兆': 'When hit, it shortens an omen for you',
+    '有光时它替你挡一下': 'In the light it shields you once',
+    '挨打时它响一声': 'It sounds when you are struck',
+    '吃下的东西它补一点': 'It restores a little of what you ingest',
+    '有光时它照出伪装': 'In the light it reveals disguises',
+    '爆炸撞上来时，清醒的伤口浅一些': 'Lucidity wounds are shallower against explosions',
+    '跨过门后，下一次出手多一分力': 'After crossing a doorway, your next strike has extra force',
+    '再次命中认得的异象时，记起它的完整度': 'Hitting a known anomaly again recalls its integrity',
+    '迈出一步，就标出相邻能走的连接': 'Each step maps the neighbouring connections',
+    '独处时，自然恢复多回来一点': 'A little more natural recovery when alone',
+    '命中后，照出目标周围一格的动静': 'After a hit, reveal movement within one cell of the target',
+    '替你拒绝一次弱控制': 'Refuses one weak control for you',
+    '触到与上次不同的状态时，视野暂时开阔一格': 'Touching a different state briefly widens sight by one',
+    '命中后，指出一个相邻空位': 'After a hit, point out an adjacent empty cell',
+    '悬停时能读出到目标的最短步数': 'Hovering reads the shortest path to a target',
+    '把一件易逝物挂上梦的墙，替你承受一次打击': 'Hang a perishable on the dream wall to take one blow for you',
+    '跳弹命中后留下折射印记，换个方向命中便能伤得更深': 'Ricochets leave a refraction mark; striking from another direction hurts deeper',
+    '每层首次亲手点火后，下一步可以免费走，近处追兵暂时跟丢': 'After your first ignition on a layer, the next step is free and nearby pursuers lose you',
+    '一次声响引来目标后，下次声波会让声源附近的意识震停一拍': 'After a sound draws a target, your next wave stuns nearby minds for a beat',
+    '每层一次，想象力耗尽后可以免去一次构想的想象力消耗': 'Once per layer, a conception costs no Imagination after yours runs out',
+    '想象力低落时，回流会多回来一点': 'When Imagination is low, a little more flows back',
+    '投得更远，落点的冲击也更重': 'Thrown farther, with a heavier impact',
+    '护持一直都在': 'The protection is always there',
+    '那份效果一直都在': 'That effect is always there',
+    '想象力不超过 {threshold} 时，每回合多回流 {power} 点想象力':
+        'While Imagination is at most {threshold}, {power} more Imagination flows back each round',
+    # 修饰/方式/裸修饰词与排除标签
+    '喷射强化': 'spray boost',
+    '追迹': 'tracking',
+    '爆裂': 'blast',
+    '锋利地': 'sharply',
+    '轻快地': 'swiftly',
+    '以更强的穿透力': 'with greater penetration',
+    '带着余温': 'with an ember',
+    '增加喷射量': 'with more spray',
+    '追踪已有征兆的目标': 'tracking targets that carry a portent',
+    '带着余爆': 'with a small blast',
+    '更充分地': 'more fully',
+    '借投掷的手法，': 'using a throwing motion, ',
+    '借液体导电': 'conducting through liquid',
+    '轻快节拍': 'swift beat',
+    '穿透力': 'penetration',
+    '追迹气味': 'tracking scent',
+    '余爆': 'small blast',
+    '修缮手艺': 'repair craft',
+    '投掷手法': 'throwing technique',
+    '导电力': 'conductivity',
+    '命中后点燃': 'ignites on hit',
+})
+
+# ---- 藏书宫/疗所装备的功能词义（2026-10-24：检视与成句回退路径漏翻）----
+EN_EQUIPMENT.update({
+    '跨门后': 'after crossing a doorway',
+    '记起': 'recall',
+    '折返': 'fold back',
+    '独处': 'when alone',
+    '汇聚': 'combine',
+    '拒绝': 'refuse',
+    '变化后': 'after a change',
+    '存疑': 'doubt',
+})
+
+# ---- 扩展装备运行期文案（2026-10-25：terrain / projectile / circuit 三族主动路径）----
+EN_EQUIPMENT.update({
+    '这里没有符合条件的真实对象；没有消耗。':
+        'There is no real target here that fits; nothing was spent.',
+    '{item}完成了操作。': '{item} carried out the action.',
+    '{item}是被动的：脚更沉（每次移动多付时间），没有可以直接做的动作。':
+        '{item} is passive: heavier footing (every move costs extra time); there is no direct action.',
+    '{item}是被动的：只在你操作电路那一次少沾一份液面。':
+        '{item} is passive: it spares one liquid attachment the time you work a circuit.',
+    '{item}是被动的：换弹时掉出的实弹落在脚下，可以再捡回来。':
+        '{item} is passive: live rounds dropped while reloading land at your feet and can be picked up again.',
+    '{item}是被动的：换弹中允许走一小步，一次换弹只给一步。':
+        '{item} is passive: one short step during a reload, one step per reload.',
+    '{item}只吸得到最上面那一种——瓶里混着好几种，它分不开。':
+        '{item} can only draw the topmost kind; the bottle holds several and it cannot separate them.',
+    '{item}还没定下要滤哪一种杂质——容器里至少要有两种液体。':
+        '{item} has not fixed on an impurity yet; the container needs at least two liquids.',
+    '{item}接不住{material}——它凝不成障碍，所以没有接住。':
+        '{item} cannot catch {material} — it will not set into a barrier, so nothing was caught.',
+})
+
+# ---- 扩展装备运行期文案（2026-10-25：realm 批 · 病区／书库交界）----
+EN_EQUIPMENT.update({
+    '{item}的废料格满了——这一趟夹不了新的了。':
+        '{item}\'s scrap tray is full — nothing new can be scraped on this run.',
+    '{item}没有可剥离的负面附着——只有带真实材料的那种刮得下来。':
+        '{item} finds no strippable negative attachment — only ones carrying real material can be scraped off.',
+    '{item}只托得住 {n} 件——先取走一件。':
+        '{item} holds only {n} pieces — take one out first.',
+    '{item}包不住——行囊里没有可包的学习物。':
+        '{item} has nothing to wrap — no learnable tome in the pack.',
+    '{item}里没有可拆的恢复品——得先有一份真实的。':
+        '{item} has no restorative to split — one real dose is needed first.',
+    '{item}只抄得下真实的交互条件——这一格既不是设施，也没有节点读数。':
+        '{item} only copies real interaction conditions — this cell is neither a facility nor a node reading.',
+    '{item}收住了——这一下会牵动一单还没走完的梦。':
+        '{item} holds back — that blow would disturb a dream still in progress.',
+    '{item}探到一跳——电场顺着针柄过了一遍手。':
+        '{item} finds one hop — the field runs back down the handle into your hand.',
+    # ---- realm 信息类件的反馈（作用就是「给出信息」，不能只说「完成了」）----
+    '{item}抄下了一处交互条件：{n} 条读数。':
+        '{item} copies down one set of interaction conditions: {n} readings.',
+    '{item}抄下了一处设施的交互条件。':
+        '{item} copies down the interaction conditions of one facility.',
+    '{item}沿直线标出了 {n} 格已见地形。':
+        '{item} marks {n} seen cells in a straight line.',
+    '{item}翻到背面：{a}（费 {ca}／冷 {cda}）对 {b}（费 {cb}／冷 {cdb}）。':
+        '{item} turns the card over: {a} (cost {ca} / cooldown {cda}) against {b} (cost {cb} / cooldown {cdb}).',
+})

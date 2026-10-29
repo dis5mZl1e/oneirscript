@@ -68,9 +68,11 @@ ITEMS = {
         "color": "#c8a878", "effect": "restore_imagination", "power": 16,
     },
     "sleeping_lozenge": {
+        # 2026-10-26（平衡审计 §11.4）：清醒度 +5 → +6。5 低于「单资源 6–12」
+        # 标尺下限，常见档因此从 5 起跳成 2.0× 跨度；提到 6 后为 6·8·10。
         "name": "安眠含片", "category": "摄入物", "rarity": "常见",
-        "description": "含一片，梦替你把没做完的事做完一半。清醒度 +5。",
-        "color": "#a7a9c7", "effect": "restore_lucidity", "power": 5,
+        "description": "含一片，梦替你把没做完的事做完一半。清醒度 +6。",
+        "color": "#a7a9c7", "effect": "restore_lucidity", "power": 6,
     },
     "dream_electrolytes": {
         "name": "梦境电解水", "category": "摄入物", "rarity": "少见",

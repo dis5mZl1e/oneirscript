@@ -28,6 +28,8 @@ from ..data.tamper_world import (
     GAS_SETTLE_LIQUIDS,
     MAX_DELETES_PER_LAYER,
     PLANT_GROWTH,
+    PLANT_GROWN_OUT_REASONS,
+    PLANT_WITHER_REFUSALS,
     SENTENCE_TEMPLATES,
     SENTENCE_TEMPLATES_EN,
     SLOT_CATEGORY_COLORS,
@@ -37,11 +39,12 @@ from ..data.tamper_world import (
     WORD_ORDER,
 )
 from ..i18n import tr
-from ..materials import gas_def, liquid_def, portent_def
+from ..materials import DEFAULT_GAS, DEFAULT_LIQUID, gas_def, liquid_def, portent_def
 from ..materials.walls import WALKABLE_FEATURE_WALLS, wall_def
 from . import tamper_pipeline as pipeline
 from .chaos import chaos_risk_tier, clamp_chaos
 from .entities import ActionResult
+from .visual_events import emit_visual
 
 
 @dataclass
@@ -144,6 +147,37 @@ def _named_cell(state: Any, x: int, y: int, *, include_ground: bool = False) -> 
     return None
 
 
+#: 液/气字词只有在液体或气体进入句子名称槽时才可选。旧收集只看主语邻格与
+#: 朝向 4 格，玩家周围明明有可见水洼/气团也常常进不了句子，玩家会以为
+#: 「泼开／聚流／蒸发／凝结」坏了。这里补一层玩家周围可见液气候选（2026-10-28）。
+_FLUID_CANDIDATE_RADIUS = 4
+
+
+def _nearby_fluid_points(state: Any, radius: int = _FLUID_CANDIDATE_RADIUS
+                         ) -> list[tuple[int, int]]:
+    """玩家周围可见、未挡路的液/气格，按曼哈顿距离从近到远。"""
+    px, py = state.player.x, state.player.y
+    points: list[tuple[int, int]] = []
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            distance = abs(dx) + abs(dy)
+            if distance == 0 or distance > radius:
+                continue
+            x, y = px + dx, py + dy
+            if not (0 <= x < state.width and 0 <= y < state.height):
+                continue
+            if not state.is_visible(x, y):
+                continue
+            cell = state.cell(x, y)
+            if cell.solid:
+                continue
+            if (int(cell.liquid) > 0 and cell.liquid_kind) or (
+                    int(cell.gas) > 0 and cell.gas_kind):
+                points.append((distance, x, y))
+    points.sort()
+    return [(x, y) for _distance, x, y in points]
+
+
 def collect_sentence(state: Any, *, pinned: tuple[int, int] | None = None,
                      hover: tuple[int, int] | None = None,
                      facing: tuple[int,int] | None = None) -> WorldSentence | None:
@@ -181,12 +215,25 @@ def collect_sentence(state: Any, *, pinned: tuple[int, int] | None = None,
         ]
     else:
         candidates = []
-    if hover is not None and hover not in seen:
+    hover_inserted = hover is not None and hover not in seen
+    if hover_inserted:
         candidates.insert(0,hover)
+    # 2026-10-28：把玩家周围可见的液体/气体也排进候选，让「泼开／聚流／
+    # 蒸发／凝结」有机会进入句子名称槽。悬停/锁定仍然优先，其次是最近的
+    # 液气，然后才是主语邻格与朝向 4 格——旧口径下液气几乎永远进不了句子。
+    fluid_points = [point for point in _nearby_fluid_points(state) if point not in seen]
+    if fluid_points:
+        start = 1 if hover_inserted else 0
+        candidates[start:start] = fluid_points
     facing = facing if facing is not None else getattr(state, "facing", (0, 1))
     px, py = state.player.x, state.player.y
     for step in range(1, 5):
         candidates.append((px + facing[0] * step, py + facing[1] * step))
+    region_seen: set[tuple[tuple[int, int], ...]] = set()
+    if subject is not None:
+        members = tuple(getattr(subject, "region_members", ()) or ())
+        if members:
+            region_seen.add(members)
     for cx, cy in candidates:
         if (cx, cy) in seen:
             continue
@@ -207,6 +254,11 @@ def collect_sentence(state: Any, *, pinned: tuple[int, int] | None = None,
                 candidate = named
         if candidate is None:
             continue
+        members = tuple(getattr(candidate, "region_members", ()) or ())
+        if members:
+            if members in region_seen:
+                continue
+            region_seen.add(members)
         if len(fields) < 3:
             fields.append(candidate)
         else:
@@ -225,6 +277,8 @@ def nearest_sentence(state: Any, radius: int = 6) -> WorldSentence | None:
     可命名目标时，C 键不应无声失败——在可见范围内找最近一个至少有一个
     合法字词的目标，生成同一套句子。
     """
+    from ..equipment.expansion_runtime import nearest_tamper_radius
+    radius = nearest_tamper_radius(state, radius)
     px, py = state.player.x, state.player.y
     candidates: list[tuple[int, int, int]] = []
     for y in range(max(0, py - radius), min(state.height, py + radius + 1)):
@@ -455,6 +509,7 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
         combo = ()
     definition = WORD_DEFS[resolved_word_id(word_id, combo)]
     amount = _word_effect_amount(word_id, combo)
+    degree = next((cid for cid in combo if cid in DEGREE_IDS), None)
     if verb == 'lure_to':
         actor = next(s for s in sentence.slots if s.category == 'anomaly')
         point = tr('去向')
@@ -488,6 +543,15 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
     elif verb == 'uproot':
         point = tr('根须')
         replacement = tr('〔{name}〕将被连根拔起', name=slot.display_name())
+        # 释出型必须在确认句里写明会放出什么（docs 2026-10-26 §10.1）：
+        # 「安全拔除」是禁止出现的承诺。
+        if state is not None:
+            try:
+                from .plant_notes import uproot_warning
+                from ..materials.plants import plant_def_for
+                replacement += uproot_warning(plant_def_for(state.cell(slot.x, slot.y).plant))
+            except Exception:
+                pass
         effect = tr(definition['note'])
     elif verb == 'gather':
         point = tr('流向') if word_id == 'gather_liquid' else tr('气流')
@@ -503,7 +567,15 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
         effect = tr(definition['note'])
     elif verb == 'evaporate':
         point = tr('形态')
-        replacement = tr('〔{name}〕将按自己的蒸发产物化气', name=slot.display_name())
+        # 2026-10-28：没有登记蒸发产物的液体不再拒绝，统一化成水蒸气；
+        # 预览优先写出真实产物名，玩家提交前就知道会变成什么。
+        if state is not None:
+            gas_kind = (liquid_def(str(state.cell(slot.x, slot.y).liquid_kind or ''))
+                        .evaporation_gas or DEFAULT_GAS)
+            replacement = tr('〔{name}〕将化成{gas}', name=slot.display_name(),
+                             gas=tr(gas_kind))
+        else:
+            replacement = tr('〔{name}〕将化成气体', name=slot.display_name())
         effect = tr(definition['note'])
     elif verb == 'solidify':
         point = tr('形态')
@@ -511,18 +583,40 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
         effect = tr(definition['note'])
     elif verb == 'settle':
         point = tr('形态')
-        replacement = tr('〔{name}〕将沉降回液体', name=slot.display_name())
+        # 2026-10-28：没有登记凝结产物的气体不再拒绝，统一凝成水。
+        if state is not None:
+            liquid_kind = GAS_SETTLE_LIQUIDS.get(
+                str(state.cell(slot.x, slot.y).gas_kind or ''), (DEFAULT_LIQUID, 2))[0]
+            replacement = tr('〔{name}〕将凝成{liquid}', name=slot.display_name(),
+                             liquid=tr(liquid_kind))
+        else:
+            replacement = tr('〔{name}〕将凝回液体', name=slot.display_name())
         effect = tr(definition['note'])
     else:
         point = {'whisper': '行动', 'call': '行动', 'clamor': '行动', 'dispel': '意志',
                  'break': '完整度', 'thin': '浓度', 'delete': '存在'}[verb]
-        phrase = {
-            'whisper': '〔{name}〕将循着低语调查', 'call': '〔{name}〕将循声靠近',
-            'clamor': '〔{name}〕将应着尖声追来', 'dispel': '〔{name}〕将惊散 {n} 回合',
-            'break': '〔{name}〕将失去 {n} 点完整度', 'thin': '〔{name}〕将只剩原量的 1/{n}',
-            'delete': '〔{name}〕将被抹去',
-        }[verb]
-        replacement = tr(phrase, name=slot.display_name(), n=amount)
+        if degree and verb in ('break', 'dispel', 'thin'):
+            # 2026-10-28 用户要求：程度不是句尾附注，而是插在谓语中间的副词，
+            # 例如「被轻轻地剥落，失去 25 点完整度」而非「…，用的是「轻轻」的力道」。
+            manner = tr(CONDITION_DEFS[degree].get('name', degree))
+            if verb == 'break':
+                replacement = tr('〔{name}〕被{manner}地{action}，失去 {n} 点完整度',
+                                 name=slot.display_name(), manner=manner,
+                                 action=tr(definition['name']), n=amount)
+            elif verb == 'dispel':
+                replacement = tr('〔{name}〕被{manner}地惊散 {n} 回合',
+                                 name=slot.display_name(), manner=manner, n=amount)
+            else:
+                replacement = tr('〔{name}〕被{manner}地打散，只剩原量的 1/{n}',
+                                 name=slot.display_name(), manner=manner, n=amount)
+        else:
+            phrase = {
+                'whisper': '〔{name}〕将循着低语调查', 'call': '〔{name}〕将循声靠近',
+                'clamor': '〔{name}〕将应着尖声追来', 'dispel': '〔{name}〕将惊散 {n} 回合',
+                'break': '〔{name}〕将失去 {n} 点完整度', 'thin': '〔{name}〕将只剩原量的 1/{n}',
+                'delete': '〔{name}〕将被抹去',
+            }[verb]
+            replacement = tr(phrase, name=slot.display_name(), n=amount)
         effect = tr(definition['note'])
     from .tamper_prose import assemble_sentence
     from .tamper_views import language_of
@@ -532,7 +626,7 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
     if combo:
         # 条件组合把插入点与效果说明合并进同一份预览；数字差异（伤害/时长）已在上面的
         # amount 里体现，这里补每条条件的“为什么变了”与附加后果。
-        point = '＋'.join(tr(CONDITION_DEFS[condition_id_]['insertion'])
+        point = tr('＋').join(tr(CONDITION_DEFS[condition_id_]['insertion'])
                           for condition_id_ in combo)
         effect = tr('{base} {extra}', base=tr(definition['note']),
                     extra=tr(condition_combo_notes(combo, word_id)))
@@ -544,7 +638,6 @@ def insertion_preview(sentence: WorldSentence, word_id: str, slot_index: int,
     # 只在末尾组一次句，不再各自补标点或使用「词名：句子」的菜单格式。
     replacement = assemble_sentence(
         replacement,
-        degree=tr(definition['name']) if degree else None,
         clauses=tuple(clauses),
         language=language,
     )
@@ -557,8 +650,8 @@ def after_text(sentence: WorldSentence, word_id: str, slot_index: int,
                state: Any | None = None) -> str:
     """面板「改后」整句：原句语篇 + 变更子句（§15 第三批）。
 
-    ``insertion_preview`` 给的是**变更子句**（「〔北侧的砖墙〕将被点燃，用的是
-    『崩碎』的力道」）；直接把它当改后句，原句里点到的其他对象就消失了。这里把
+    ``insertion_preview`` 给的是**变更子句**（如「〔北侧的砖墙〕将被点燃」）；
+    直接把它当改后句，原句里点到的其他对象就消失了。这里把
     原句原样保留、变更子句接在后面，玩家能看出这一笔动的是哪一处，也能看出别的
     东西没被提到。
     """
@@ -792,34 +885,63 @@ def _gather_word_legacy(state: Any, slot: WorldSlot, word_id: str) -> tuple[str,
 
 
 def _grow_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
-    """催生：低草长成高丛（真实改 plant 码，遮挡视线与踩踏规则随之改变）。"""
+    """催生：把登记过的形态抬到下一档（低草→高丛、收拢态→立起态）。
+
+    必须真的改 plant 码：高度变了，遮挡与踩踏规则才跟着变；只放大图标是假
+    效果。走 ``set_plant_at`` 是为了让 ``plant_revision`` 推进——视野缓存
+    与发光范围靠它失效，否则新长出来的遮挡上一帧还算数。
+    """
     cell = state.cell(slot.x, slot.y)
     code = int(cell.plant)
-    if code not in PLANT_GROWTH:
+    grown = PLANT_GROWTH.get(code)
+    if not grown:
         return '', _grow_requirement_reason(state, slot)
-    state.set_plant_at(cell, PLANT_GROWTH[code])
+    state.set_plant_at(cell, grown)
     state._material_index_ready = False
-    return tr('「{name}」长高了一截。', name=slot.label), ''
+    from ..materials.plants import PLANT_CODE_TALL
+    if grown == PLANT_CODE_TALL:
+        return tr('「{name}」长高了一截。', name=slot.label), ''
+    # 形态变体：说法跟着真实变化走，不要说成「长高」。
+    return tr('「{name}」立起来了，这一格开始挡住视线。', name=slot.label), ''
 
 
 def _wither_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
-    """枯萎：把植株的燃烧燃料抬高到干枯档，植物本身保留；日后更耐烧。"""
+    """枯萎：把**够得到干枯**的纤维材料抬到干枯档，植物本身保留。
+
+    按材质判（docs §10.1/§3.3）：金属、软塑、菌质、膜囊一律不改燃料——它们
+    本来就不吃这套，硬抬数值等于给玩家一个「有反馈却什么也没发生」的假
+    效果。燃料抬高的后果是烧得更久，所以只对真能烧的株生效。
+    """
     cell = state.cell(slot.x, slot.y)
-    if int(cell.plant) <= 0:
+    code = int(cell.plant)
+    if code <= 0:
         return '', _wither_requirement_reason(state, slot)
-    cell.plant_fuel = max(int(cell.plant_fuel), WITHER_FUEL)
+    from ..materials.plants import plant_def_for
+    definition = plant_def_for(code)
+    if not definition.witherable:
+        return '', _wither_requirement_reason(state, slot)
+    before = int(cell.plant_fuel)
+    cell.plant_fuel = max(before, WITHER_FUEL)
     state._material_index_ready = False
+    if cell.plant_fuel == before:
+        # 已经干透了：不重复播报「又干了一次」，也不假装有变化。
+        return tr('「{name}」早就干透了。', name=slot.label), ''
     return tr('「{name}」提前干枯了——烧起来会更久。', name=slot.label), ''
 
 
 def _evaporate_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
-    """蒸发：按液体定义自己的蒸发产物与比例化为气体。"""
+    """蒸发：按液体自己的蒸发产物化气；没有对应物时化成水蒸气。
+
+    2026-10-28 用户要求：液化/气化没有对应材料时不要拒绝，直接变成
+    水或水蒸汽——蒸发统一回落 DEFAULT_GAS（水蒸气），凝结统一回落
+    DEFAULT_LIQUID（水）。触发条件也随之放宽，任何液体都能蒸发。
+    """
     from ..materials import liquid_def
 
     cell = state.cell(slot.x, slot.y)
     definition = liquid_def(str(cell.liquid_kind or ''))
-    gas_kind = definition.evaporation_gas
-    if int(cell.liquid) <= 0 or not gas_kind:
+    gas_kind = definition.evaporation_gas or DEFAULT_GAS
+    if int(cell.liquid) <= 0:
         return '', _evaporate_requirement_reason(state, slot)
     ratio = max(1, int(definition.evaporation_ratio or 1))
     amount = int(cell.liquid)
@@ -848,10 +970,10 @@ def _solidify_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
 
 
 def _settle_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
-    """沉降：按材料表把部分气体凝回液体。"""
+    """凝结：按材料表把部分气体凝回液体；没有对应物时凝成水。"""
     cell = state.cell(slot.x, slot.y)
-    pair = GAS_SETTLE_LIQUIDS.get(str(cell.gas_kind or ''))
-    if pair is None or int(cell.gas) < 4:
+    pair = GAS_SETTLE_LIQUIDS.get(str(cell.gas_kind or ''), (DEFAULT_LIQUID, 2))
+    if int(cell.gas) <= 0:
         return '', _settle_requirement_reason(state, slot)
     liquid_kind, ratio = pair
     amount = int(cell.gas)
@@ -861,7 +983,7 @@ def _settle_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
         cell.gas_kind = ''
     state._add_liquid(cell, liquid_kind, settled)
     state._material_index_ready = False
-    return tr('「{name}」沉下一层{liquid}。', name=slot.label, liquid=tr(liquid_kind)), ''
+    return tr('「{name}」凝下一层{liquid}。', name=slot.label, liquid=tr(liquid_kind)), ''
 
 
 def _spread_word(state: Any, slot: WorldSlot, word_id: str) -> tuple[str, str]:
@@ -884,13 +1006,22 @@ def _spread_word(state: Any, slot: WorldSlot, word_id: str) -> tuple[str, str]:
 
 
 def _spread_requirement_reason(state: Any, slot: WorldSlot, word_id: str) -> str:
-    """泼开/扬散的要求：目标流体够分，且至少有一个相邻可摊格；空串 = 可用。"""
-    cell = state.cell(slot.x, slot.y)
-    amount = int(cell.liquid) if word_id == 'spill' else int(cell.gas)
-    if amount < 2:
-        return tr('这里的分量太少，摊不开。')
-    if not _spread_targets(state, slot):
-        return tr('周围没有可以摊开的格子。')
+    """泼开/扬散的要求：与执行共用同一份守恒计划做**只读试算**。
+
+    旧口径只看锚点格分量与四邻是否非实心，区域口径的实际约束（同材料、
+    可见、有容量）并不在其中——要求放行、提交才报错的字词等于骗玩家按
+    确认（2026-10-24 触发条件修复）。build_fluid_plan 全程不写状态。
+    保护不在这里拦：受保护材料仍由 word_blocked_reason 置灰并给出原因
+    （docs §二/§六：材料不满足才隐去，保护只置灰）。
+    """
+    from .tamper_fluid import build_fluid_plan
+    if word_id == 'spill':
+        from .tamper_protection import liquid_reason
+        if liquid_reason(str(state.cell(slot.x, slot.y).liquid_kind or '')):
+            return ''
+    plan = build_fluid_plan(state, word_id, slot)
+    if isinstance(plan, str):
+        return plan
     return ''
 
 
@@ -902,8 +1033,20 @@ def _uproot_requirement_reason(state: Any, slot: WorldSlot) -> str:
 
 
 def _gather_requirement_reason(state: Any, slot: WorldSlot, word_id: str) -> str:
-    """聚流/聚气要求：至少一个相邻格有同类流体；空串 = 可用。"""
+    """聚流/聚气要求：存在能把这份流体搬过去的合法落点；空串 = 可用。
+
+    区域口径（有 region_members）：聚 = 把整片区域搬进一个与区域相邻、可见、
+    放得下同种材料的格子里——只要这样的落点存在即可，**不**再要求锚点自身的
+    邻格有同类流体（旧口径下孤立的一洼水/一片气永远不显示字词，2026-10-24
+    触发条件修复）。单格旧口径：相邻格有同类流体才有的可聚。
+    """
     liquid = word_id == 'gather_liquid'
+    members = tuple(getattr(slot, 'region_members', ()) or ())
+    if members:
+        from .tamper_fluid import default_gather_destination
+        if default_gather_destination(state, slot, word_id) is not None:
+            return ''
+        return tr('周围没有可以安置的落点。')
     for x, y in _spread_targets(state, slot):
         cell = state.cell(x, y)
         if (int(cell.liquid) > 0) if liquid else (int(cell.gas) > 0):
@@ -933,31 +1076,43 @@ def _gather_protected_reason(state: Any, slot: WorldSlot) -> str:
 
 
 def _grow_requirement_reason(state: Any, slot: WorldSlot) -> str:
-    """催生要求：目标格的低草还能长高；空串 = 可用。"""
+    """催生要求：目标格有登记过形态转换的株；空串 = 可用。
+
+    拒绝要说清是哪一种：空格子、已经长到头、以及「这株根本没登记形态」是
+    三件事，玩家据此决定要不要换一格施术。
+    """
     cell = state.cell(slot.x, slot.y)
-    if int(cell.plant) <= 0:
+    code = int(cell.plant)
+    if code <= 0:
         return tr('这里没有可以催生的植物。')
-    if int(cell.plant) not in PLANT_GROWTH:
-        return tr('这株植物已经长到头了。')
-    return ''
+    if code in PLANT_GROWTH:
+        return ''
+    reason = PLANT_GROWN_OUT_REASONS.get(code)
+    if reason:
+        return tr(reason)
+    return tr('这株植物已经长到头了。')
 
 
 def _wither_requirement_reason(state: Any, slot: WorldSlot) -> str:
-    """枯萎要求：目标格有植物；空串 = 可用。"""
-    if int(state.cell(slot.x, slot.y).plant) <= 0:
+    """枯萎要求：目标格有**能真干**的纤维植株；空串 = 可用。"""
+    code = int(state.cell(slot.x, slot.y).plant)
+    if code <= 0:
         return tr('这里没有可以枯萎的植物。')
+    from ..materials.plants import plant_def_for
+    definition = plant_def_for(code)
+    refusal = PLANT_WITHER_REFUSALS.get(definition.material_kind)
+    if refusal:
+        return tr(refusal)
+    if not definition.witherable:
+        return tr('它本来就点不着，干枯也没用。')
     return ''
 
 
 def _evaporate_requirement_reason(state: Any, slot: WorldSlot) -> str:
-    """蒸发要求：该液体定义里有自己的蒸发产物；空串 = 可用。"""
-    from ..materials import liquid_def
-
+    """蒸发要求：目标格有液体即可（没有对应产物时回落水蒸气）。"""
     cell = state.cell(slot.x, slot.y)
     if int(cell.liquid) <= 0:
         return tr('这里没有可以蒸发的液体。')
-    if not liquid_def(str(cell.liquid_kind or '')).evaporation_gas:
-        return tr('这种液体不会自然蒸发。')
     return ''
 
 
@@ -977,14 +1132,10 @@ def _solidify_requirement_reason(state: Any, slot: WorldSlot) -> str:
 
 
 def _settle_requirement_reason(state: Any, slot: WorldSlot) -> str:
-    """沉降要求：该气体在沉降材料表里且分量足够；空串 = 可用。"""
+    """凝结要求：目标格有气体即可（没有对应产物时回落水）。"""
     cell = state.cell(slot.x, slot.y)
     if int(cell.gas) <= 0:
-        return tr('这里没有可以沉降的气体。')
-    if str(cell.gas_kind or '') not in GAS_SETTLE_LIQUIDS:
-        return tr('这种气体不会沉下来。')
-    if int(cell.gas) < 4:
-        return tr('分量太少，沉不出东西来。')
+        return tr('这里没有可以凝结的气体。')
     return ''
 
 
@@ -1001,7 +1152,7 @@ def condition_note(condition_id: str, word_id: str) -> str:
         return ''
     if condition_id in DEGREE_IDS:
         return tr(WORD_DEFS[resolved_word_id(word_id, (condition_id,))]['note'])
-    return (definition.get('note_by_word') or {}).get(word_id) or definition['note']
+    return tr((definition.get('note_by_word') or {}).get(word_id) or definition['note'])
 
 
 def condition_allowed(condition_id: str, word_id: str, slot: WorldSlot,
@@ -1173,7 +1324,7 @@ def condition_combo_cost(combo: tuple[str, ...], word_id: str | None = None,
 
 def condition_combo_notes(combo: tuple[str, ...], word_id: str) -> str:
     """整组条件的玩家可读效果说明（用「；」连接）。"""
-    return '；'.join(condition_note(condition_id, word_id) for condition_id in combo)
+    return tr('；').join(condition_note(condition_id, word_id) for condition_id in combo)
 
 
 def word_cost_with_conditions(state: Any, word_id: str, slot: WorldSlot,
@@ -1225,7 +1376,12 @@ def word_blocked_reason(state: Any, word_id: str, slot: WorldSlot,
     if word_id == 'uproot':
         return _uproot_requirement_reason(state, slot)
     if word_id == 'gather_liquid':
-        protected = _gather_protected_reason(state, slot)
+        if getattr(slot, 'region_members', ()):
+            # 区域口径搬运的是整片同材料流体：只看区域材料本身是否受保护；
+            # 邻格碰巧是别的受保护液体与这次搬运无关（旧口径会误拦）。
+            protected = _liquid_protected_reason(state, slot)
+        else:
+            protected = _gather_protected_reason(state, slot)
         if protected:
             return tr(protected)
         return _gather_requirement_reason(state, slot, word_id)
@@ -1290,6 +1446,72 @@ def word_blocked_reason(state: Any, word_id: str, slot: WorldSlot,
 from ..equipment.root_facts import root_action
 
 
+#: 一次篡改可能改写的真实格字段；只用于提交前后的局部差分，不写进存档/事件。
+_REWRITE_CELL_FIELDS = ("solid", "wall_kind", "integrity", "plant", "plant_fuel",
+                        "liquid", "liquid_kind", "gas", "gas_kind", "flame", "floor")
+
+
+def _rewrite_cell_state(state: Any, x: int, y: int) -> tuple:
+    """目标格的只读快照：格子字段 + 格上物品/异象身份；用于判断真实改写。"""
+    cell = state.cell(x, y)
+    values = tuple(getattr(cell, name) for name in _REWRITE_CELL_FIELDS)
+    items = tuple(sorted(
+        str(entry.item.definition_id) for entry in getattr(state, "world_items", ()) or ()
+        if (int(entry.x), int(entry.y)) == (x, y)))
+    enemies = tuple(sorted(
+        (str(getattr(enemy, "instance_uid", "") or getattr(enemy, "catalog_id", "") or ""),
+         int(enemy.integrity), str(enemy.alert_state))
+        for enemy in getattr(state, "enemies", ()) or ()
+        if (int(enemy.x), int(enemy.y)) == (x, y)))
+    return values + (items, enemies)
+
+
+def _rewrite_fluid_state(state: Any, x: int, y: int) -> tuple:
+    cell = state.cell(x, y)
+    return (int(cell.liquid), str(cell.liquid_kind), int(cell.gas), str(cell.gas_kind))
+
+
+def _tamper_scope_cells(state: Any, slot: WorldSlot) -> tuple[tuple[int, int], ...]:
+    """本次字词可能真实改写的局部格：目标/区域成员及其四邻（流体传播落点）。"""
+    bases: set[tuple[int, int]] = set()
+    if 0 <= int(slot.x) < state.width and 0 <= int(slot.y) < state.height:
+        bases.add((int(slot.x), int(slot.y)))
+    for x, y in getattr(slot, "region_members", ()) or ():
+        if 0 <= int(x) < state.width and 0 <= int(y) < state.height:
+            bases.add((int(x), int(y)))
+    scope = set(bases)
+    for x, y in tuple(bases):
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < state.width and 0 <= ny < state.height:
+                scope.add((nx, ny))
+    return tuple(sorted(scope))
+
+
+def _rewrite_movement_paths(scope: tuple[tuple[int, int], ...],
+                            before: dict, after: dict) -> tuple[tuple[tuple[int, int], ...], ...]:
+    """真实流体搬运路径：只把「某格减少、相邻格增加」记成一条两格路径。"""
+    paths: list[tuple[tuple[int, int], ...]] = []
+    for cell in scope:
+        liquid0, kind0, gas0, gas_kind0 = before[cell]
+        liquid1, kind1, gas1, gas_kind1 = after[cell]
+        gained = (liquid1 > liquid0 or gas1 > gas0
+                  or (kind1 and kind1 != kind0) or (gas_kind1 and gas_kind1 != gas_kind0))
+        if not gained:
+            continue
+        x, y = cell
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            source = (x + dx, y + dy)
+            if source not in before:
+                continue
+            source_liquid0, _source_kind0, source_gas0, _source_gas0_kind = before[source]
+            source_liquid1, _source_kind1, source_gas1, _source_gas1_kind = after[source]
+            if source_liquid1 < source_liquid0 or source_gas1 < source_gas0:
+                paths.append((source, cell))
+                break
+    return tuple(paths)
+
+
 @root_action
 def commit_world_tamper(state: Any, sentence: WorldSentence, word_id: str,
                         slot_index: int,
@@ -1334,15 +1556,42 @@ def commit_world_tamper(state: Any, sentence: WorldSentence, word_id: str,
     # _delete_uses_quota 会读不到目标类别（2026-10-22 平衡修复）。
     uses_delete_quota = word_id == "delete" and _delete_uses_quota(state, slot)
 
+    # 在推进世界/执行风险之前捕获本次目标快照：之后的异象行动、余火或崩塌
+    # 都不能被算成这次改写。差分只覆盖本次字词可能触及的局部格。
+    source_cell = (int(state.player.x), int(state.player.y))
+    target_cells = tuple(sorted(
+        {(int(slot.x), int(slot.y))}
+        | {(int(x), int(y)) for x, y in getattr(slot, "region_members", ()) or ()}))
+    scope = _tamper_scope_cells(state, slot)
+    before_cells = {cell: _rewrite_cell_state(state, *cell) for cell in scope}
+    before_fluid = {cell: _rewrite_fluid_state(state, *cell) for cell in scope}
+
     # 效果先执行失败即整单拒绝（代价不动）。
     effect_note, effect_error = _apply_word(
         state, word_id, slot, sentence=sentence, condition_ids=combo)
     if effect_error:
         return _AR(False, effect_error)
+    # 立即结算真实改写，早于世界推进与风险落地。
+    after_cells = {cell: _rewrite_cell_state(state, *cell) for cell in scope}
+    after_fluid = {cell: _rewrite_fluid_state(state, *cell) for cell in scope}
+    changed_cells = tuple(cell for cell in scope if before_cells[cell] != after_cells[cell])
+    movement_paths = _rewrite_movement_paths(scope, before_fluid, after_fluid)
     if 'pay_with_noise' in combo:
         # 以声代想：效果结算后，玩家格发出基础半径 8 的**普通**脉冲
         # （by_player=True 让既有距离梯度与洞察修正参与，不使用 full_alert）。
         state._sound_pulse(state.player.x, state.player.y, 8, by_player=True)
+    elif 'pay_with_thought' not in combo and word_id not in ("clamor", "echo_here"):
+        # 2026-10-25：任何成功的世界篡改都会留下噪音；字词越贵/混乱越高越响。
+        # 以想代声（pay_with_thought）是明文的静默口径；呼喊/回声本身已有声场，
+        # 不在这里再补一声覆盖它们的真实落点与 full_alert 口径。
+        tamper_noise = max(3, min(9, 3 + int(imagination) // 3
+                                  + max(0, int(chaos_delta)) // 4))
+        # 普通字词的篡改声只进入声场/线索/噪音条，不额外惊动异象：
+        # 「呼喊/以声代想」等专门的诱引字词仍走上面的真实听觉结算。
+        state._sound_pulse(state.player.x, state.player.y, tamper_noise,
+                          by_player=True, category="tamper",
+                          source=tr("篡改"), announce=False,
+                          triggers_rewards=False, affect_enemies=False)
 
     # 共享提交管线（docs §四）：序号、扣费/混乱、风险、时间与对话侧同一套实现。
     sequence = pipeline.next_sequence(state)
@@ -1356,6 +1605,33 @@ def commit_world_tamper(state: Any, sentence: WorldSentence, word_id: str,
         state, request, pipeline.TamperCost(imagination, chaos_delta),
         sequence=sequence, reason=f"world_tamper:{word_id}",
         source_uid=f"world:{slot.x}:{slot.y}")
+    # 真实成功（效果已落地、代价已结算）后登记一次提交事件：targets 是本次句子
+    # 点名的真实目标格，affected_cells 是推进世界前差分出的实际改写格；纯声场
+    # 等没有改写任何格时 targets 仍在、affected 为空。
+    commit_event = emit_visual(
+        state,
+        kind="tamper.commit",
+        outcome="release",
+        source=source_cell,
+        targets=target_cells,
+        affected_cells=changed_cells,
+        paths=movement_paths,
+        visual_key="tamper.rewrite",
+        tier=1,
+        theme="paper",
+        root_id=request.request_id,
+        source_id=f"world:{slot.x}:{slot.y}",
+        layer_key="tamper.commit",
+        facts=(
+            ("word_id", str(word_id)),
+            ("resolved_word", resolved_word_id(word_id, combo)),
+            ("condition_id", "+".join(combo)),
+            ("target_category", str(slot.category)),
+            ("cost", int(imagination)),
+            ("chaos_after", int(chaos_after)),
+            ("affected_count", len(changed_cells)),
+        ),
+    )
     sentence.consumed = True
     # 2026-10-22 平衡修复：异象、墙体、物件都计入每层删除额度。
     if uses_delete_quota:
@@ -1366,19 +1642,30 @@ def commit_world_tamper(state: Any, sentence: WorldSentence, word_id: str,
     parts = [effect_note]
     if combo:
         parts.append(tr('（条件：{name}）',
-                        name='＋'.join(tr(CONDITION_DEFS[condition_id_]['name'])
+                        name=tr('＋').join(tr(CONDITION_DEFS[condition_id_]['name'])
                                       for condition_id_ in combo)))
     parts.append(tr("（想象力 −{n}，混乱度 {chaos}／{tier}）",
                     n=imagination, chaos=chaos_after, tier=tr(chaos_risk_tier(chaos_after))))
     pipeline.advance_time(state)
     feedback = pipeline.apply_risk(
-        state, outcome, source_uid=f"world:{slot.x}:{slot.y}")
+        state, outcome, source_uid=f"world:{slot.x}:{slot.y}",
+        parent_event=commit_event)
     if feedback:
         parts.append(feedback)
     message = "".join(parts)
     sentence.result_message = message
     state.messages.append(message)
     return _AR(True, message, {"world_tamper": word_id, "chaos": chaos_after})
+
+
+def _tamper_damage_bonus(state: Any, slot: WorldSlot) -> int:
+    from ..equipment.expansion_runtime import tamper_damage
+    enemy = slot.category == "anomaly"
+    terrain = (not enemy and slot.category not in ("liquid", "gas")
+               and state.inside_board(slot.x, slot.y)
+               and bool(state.cell(slot.x, slot.y).solid)
+               and bool(state.cell(slot.x, slot.y).wall_kind))
+    return tamper_damage(state, enemy=enemy, terrain=terrain)
 
 
 def _apply_word(state: Any, word_id: str, slot: WorldSlot, *,
@@ -1400,7 +1687,8 @@ def _apply_word(state: Any, word_id: str, slot: WorldSlot, *,
     if verb == 'soak':
         return _soak_word(state, slot)
     if verb == 'brittle':
-        return _break_slot(state, slot, _brittle_damage(state, slot))
+        damage = _brittle_damage(state, slot)
+        return _break_slot(state, slot, damage + _tamper_damage_bonus(state, slot))
     if verb == 'spread':
         return _spread_word(state, slot, word_id)
     if verb == 'uproot':
@@ -1434,10 +1722,13 @@ def _apply_word(state: Any, word_id: str, slot: WorldSlot, *,
         return tr('〔{actor}〕开始向〔{destination}〕调查。',actor=tr(actor.label),destination=slot.label),''
     if verb == 'echo_here':
         if 'force_lure' in combo:
-            state._sound_pulse(slot.x,slot.y,6,by_player=True,full_alert=True)
+            from ..equipment.expansion_runtime import tamper_noise_radius
+            state._sound_pulse(slot.x,slot.y,tamper_noise_radius(state, 6),
+                               by_player=True,full_alert=True)
             return tr('强诱引的声音从〔{name}〕所在的位置响起，听见的都在径直赶来。',
                       name=slot.label),''
-        state._sound_pulse(slot.x,slot.y,6,by_player=True)
+        from ..equipment.expansion_runtime import tamper_noise_radius
+        state._sound_pulse(slot.x,slot.y,tamper_noise_radius(state, 6),by_player=True)
         return tr('声音从〔{name}〕所在的位置响起。',name=slot.label),''
     if verb == 'whisper':
         enemy=slot.enemy
@@ -1456,7 +1747,9 @@ def _apply_word(state: Any, word_id: str, slot: WorldSlot, *,
         state._plan_chase(enemy, state.player.x, state.player.y)
         if verb == 'clamor' and 'pay_with_thought' not in combo:
             # 强诱引：同一半径，但所有听众不再按距离梯度只起疑，而是径直追踪。
-            state._sound_pulse(state.player.x,state.player.y,8,by_player=True,
+            from ..equipment.expansion_runtime import tamper_noise_radius
+            state._sound_pulse(state.player.x,state.player.y,
+                               tamper_noise_radius(state, 8),by_player=True,
                                full_alert='force_lure' in combo)
         state.messages.append(tr("你的呼唤被 {enemy} 听见了。", enemy=tr(enemy.label)))
         if verb == 'clamor' and 'pay_with_thought' in combo:
@@ -1479,7 +1772,8 @@ def _apply_word(state: Any, word_id: str, slot: WorldSlot, *,
         return tr("{enemy}转身离开，一时不会再主动找你。", enemy=tr(enemy.label)), ""
 
     if verb == "break":
-        return _break_slot(state, slot, _word_effect_amount(word_id, combo))
+        damage = _word_effect_amount(word_id, combo)
+        return _break_slot(state, slot, damage + _tamper_damage_bonus(state, slot))
     if verb == 'thin':
         # 区域按成员逐格作用：整片区域各自减半，不能只拿锚点单格数量当整片。
         attribute = 'gas' if slot.category == 'gas' else 'liquid'
@@ -1554,11 +1848,17 @@ def _soak_word(state: Any, slot: WorldSlot) -> tuple[str, str]:
 def _break_slot(state: Any, slot: WorldSlot, damage: int) -> tuple[str, str]:
     if slot.category == "anomaly":
         enemy = slot.enemy
+        _damage_number_before = enemy.integrity
         enemy.integrity = max(0, int(enemy.integrity) - damage)
+        from .hit_events import note_integrity_loss
+        note_integrity_loss(state, enemy, _damage_number_before)
         if enemy.integrity <= 0:
             state._resolve_enemy(enemy)
             state.enemies = [e for e in state.enemies if e is not enemy]
             return tr("你把「{name}」磨进了尘埃。", name=slot.label), ""
+        if damage > 0:
+            from ..equipment.expansion_runtime import tamper_target_slow
+            tamper_target_slow(state, enemy)
         return tr("「{name}」被损坏了。", name=slot.label), ""
     if slot.category in ("liquid", "gas"):
         return "", tr("流动的东西写不住「破坏」。")

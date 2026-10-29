@@ -12,6 +12,7 @@ from ..i18n import tr
 from .entities import ActionResult
 
 from ..circuit_schema import INPUTS, validate_board
+from .visual_events import emit_visual
 
 
 class CircuitMixin:
@@ -35,6 +36,8 @@ class CircuitMixin:
         hit = self.circuit_node_at(x, y)
         if hit is None:
             return False
+        from ..equipment.remaining_gear import circuit_signal_gate
+        if not circuit_signal_gate(self,x,y):return True
         board, key, node = hit
         runtime = board["state"]
         if node["op"] == "toggle":
@@ -47,6 +50,13 @@ class CircuitMixin:
                 runtime.setdefault("pulses", {})[key] = self.time + 1
             self._circuit_sequence_event(board, key)
         self._settle_circuit(board, player_inputs={key} if by_player else None)
+        if by_player:
+            # 「复核脉冲」要复送自己本层刚发出的一次信号：只记落点，不另存电平
+            # （电平本来就是 ``pulses`` 里的时间戳）。换层即丢，与其它逐层陈设同口径。
+            features = getattr(self, "realm_features", None)
+            if isinstance(features, dict):
+                features["last_signal"] = {"x": int(x), "y": int(y),
+                                           "depth": int(getattr(self, "depth", 0) or 0)}
         return True
 
     def _circuit_sequence_event(self, board: dict, key: str) -> None:
@@ -65,12 +75,34 @@ class CircuitMixin:
                 self.messages.append(tr("音序不符，接线回到起点。"))
             board["state"]["sequences"][seq_key] = progress
 
-    def _settle_circuit(self, board: dict, at_time: int | None = None, *, player_inputs: set | None = None) -> None:
+    def _circuit_board_index(self, board: dict) -> int:
+        for index, item in enumerate(self.circuit_boards):
+            if item is board:
+                return index
+        return -1
+
+    def _circuit_visual_root(self, tag: str) -> str:
+        return (f"circuit:{int(getattr(self, 'action_seq', 0) or 0)}:"
+                f"{int(getattr(self, 'time', 0) or 0)}:{tag}")
+
+    def _circuit_settlement_root(self, board: dict, root_id: str | None = None) -> str:
+        if root_id:
+            return str(root_id)
+        return self._circuit_visual_root(f"board{self._circuit_board_index(board)}")
+
+    def _settle_circuit(self, board: dict, at_time: int | None = None, *,
+                        player_inputs: set | None = None,
+                        root_id: str | None = None,
+                        parent_id: str | None = None) -> None:
         runtime = board["state"]
         previous = runtime.get("values", {})
         values = {}
         player_inputs = player_inputs or set()
         causal = set()
+        changed_nodes: list[str] = []
+        broken_nodes: list[str] = []
+        # (输出节点 key, x, y, 电平, 真实改变格, 接收器墙种)
+        receiver_effects: list[tuple[str, int, int, bool, tuple, str]] = []
         for key in board["order"]:
             node = board["nodes"][key]
             x, y = node["pos"]
@@ -111,6 +143,11 @@ class CircuitMixin:
             if intact and runtime.get("forced_until", {}).get(key, -1) > clock:
                 value = True
             values[key] = bool(value)
+            if values[key] != bool(previous.get(key, False)):
+                # 只有真实电平变化才登记事件；稳态重复 settle 不重发。
+                changed_nodes.append(key)
+                if not intact:
+                    broken_nodes.append(key)
             if ((key in player_inputs and (values[key] != previous.get(key, False)
                                          or op in {'pulse', 'step'}))
                     or any(ref in causal for ref in node.get('inputs', []))):
@@ -120,18 +157,28 @@ class CircuitMixin:
             kind = node.get("wall")
             if kind == "机关门":
                 # Closing a level-controlled door waits until the doorway is empty.
+                cell = self.cell(x, y)
+                before_solid = cell.solid
                 desired = not value
                 if not desired or self.entity_at(x, y) is None:
-                    self.cell(x, y).solid = desired
+                    cell.solid = desired
+                if cell.solid != before_solid:
+                    # 门态真实改变（开门/关门）才登记接收结果。
+                    receiver_effects.append((key, x, y, bool(value), ((x, y),), str(kind)))
             elif value and not previous.get(key, False):
+                fired = False
+                affected: tuple = ()
                 if kind == "陷阱石台":
                     if self._effect_power("wire_safe") <= 0:
                         from ..materials.logic import TRAP_SCENARIO_LIBRARY
                         scenario = self.trap_scenarios.get(f"{x},{y}", "dud")
                         self._execute_scenario(x, y, TRAP_SCENARIO_LIBRARY.get(scenario, {"type": "dud"}))
+                        fired, affected = True, ((x, y),)
                 else:
-                    sx,sy = board["nodes"][node["inputs"][0]]["pos"]
-                    self._resolve_receiver(x, y, source_x=sx, source_y=sy)
+                    sx, sy = board["nodes"][node["inputs"][0]]["pos"]
+                    fired, affected = self._receiver_result(x, y, source_x=sx, source_y=sy)
+                if fired:
+                    receiver_effects.append((key, x, y, bool(value), tuple(affected), str(kind)))
             if value and not previous.get(key, False) and key in causal:
                 index = next(i for i, item in enumerate(self.circuit_boards) if item is board)
                 self._identity_receiver(x, y, f'board:{index}:{key}')
@@ -143,6 +190,90 @@ class CircuitMixin:
         if board.get("completion") and values[board["completion"]]:
             if self.realm_id == "toy_memories":
                 self._mark_toy_solved()
+        self._emit_circuit_settlement_events(board, changed_nodes, broken_nodes,
+                                             values, receiver_effects, root_id,
+                                             parent_id)
+
+    def _emit_circuit_settlement_events(self, board: dict, changed_nodes: list,
+                                        broken_nodes: list, values: dict,
+                                        receiver_effects: list,
+                                        root_id: str | None = None,
+                                        parent_id: str | None = None) -> None:
+        """把本次真实结算的电平变化、真实导线路径与真实接收登记为 VisualEvent。"""
+        root = self._circuit_settlement_root(board, root_id)
+        index = self._circuit_board_index(board)
+        nodes = board["nodes"]
+        changed = set(changed_nodes)
+        broken = set(broken_nodes)
+        net_events: dict[tuple[str, str], object] = {}
+        net_sources: set[str] = set()
+        for key in board["order"]:
+            if key not in changed:
+                continue
+            for net in board["nets"]:
+                if net["from"] != key:
+                    continue
+                net_sources.add(key)
+                state = bool(values.get(key, False))
+                path = tuple((int(px), int(py)) for px, py in net["path"])
+                event = emit_visual(
+                    self, kind="circuit.travel" if state else "circuit.break",
+                    outcome="on" if state else "off",
+                    source=tuple(int(v) for v in nodes[key]["pos"]),
+                    targets=(tuple(int(v) for v in nodes[net["to"]]["pos"]),),
+                    paths=(path,), affected_cells=path,
+                    visual_key="circuit.arc", tier=1, theme="electric",
+                    root_id=root, source_id=key, layer_key="circuit",
+                    facts=(("board", index),
+                           ("net_id", f"{net['from']}->{net['to']}"),
+                           ("from", net["from"]), ("to", net["to"]),
+                           ("state", state)),
+                )
+                net_events[(net["from"], net["to"])] = event
+        for key in board["order"]:
+            if key not in changed or key in net_sources:
+                continue
+            node = nodes[key]
+            state = bool(values.get(key, False))
+            is_broken = key in broken
+            position = tuple(int(v) for v in node["pos"])
+            emit_visual(
+                self,
+                kind=("circuit.break" if is_broken
+                      else ("circuit.node_on" if state else "circuit.node_off")),
+                outcome="on" if state else "off",
+                source=position, targets=(position,), affected_cells=(position,),
+                visual_key="circuit.arc", tier=1, theme="electric",
+                root_id=root, source_id=key, layer_key="circuit",
+                facts=(("board", index), ("node_id", key),
+                       ("opcode", str(node["op"])), ("state", state),
+                       ("broken", is_broken),
+                       ("inputs", ",".join("1" if values.get(ref) else "0"
+                                           for ref in node.get("inputs", ())))),
+            )
+        for key, x, y, state, affected, kind in receiver_effects:
+            node = nodes[key]
+            inputs = node.get("inputs", ())
+            parent = net_events.get((inputs[0], key)) if inputs else None
+            net_path: tuple = ()
+            if inputs:
+                for net in board["nets"]:
+                    if net["from"] == inputs[0] and net["to"] == key:
+                        net_path = tuple((int(px), int(py)) for px, py in net["path"])
+                        break
+            emit_visual(
+                self, kind="circuit.receiver", outcome="on" if state else "off",
+                source=(int(x), int(y)), targets=tuple(affected) or ((int(x), int(y)),),
+                paths=(net_path,) if len(net_path) > 1 else (),
+                affected_cells=tuple(affected),
+                visual_key="circuit.arc", tier=1, theme="electric",
+                root_id=root,
+                parent_id=parent.event_id if parent is not None else parent_id,
+                source_id=f"board:{index}:{key}", layer_key="circuit",
+                facts=(("board", index), ("node_id", key), ("opcode", "output"),
+                       ("state", bool(state)), ("receiver", str(kind)),
+                       ("affected", len(affected))),
+            )
 
     def _tick_circuit_boards(self, at_time: int | None = None) -> None:
         for board in self.circuit_boards:
@@ -152,9 +283,23 @@ class CircuitMixin:
         hit = self.circuit_node_at(x,y)
         if hit is None or self.realm_id == "toy_memories":
             return False
-        board,key,_ = hit
-        board["state"].setdefault("forced_until", {})[key] = self.time+3
-        self._settle_circuit(board, player_inputs={key} if by_player else None)
+        board,key,node = hit
+        index = self._circuit_board_index(board)
+        root = self._circuit_visual_root(f"board{index}:force:{key}")
+        forced_until = self.time + 3
+        board["state"].setdefault("forced_until", {})[key] = forced_until
+        position = tuple(int(v) for v in node["pos"])
+        # 强制操作是真实成功分支：记短印记，随后由同一 root 的结算给出真实电平结果。
+        force_event = emit_visual(
+            self, kind="circuit.force", outcome="on", source=position,
+            targets=(position,), affected_cells=(position,),
+            visual_key="circuit.arc", tier=1, theme="electric",
+            root_id=root, source_id=key, layer_key="circuit",
+            facts=(("board", index), ("node_id", key),
+                   ("opcode", str(node["op"])), ("forced_until", int(forced_until))),
+        )
+        self._settle_circuit(board, player_inputs={key} if by_player else None,
+                             root_id=root, parent_id=force_event.event_id)
         return True
 
     def rewire_circuit_nodes(self, start, end, *, by_player: bool = False) -> bool:
@@ -174,7 +319,27 @@ class CircuitMixin:
         a[0].update(board)
         for net in board["nets"]:
             self.lay_wire_path([tuple(p) for p in net["path"]])
-        self._settle_circuit(a[0], player_inputs={b[1]} if by_player else None)
+        index = self._circuit_board_index(a[0])
+        root = self._circuit_visual_root(f"board{index}:rewire:{a[1]}->{b[1]}")
+        new_path: tuple = ()
+        for net in board["nets"]:
+            if net["from"] == a[1] and net["to"] == b[1]:
+                new_path = tuple((int(px), int(py)) for px, py in net["path"])
+                break
+        start_pos = tuple(int(v) for v in a[2]["pos"])
+        end_pos = tuple(int(v) for v in b[2]["pos"])
+        # 接线成功：只沿这次真实写下的新 net.path 缝合，不改任何端口语义。
+        rewire_event = emit_visual(
+            self, kind="circuit.rewire", outcome="on", source=start_pos,
+            targets=(end_pos,), paths=(new_path,) if len(new_path) > 1 else (),
+            affected_cells=new_path,
+            visual_key="circuit.arc", tier=1, theme="electric",
+            root_id=root, source_id=f"{a[1]}->{b[1]}", layer_key="circuit",
+            facts=(("board", index), ("from", a[1]), ("to", b[1]),
+                   ("path_cells", len(new_path))),
+        )
+        self._settle_circuit(a[0], player_inputs={b[1]} if by_player else None,
+                             root_id=root, parent_id=rewire_event.event_id)
         return True
 
     def _resume_circuit_boards(self) -> None:

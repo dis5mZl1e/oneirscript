@@ -134,3 +134,11 @@ def is_material_source(definition_id: str) -> bool:
 EQUIPMENT_SHAPES.update({'hospital.suture_shears': 'L3', 'hospital.hollow_lancet': 'I2', 'hospital.suture_coil': 'U5', 'hospital.lymph_filter': 'D4', 'hospital.cerebral_ampoule': 'V3', 'hospital.sterile_glove': 'T4', 'hospital.glass_rib': 'S4', 'hospital.pulse_tag': 'I2', 'hospital.marrow_spoon': 'L3', 'hospital.lumen_mask': 'P5'})
 
 EQUIPMENT_SHAPES.update({'library.bookmark': 'V3', 'library.index': 'D4', 'library.fold': 'L3', 'library.paperweight': 'S4', 'library.lens': 'D4', 'library.quill': 'I3', 'library.card': 'I2', 'library.testimony': 'T4'})
+
+# Expansion equipment shapes are fixed in the canonical item catalog. Keeping
+# this adapter at import time preserves the board's existing lookup API.
+from ..data.expansion.catalog import ENTRIES as _EXPANSION_ENTRIES
+EQUIPMENT_SHAPES.update({
+    entry['id']: entry['board_shape'] for entry in _EXPANSION_ENTRIES
+    if entry['category'] == 'equipment' and entry.get('board_shape')
+})

@@ -96,14 +96,10 @@ from ..board_editor import (
 class PanelsMixin:
     """面板路由族：图鉴/历史/设置页的开关、滚动与行激活。"""
 
-    def _toggle_panel(self, mode: str) -> None:
+    def _toggle_panel(self, mode: str, *, manual: bool = True) -> None:
         # 暂停菜单开着时面板不可切（hidden 布局的按钮收不到点击，键盘已
         # 被模态分支吃掉；这里是兜底——万一有路径漏进来也不许破坏暂停态）。
-        if self._modal_menu_open():
-            return
-        # 地图篡改浮层打开时右侧面板保持原界面且不可切换（2026-10-23：C 键
-        # 只开左侧菜单，浮层仍按模态处理，避免点导航按钮改掉右侧界面）。
-        if getattr(self, 'world_tamper_editor', None) is not None:
+        if self._modal_menu_open(allow_inspection=True):
             return
         self._panel_enter_mode = None
         if self.sentence_aim is not None:
@@ -113,7 +109,15 @@ class PanelsMixin:
             # 教程埋点：面板步需要「真正打开行囊」的证据（面板切换不耗回合，
             # 完成判定只能靠这里写旗标，由教程 pump 每帧评估）。
             state.tutorial_events["panel_opened"] = mode
-        self._sidebar_transition("world" if self.panel_mode == mode else mode)
+        # 再按一次同一页 = 收起；收起后的落点同样走默认页（左侧事件记录开启
+        # 时是行囊，否则是事件记录）。manual=False 给教程等自动开页用，避免
+        # 在锁定态把「锁定页」改掉。
+        target = self._default_panel_mode() if self.panel_mode == mode else mode
+        # 焦点必须先于 refresh_view 同步：提示条与焦点边框都在刷新里按
+        # cursor_zone 取文本/线型，写在刷新之后会让它们停上一帧（80×24 实测）。
+        if not self.home_mode:
+            self.cursor_zone = "map" if target == "world" else "panel"
+        self._sidebar_transition(target, manual=manual)
 
     def catalog_progress(self) -> dict[str, dict]:
         return self.session.manager.merge_catalogs(
@@ -228,14 +232,15 @@ class PanelsMixin:
         这段渲染必须能独立跑。
         """
         progress = self.catalog_progress()
-        viewport_size = self._codex_viewport_size()
+        viewport_rows = self._codex_viewport_rows()
         self.query_one("#codex-list", Static).update(
             render_codex_list(
                 self.codex_page,
                 self.catalog_definitions,
                 progress,
                 mode,
-                viewport_size=viewport_size,
+                viewport_size=viewport_rows,
+                width=self._codex_list_width(),
             )
         )
         self.catalog_diagnostics.clear()
@@ -313,6 +318,8 @@ class PanelsMixin:
         逐槽清空存档里的 ``state.catalog``（编码/解码往返由持久化层保证），
         最后删除共享的 catalog.json；之后任何存档再保存也不会把旧统计合回来。
         """
+        if not self.session.persistence_enabled:
+            return SettingChange(False, tr('教程中不修改正式记录。'))
         self.session.state.catalog = {}
         manager = self.session.manager
         try:
@@ -338,6 +345,8 @@ class PanelsMixin:
         只做「从无到有」的标记（已有计数取 max 不覆盖），不清除任何
         现有记录；与「删除历史统计」互不影响。
         """
+        if not self.session.persistence_enabled:
+            return SettingChange(False, tr('教程中不修改正式记录。'))
         manager = self.session.manager
         merged = manager.merge_catalogs(self.session.state.catalog, manager.load_catalog())
         unlocked = 0
@@ -365,23 +374,36 @@ class PanelsMixin:
         self.session.state.catalog = merged
         return SettingChange(True, tr("图鉴已全部解锁（新标记 {n} 条）。").format(n=unlocked))
 
-    def _codex_viewport_size(self) -> int:
+    def _codex_viewport_rows(self) -> int:
+        """列表可见行数；两列布局下每行放两条目。"""
         try:
             return max(1, self.query_one("#codex-list").content_size.height)
         except Exception:
             return 10
 
+    def _codex_viewport_size(self) -> int:
+        """列表可见**条目数**（两列 × 行数）；导航/滚动按条目下标计算。"""
+        return max(2, self._codex_viewport_rows() * 2)
+
+    def _codex_list_width(self) -> int:
+        try:
+            return max(8, self.query_one("#codex-list").content_size.width)
+        except Exception:
+            return 50
+
     def scroll_codex(self, delta: int) -> None:
         # [SFX挂点] 图鉴列表滚动（↑↓/滚轮）：建议 book_flip（图鉴翻页）。
+        # 两列布局下一次滚轮应滚一个视觉行（两条目），而不是一条。
         self.codex_page.scroll_entries(
-            delta,
+            int(delta) * 2,
             self.catalog_definitions,
             viewport_size=self._codex_viewport_size(),
         )
         self.refresh_view()
 
-    def select_codex_row(self, row: int) -> None:
-        self.codex_page.select_visible_row(row, self.catalog_definitions, self.catalog_progress())
+    def select_codex_row(self, row: int, column: int = 0) -> None:
+        self.codex_page.select_visible_row(
+            row, self.catalog_definitions, self.catalog_progress(), column)
         self.refresh_view()
 
     def activate_setting(self, index: int, x: int, width: int) -> None:
@@ -401,3 +423,20 @@ class PanelsMixin:
         # 装备句法项切换后同步「新盘面默认语序」（幂等，不改当前盘面）。
         self._sync_equipment_syntax()
         self.refresh_view()
+
+    def _select_settings_category(self, category=None, *, delta=0):
+        if self.settings_page.capture_target is not None:
+            return
+        widget = self.query_one('#settings-list')
+        page = self.settings_page
+        page.category_scrolls[page.active_category] = widget.scroll_y
+        if category is None:
+            page.cycle_category(delta, self.config.registry)
+        else:
+            page.select_category(category, self.config.registry)
+        self.refresh_view()
+        self.call_after_refresh(lambda: widget.scroll_to(
+            y=page.category_scrolls.get(page.active_category, 0), animate=False))
+
+    def _scroll_settings_cursor(self):
+        self.query_one(f'#setting-row-{self.settings_page.selected}').scroll_visible(animate=False)

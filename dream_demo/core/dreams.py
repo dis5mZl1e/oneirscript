@@ -554,6 +554,55 @@ class DreamRealmMixin:
             protected=fixture_protected, spawn=spawn,
             energized=self._logic_energized,
         )
+        # ---- 通用环境填充（2026-10-24）：非任务型位面的骨架地图补常规内容 ----
+        # 门之回廊这类「环廊探索」位面此前只有骨架：整层一种地板、没有变体、
+        # 没有植物/容器/液气，大片走廊显得空旷。任务型短位面（玩具/余烬）是
+        # 手关解谜，保持原样；退潮厅只补地板与少量植物，液气/容器交给潮汐规则。
+        from .realm_environment import REALM_FLOOR_PALETTES, fill_environment
+        env_protected: set[tuple[int, int]] = set()
+        for sy in range(spawn[1] - 1, spawn[1] + 2):
+            for sx in range(spawn[0] - 1, spawn[0] + 2):
+                env_protected.add((sx, sy))
+        for entity in self.enemies:
+            env_protected.add((entity.x, entity.y))
+        for event in self.events:
+            env_protected.add((event.x, event.y))
+        for item in self.world_items:
+            env_protected.add((item.x, item.y))
+        env_protected.add((width // 2, height // 2))
+        for cy, row in enumerate(cells):
+            for cx, cell in enumerate(row):
+                if cell.liquid or cell.gas:
+                    # 作者写好的液体/气体（如引火燃油）不参与自然投放。
+                    env_protected.add((cx, cy))
+        if definition.realm_id in ("millennium_garden", "library_palace", "white_sanatorium"):
+            from .realm_environment import fill_long_realm_environment
+            fill_long_realm_environment(self, depth, spawn, env_protected)
+        elif definition.realm_id == "door_corridor":
+            fill_environment(
+                cells, seed=self.seed + depth * 1009, depth=depth,
+                realm_id=definition.realm_id, protected=env_protected,
+                palette=REALM_FLOOR_PALETTES["door_corridor"],
+                base_coverage=0.55, plant_coverage=0.05,
+                containers=True, liquids=True, gases=True,
+                spawn=spawn,
+            )
+            for row in cells:
+                for cell in row:
+                    if cell.liquid or cell.gas:
+                        self._prime_material_clocks(cell)
+            self._reset_material_index()
+        elif definition.realm_id == "ebbing_hall":
+            # 退潮厅的水位由潮汐规则接管，只补地板与少量植物，不铺自然液气/容器。
+            fill_environment(
+                cells, seed=self.seed + depth * 1009, depth=depth,
+                realm_id=definition.realm_id, protected=env_protected,
+                palette=REALM_FLOOR_PALETTES["ebbing_hall"],
+                base_coverage=0.5, plant_coverage=0.035,
+                containers=False, liquids=False, gases=False,
+                spawn=spawn,
+            )
+            self._reset_material_index()
 
 
 # ---- 地形算法：同心环门廊（门之回廊） ----
