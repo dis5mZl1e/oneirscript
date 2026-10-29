@@ -88,17 +88,18 @@ Mind, lucidity, and imagination serve different purposes. Portents, noise, and c
 
 ## Downloads
 
-**Download links are reserved for the official release and will be added later.**
+**Download v0.1.0:** choose your platform and processor below.
 
-| Platform | Download link |
+| Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows | Coming later |
-| macOS | Coming later |
-| Linux | Coming later |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Windows-x86_64-en.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Linux-x86_64-en.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-arm64-en.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-Intel-en.zip) |
 
-<!-- Add verified release links to the table above when publishing. No URLs yet. -->
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)
 
-Available platforms, architectures, and requirements will be listed with each release. Complete portable releases will include the terminal and fonts needed by the game. Source instructions are below.
+Extract the entire archive. Desktop packages include their terminal and fonts; Python is not required. macOS packages are unsigned and not notarized. If blocked, use System Settings → Privacy & Security → Open Anyway. Linux requires a graphical desktop.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-download)
 
@@ -178,9 +179,24 @@ Developers can run a noninteractive smoke check with a separate save directory:
 python run_demo.py --smoke --save-dir save-smoke
 ```
 
-For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.md). Build scripts for native release packaging are not part of this checkout.
+For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.md). Native build recipes are included in `build.py` and `scripts/`; install `requirements-build.txt` in addition to the runtime requirements when rebuilding a desktop package.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-source)
+
+### Install the Python distribution
+
+The Release also provides a wheel and source distribution for Python 3.11+.
+Download the wheel, install it with your virtual environment's pip, then launch:
+
+```sh
+python -m pip install oneirscript-0.1.0-py3-none-any.whl
+oneirscript
+```
+
+Fonts, audio and effect textures are installed with the Python package. The command
+stores configuration and saves in the user's platform data directory, outside
+site-packages. WezTerm is an external terminal; the first normal launch may need
+network access to download it. `oneirscript --compat-terminal` uses the current terminal.
 
 <a id="en-technical"></a>
 
@@ -188,7 +204,7 @@ For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.
 
 The game uses Python 3.11+, Textual/Rich, NumPy, Pillow/FontTools, asciimatics and pygame, with WezTerm as the recommended terminal. Session commands connect the UI to game rules; board compilation, tamper settlement, environmental simulation and map presentation are organized as distinct systems.
 
-See the [technical overview](TECHNICAL_EN.md) for the architecture diagram, source map, system explanations and reproducible smoke-check commands. This source-focused checkout does not include the web frontend, platform binaries, portable terminal vendor directory or full maintainer test/build tools.
+See the [technical overview](TECHNICAL_EN.md) for the architecture diagram, source map, system explanations and reproducible smoke-check commands. This checkout includes desktop source, runtime assets and minimal native build recipes. The web frontend, portable terminal binaries and full maintainer test/CI toolchain remain outside the repository.
 
 <a id="en-contribute"></a>
 

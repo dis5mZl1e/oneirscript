@@ -1,0 +1,17 @@
+include LICENSE LICENSING.md THIRD-PARTY-NOTICES.md DESKTOP-SOURCE.json
+include README*.md TECHNICAL*.md CONTRIBUTING*.md
+include run_demo.py launch_game.py build.py setup.py requirements*.txt
+recursive-include assets/data *
+recursive-include dream_demo *.py *.json
+recursive-include assets/fonts *
+recursive-include assets/sfx *
+recursive-include assets/music *
+recursive-include assets/wezterm *
+recursive-include assets/licenses *
+recursive-include assets/readme *
+include assets/CREDITS.md assets/icon.ico assets/icon_src.jpg
+recursive-include scripts *.py *.cs
+prune build
+prune dist
+prune vendor
+global-exclude __pycache__ *.py[cod] *.log *.tmp

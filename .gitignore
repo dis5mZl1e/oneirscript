@@ -32,9 +32,9 @@ Thumbs.db
 
 # Development-only material belongs in the development repository
 *.xlsx
+!assets/data/anomaly-skills.xlsx
 /tests/
 /docs/
-/scripts/
 /sim/
 /tools/
 /audio_production/

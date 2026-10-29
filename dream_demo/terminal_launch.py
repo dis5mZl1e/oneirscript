@@ -170,7 +170,8 @@ def install_background(local_app_data: Path | None = None) -> str | None:
     if getattr(sys, "frozen", False):
         source = Path(getattr(sys, "_MEIPASS", ".")) / "wezterm" / "mist.png"
     else:
-        source = Path(__file__).resolve().parent.parent / "assets" / "wezterm" / "mist.png"
+        from .resource_paths import assets_dir
+        source = assets_dir() / "wezterm" / "mist.png"
     if not source.is_file():
         return None
     local_app_data = local_app_data or Path(os.environ["LOCALAPPDATA"])

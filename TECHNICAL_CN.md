@@ -5,7 +5,7 @@
 ## 仓库范围
 
 这是 Python 桌面游戏的源码精简仓库，包含游戏规则、终端界面、地图生成、内容定义、字体和音频。
-网页版前端、各平台发行二进制、便携 WezTerm 的 vendor 目录、维护者打包脚本和完整测试套件不在本仓库中。
+本仓库包含基础原生构建配方。各平台二进制发布在 Releases；网页版前端、便携 WezTerm 二进制及维护者完整测试与 CI 工具链不在源码目录中。
 README 的开发画面可能录自较新的桌面构建，用于展示玩法，不代表与当前源码快照逐项一致。
 
 ## 运行环境与技术栈
@@ -73,7 +73,7 @@ flowchart TD
 
 **地图显示。** 字符与图像呈现共用字形信息，图像地图使用字体感知的栅格化，周边面板与反馈由终端界面承载。
 规则回合与显示动画分开处理；一次动画刷新不等于推进一次玩家行动。
-入口：[map_presentation.py](dream_demo/ui/map_presentation.py)、[render.py](dream_demo/ui/render.py)、
+入口：[map_presentation.py](dream_demo/ui/map_presentation.py)、[world_renderer.py](dream_demo/ui/world_renderer.py)、
 [live_map.py](dream_demo/ui/live_map.py)。
 
 **生成与存档。** 种子影响生成布局，但不保证代码或内容变化后仍能复现同一局。
@@ -100,6 +100,21 @@ python run_demo.py --smoke --fx-smoke --save-dir save-fx-smoke
 
 报告问题时附上源码提交、操作系统、Python 版本、终端、复现步骤、预期与实际结果及相关日志。
 分享日志与存档前删除个人信息和凭据，不在公开 issue 中披露安全敏感细节。
+
+## 源码与发行包对应关系
+
+`DESKTOP-SOURCE.json` 记录了从开发提交 `fcc3349` 导入的 v0.1.0 桌面源码。
+`desktop-source-v0.1.0` 标签保留原始基线；Release 提供独立的对应源码 ZIP，压缩包路径为 ASCII，
+并附原开发路径还原脚本。当前分支额外加入 Python 安装态资源定位和可写数据目录的命令入口。
+现有桌面二进制保持原样，校验值随 Release 提供。
+
+重新构建桌面包时，安装运行依赖和 `requirements-build.txt`，执行
+`python scripts/prepare_portable_terminal.py` 准备对应平台终端，再运行 `python build.py` 与
+`scripts/build_portable_bundle.py`。需要在目标操作系统构建，不能靠改文件名把 Windows/Linux 产物变为已验证的 macOS 包。
+
+构建 Python wheel/sdist 时，先安装 `build` 包，并在仓库外的目录执行
+`python -m build /path/to/oneirscript`，避免仓库的原生 `build.py` 遮蔽 Python 构建前端。
+wheel 将运行资源打入 `dream_demo/_assets`，源码目录继续使用 `assets`；原生桌面包保留原冻结资源布局。
 
 ## 许可
 

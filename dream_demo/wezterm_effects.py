@@ -10,7 +10,8 @@ from .font_assets import copy_asset,private_cache_dir
 def bundled_effects_dir() -> Path:
     if getattr(sys,'frozen',False):
         return Path(getattr(sys,'_MEIPASS','.'))/'wezterm'
-    return Path(__file__).resolve().parents[1]/'assets/wezterm'
+    from .resource_paths import assets_dir
+    return assets_dir() / 'wezterm'
 
 
 def install_effects(base:Path) -> Path | None:

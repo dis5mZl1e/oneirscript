@@ -12,7 +12,7 @@ authors = [{ name = "dis5mZl1e" }]
 requires-python = ">=3.11"
 keywords = ["roguelike", "dream", "textual", "terminal-game", "ascii", "procedural", "oneirscript"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Natural Language :: Chinese (Simplified)",
@@ -28,15 +28,24 @@ dependencies = [
     "numpy>=1.24,<3",
     "asciimatics==1.15.0",
     "pygame>=2.6.1,<3",
+    "openpyxl>=3.1,<4",
     "pillow>=10,<13",
     "fonttools>=4.50,<5",
 ]
 
 [project.urls]
 Repository = "https://github.com/dis5mZl1e/oneirscript"
+Releases = "https://github.com/dis5mZl1e/oneirscript/releases"
+
+[project.scripts]
+oneirscript = "dream_demo.cli:main"
+
+[tool.setuptools]
+py-modules = ["run_demo", "launch_game"]
 
 [tool.setuptools.packages.find]
 include = ["dream_demo*"]
 
 [tool.setuptools.package-data]
 "dream_demo" = ["mapgen/vaults/*.json", "data/*.json"]
+"dream_demo.data.expansion" = ["catalog.json"]

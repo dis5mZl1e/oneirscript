@@ -78,7 +78,7 @@ Apache-2.0 §4(b) 修改说明与逐源哈希见 `assets/fonts/UNIFIED-LICENSE-N
 图标源图 `assets/icon_src.jpg`、`assets/icon.ico` 及加载／终端纹理仍需保存可核对的
 创作来源；本声明不凭文件位于仓库中就将来源不明的图像认定为原创。
 
-### 二进制分发尚需完成
+### 历史二进制分发核查清单（需按具体产物核对）
 
 - 对实际 EXE、wheel 和终端目录形成版本、哈希、许可证及版权清单，补齐离线全文。
 - 保存 pygame/SDL 等适用 LGPL 组件的对应源码与所需重建／替换材料；
@@ -86,7 +86,7 @@ Apache-2.0 §4(b) 修改说明与逐源哈希见 `assets/fonts/UNIFIED-LICENSE-N
 - 提供与发行版对应的 GPL 源码及构建脚本，依法选择源码交付方式。
 - 将 LICENSE、LICENSING.md、本声明及资源许可一起纳入所有平台的发行包。
 
-详情与证据见 [本次核查记录](docs/261022开源许可与第三方资源核查.md)。
+历史内部核查记录不随本仓库提供；当前资源的可访问声明见 [许可边界](LICENSING.md)、[字体通告](assets/fonts/UNIFIED-LICENSE-NOTICE.md)与 [音频署名](assets/CREDITS.md)。
 
 [返回顶部 / Back to top](#zh) · [English](#en)
 
@@ -143,13 +143,13 @@ The local terminal directory also contains Mesa, libEGL.dll, libGLESv2.dll, conp
 
 Original synthesized audio retains the MIT license in `assets/licenses/Original-Audio-MIT.txt`; see `assets/CREDITS.md`. Changing the code license does not change that separate license. Retain verifiable creation records for `assets/icon_src.jpg`, `assets/icon.ico`, and loading/terminal textures. A file's presence in the repository is not evidence that an image of unknown provenance is original.
 
-### Remaining binary-distribution work
+### Historical binary-distribution review checklist (verify against each artifact)
 
 - Inventory the actual EXE, wheels, and terminal directory with versions, hashes, licenses, and copyright notices, and supply the complete required license texts offline.
 - Preserve Corresponding Source and required rebuild/replacement materials for applicable LGPL components such as pygame/SDL. Describing them as dynamically linked and unmodified does not by itself demonstrate compliance with every obligation.
 - Supply GPL source and build scripts corresponding to each release, using a compliant source-delivery method.
 - Include LICENSE, LICENSING.md, this notice, and the complete resource licensing materials in distributions for every platform.
 
-Details and evidence are recorded in the [internal review](docs/261022开源许可与第三方资源核查.md).
+The historical internal review is not included here. Accessible resource notices are provided in [LICENSING.md](LICENSING.md), the [font notice](assets/fonts/UNIFIED-LICENSE-NOTICE.md), and [audio credits](assets/CREDITS.md).
 
 [Back to top](#en) · [简体中文](#zh)

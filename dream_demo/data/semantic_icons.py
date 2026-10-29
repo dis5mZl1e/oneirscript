@@ -32,7 +32,8 @@ def _manifest_path() -> Path | None:
     if base is not None:
         candidate = base.parent / "semantic-icons.json"
         if candidate.is_file(): return candidate
-    fallback = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "semantic-icons.json"
+    from ..resource_paths import assets_dir
+    fallback = assets_dir() / "fonts" / "semantic-icons.json"
     return fallback if fallback.is_file() else None
 
 

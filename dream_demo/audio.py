@@ -70,7 +70,8 @@ def _asset_path(*parts: str) -> Path | None:
     bundle = getattr(sys, "_MEIPASS", None)
     if bundle:
         bases.append(Path(bundle))
-    bases.append(Path(__file__).resolve().parent.parent / "assets")
+    from .resource_paths import assets_dir
+    bases.append(assets_dir())
     for base in bases:
         candidate = base.joinpath(*parts)
         if candidate.is_file():

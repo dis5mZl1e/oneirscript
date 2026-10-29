@@ -27,7 +27,8 @@ class FontFace:
 def asset_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS", ".")) / "fonts"
-    return Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    from .resource_paths import assets_dir
+    return assets_dir() / "fonts"
 
 
 # (路径, mtime_ns, 大小) -> 内容 sha256。

@@ -86,17 +86,18 @@
 
 ## 下载
 
-**下载入口预留，链接将在正式发布时补充。**
+**下载 v0.1.0：** 按系统与处理器选择发行包。
 
-| 平台 | 下载链接 |
+| Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows | 待发布 |
-| macOS | 待发布 |
-| Linux | 待发布 |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Windows-x86_64-zh.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Linux-x86_64-zh.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-arm64-zh.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-Intel-zh.zip) |
 
-<!-- 发布时在上表补充经过验证的发行包链接；目前不填写 URL。 -->
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)
 
-请以实际发布的平台、架构和版本说明为准。完整便携发行包将提供游戏所需的终端与字体；从源码运行的方法见下方。
+请完整解压。桌面包已包含终端与字体，无需安装 Python。macOS 包未签名、未公证，若被拦截请在“系统设置 → 隐私与安全性”选择“仍要打开”；Linux 需要图形桌面。
 
 [返回目录](#zh) · [English](README_EN.md#en-download)
 
@@ -176,9 +177,21 @@ python3 -m venv .venv
 python run_demo.py --smoke --save-dir save-smoke
 ```
 
-代码导航与开发检查见 [TECHNICAL_CN.md](TECHNICAL_CN.md)。原生发行包打包脚本不在本仓库中。
+代码导航与开发检查见 [TECHNICAL_CN.md](TECHNICAL_CN.md)。本仓库包含 `build.py` 和 `scripts/` 中的原生构建配方；重新打包时在运行依赖之外安装 `requirements-build.txt`。
 
 [返回目录](#zh) · [English](README_EN.md#en-source)
+
+### 安装 Python 分发包
+
+Release 另提供适用于 Python 3.11+ 的 wheel 和源码分发包。下载 wheel 后，在虚拟环境中安装并启动：
+
+```sh
+python -m pip install oneirscript-0.1.0-py3-none-any.whl
+oneirscript
+```
+
+Python 包包含字体、音频与特效纹理；命令将配置和存档写入用户的平台数据目录，不写入 site-packages。
+WezTerm 仍是外部终端，首次正常启动可能需要联网下载；`oneirscript --compat-terminal` 使用当前终端。
 
 <a id="zh-technical"></a>
 
@@ -186,7 +199,7 @@ python run_demo.py --smoke --save-dir save-smoke
 
 游戏使用 Python 3.11+、Textual/Rich、NumPy、Pillow/FontTools、asciimatics 与 pygame，推荐以 WezTerm 为终端宿主。会话命令连接界面与游戏规则，装备编译、篡改结算、环境模拟和地图呈现各自组织。
 
-完整的架构图、代码导航、系统实现与冒烟检查命令见 [技术介绍与开发导航](TECHNICAL_CN.md)。本源码精简仓库不包含网页版、发行二进制、便携终端 vendor 目录及维护者完整测试和打包工具。
+完整的架构图、代码导航、系统实现与冒烟检查命令见 [技术介绍与开发导航](TECHNICAL_CN.md)。本仓库包含桌面源码、运行资源和基础原生构建配方；网页版、便携终端二进制及维护者完整测试和 CI 工具链不随仓库提供。
 
 <a id="zh-contribute"></a>
 

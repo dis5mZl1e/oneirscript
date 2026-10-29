@@ -308,7 +308,7 @@ def main() -> int:
         "--specpath", str(WORKPATH),        # spec 暂存到 build/，最后清理
         "--collect-data", "textual",        # textual 自带的 TCSS/资源
         "--collect-data", "dream_demo",     # 游戏包内的数据文件（vault 模板 JSON）
-        "--add-data", f"{ROOT / '梦层异象主动技能开发表.xlsx'}{os.pathsep}.",
+        "--add-data", f"{ROOT / 'assets' / 'data' / 'anomaly-skills.xlsx'}{os.pathsep}data",
         "--exclude-module", "Cython",       # 构建期工具，绝不能进发布包
         "--collect-submodules", "asciimatics",
         "--collect-submodules", "fontTools.ttLib.tables",  # cmap/table modules are imported dynamically

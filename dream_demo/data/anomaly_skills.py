@@ -30,7 +30,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-_WORKBOOK_PATH = Path(__file__).resolve().parents[2] / "梦层异象主动技能开发表.xlsx"
+from ..resource_paths import assets_dir
+
+_WORKBOOK_PATH = assets_dir() / 'data/anomaly-skills.xlsx'
 # 预转换产物（tools/export_anomaly_skills_json.py 生成）：存在时导入期只读
 # 本文件，不依赖 openpyxl 与 xlsx（网页端 Pyodide 构建的前提）。
 _PREBUILT_PATH = Path(__file__).resolve().parent / "anomaly_skills.json"

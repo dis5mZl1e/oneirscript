@@ -6,8 +6,9 @@
 
 This is the source-focused repository for the Python desktop game. It contains
 the game rules, terminal UI, procedural generation, content definitions, fonts,
-and audio. The web frontend, platform release binaries, portable WezTerm vendor
-directory, maintainer build scripts, and full test suite are not included.
+and audio. Basic native build recipes are included. Platform binaries are attached to
+Releases; the web frontend, portable WezTerm vendor binaries and full maintainer
+test/CI toolchain are not included in the source tree.
 Development captures in the README may come from a newer desktop build; they
 illustrate the systems rather than certify an exact source/release match.
 
@@ -92,7 +93,7 @@ Font-aware rasterization supports the image map, while the terminal UI supplies
 panels and feedback. Turn-based rules and display animation are separate
 concerns: an animation frame is not itself a player turn. See
 [map_presentation.py](dream_demo/ui/map_presentation.py),
-[render.py](dream_demo/ui/render.py), and
+[world_renderer.py](dream_demo/ui/world_renderer.py), and
 [live_map.py](dream_demo/ui/live_map.py).
 
 **Generation and saves.** Seeds influence generated layouts, but a seed alone
@@ -127,6 +128,27 @@ For bug reports, include the checkout commit, OS, Python version, terminal,
 reproduction steps, expected/actual behavior, and relevant logs. Remove personal
 information and credentials from logs or saves. Do not post security-sensitive
 details in a public issue.
+
+## Source and release correspondence
+
+`DESKTOP-SOURCE.json` records the original v0.1.0 desktop source import from
+development commit `fcc3349`. The `desktop-source-v0.1.0` tag preserves that baseline;
+the Release includes a clean corresponding-source ZIP with ASCII archive paths
+and a restoration script for original development paths. The current branch also
+adds installed-Python asset lookup and a writable-data CLI adapter. Existing
+desktop binaries are unchanged; their hashes are recorded with the Release.
+
+To rebuild a native desktop package from a source checkout, install the runtime
+requirements and `requirements-build.txt`, prepare the platform terminal with
+`python scripts/prepare_portable_terminal.py`, then run `python build.py` and
+`scripts/build_portable_bundle.py`. Run these on the target operating system;
+Windows/Linux cannot produce a tested native macOS binary by changing a filename.
+
+To build a Python wheel/sdist, install the `build` package and invoke it from a
+directory outside this checkout: `python -m build /path/to/oneirscript`.
+The repository's native `build.py` otherwise shadows the Python build frontend.
+The wheel embeds runtime resources in `dream_demo/_assets`; the source tree keeps
+them in `assets`. The native desktop build continues to use its original frozen layout.
 
 ## Licensing
 
