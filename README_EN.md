@@ -273,3 +273,5 @@ The original author will consider merging a proposed change into the main projec
 These contribution requirements apply to changes submitted for inclusion in this project. They do not impose additional restrictions on the independent use, modification, and distribution rights granted by the GPL, or require independent forks to adopt this project's review process. Applicable licenses and third-party notices must be respected whether or not AI is used. This section describes development practices, responsibility boundaries, and contribution procedures; it does not replace or amend the licenses. Rights and obligations are governed by [LICENSE](LICENSE), applicable asset licenses, and applicable law.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-ai-policy)
+
+Thanks to OpenAI Codex and DeepSeek for their assistance with coding and development.
