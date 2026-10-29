@@ -1,5 +1,7 @@
 # 梦层 / Oneirscript
 
+![Oneirscript — generated dreamscape](assets/readme/banner-1920x640.png)
+
 > 在梦里，文字可以被篡改，环境可以被利用，离开的路需要自己找到。
 
 **传统 Roguelike · 单人 · 网格回合制 · 程序生成 · 失败重开**
@@ -11,10 +13,12 @@
 **目录**
 
 - [游戏简介](#zh-overview)
+- [截图与实机演示](#zh-gallery)
 - [核心玩法](#zh-features)
 - [下载](#zh-download)
 - [开始游玩](#zh-play)
 - [从源码运行](#zh-source)
+- [技术介绍](#zh-technical)
 - [反馈与参与](#zh-contribute)
 - [开源许可](#zh-license)
 - [AI 辅助开发、分支授权与贡献审核](#zh-ai-policy)
@@ -32,6 +36,34 @@
 游戏仍在持续开发和调整。当前以终端为主要载体，使用 Python 与 Textual 构建，提供中文和英文界面。
 
 [返回目录](#zh) · [English](README_EN.md#en-overview)
+
+<a id="zh-gallery"></a>
+
+## 截图与实机演示
+
+### 环境连锁反应
+
+爆炸、火焰与电场在真实游戏引擎中发生和蔓延；此段使用提前布置的演示场景。
+
+![真实引擎布置场景中的环境连锁反应](assets/readme/environment-chain.gif)
+
+### 在实战地图中篡改现实
+
+英文桌面版实机录屏：选择篡改词，预览改写结果与费用，再在生成的战斗地图中执行。
+
+![英文桌面版现实篡改演示](assets/readme/tamper-desktop-en.gif)
+
+### 组织装备语句
+
+英文桌面版实机录屏：拿起、移动、旋转装备，放置功能词，并在战斗中展示构筑的作用。
+
+![英文桌面版装备盘操作与效果演示](assets/readme/equipment-desktop-en.gif)
+
+### 更大视角的梦境地图
+
+![程序生成梦境地图的全知视角全貌](assets/readme/background-full-map-itch.png)
+
+画面来自开发构建，可能与本仓库源码快照存在差异。全图使用全知视角，环境反应为引擎内布置演示；篡改与装备 GIF 均录自生成地图中的桌面游戏。[素材说明](assets/readme/README.md)。
 
 <a id="zh-features"></a>
 
@@ -144,9 +176,17 @@ python3 -m venv .venv
 python run_demo.py --smoke --save-dir save-smoke
 ```
 
-Windows 本机打包入口保留在原开发仓库的 [build.py](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/build.py)。开发环境与贡献约定见 [CONTRIBUTING.md](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CONTRIBUTING.md)。
+代码导航与开发检查见 [TECHNICAL_CN.md](TECHNICAL_CN.md)。原生发行包打包脚本不在本仓库中。
 
 [返回目录](#zh) · [English](README_EN.md#en-source)
+
+<a id="zh-technical"></a>
+
+## 技术介绍
+
+游戏使用 Python 3.11+、Textual/Rich、NumPy、Pillow/FontTools、asciimatics 与 pygame，推荐以 WezTerm 为终端宿主。会话命令连接界面与游戏规则，装备编译、篡改结算、环境模拟和地图呈现各自组织。
+
+完整的架构图、代码导航、系统实现与冒烟检查命令见 [技术介绍与开发导航](TECHNICAL_CN.md)。本源码精简仓库不包含网页版、发行二进制、便携终端 vendor 目录及维护者完整测试和打包工具。
 
 <a id="zh-contribute"></a>
 
@@ -156,12 +196,8 @@ Windows 本机打包入口保留在原开发仓库的 [build.py](https://github.
 
 报告问题时，请尽量附上：游戏版本、系统与终端、复现步骤、预期与实际结果；有截图或报错日志时一并提供。分享存档和日志前，请先检查其中是否包含个人信息。
 
-- [贡献指南](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CONTRIBUTING.md)：开发约定与提交说明。
-- [行为准则](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CODE_OF_CONDUCT.md)：社区参与规范。
-- [安全策略](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/SECURITY.md)：安全问题的报告方式；请勿在公开问题区披露漏洞细节。
-- [更新记录](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CHANGELOG.md)：已记录的版本变化。
 
-完整测试套件与开发工具保留在原开发仓库，不包含在本精简仓库中；贡献的验证方式见贡献指南。
+完整测试套件与开发工具不包含在本精简仓库中；可运行的检查见 [技术指南](TECHNICAL_CN.md#开发验证)，贡献审核要求见下方 [AI 与贡献政策](#zh-ai-policy)。
 
 [返回目录](#zh) · [English](README_EN.md#en-contribute)
 

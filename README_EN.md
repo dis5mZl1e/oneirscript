@@ -1,5 +1,7 @@
 # Oneirscript / 梦层
 
+![Oneirscript — generated dreamscape](assets/readme/banner-1920x640.png)
+
 > *Rewrite the dream. Face what follows.*
 >
 > A traditional roguelike where words reshape reality and the environment becomes part of your tactics.
@@ -13,10 +15,12 @@
 **Contents**
 
 - [About the game](#en-overview)
+- [Screenshots and gameplay](#en-gallery)
 - [Core features](#en-features)
 - [Downloads](#en-download)
 - [Getting started](#en-play)
 - [Running from source](#en-source)
+- [Technical overview](#en-technical)
 - [Feedback and contributions](#en-contribute)
 - [License](#en-license)
 - [AI-assisted development, forks, and contribution review](#en-ai-policy)
@@ -34,6 +38,34 @@ The run follows a loop: **observe and explore → resolve encounters, events, an
 The game is under active development. It is built in Python with Textual, runs primarily in a terminal, and offers Chinese and English interfaces.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-overview)
+
+<a id="en-gallery"></a>
+
+## Screenshots and gameplay
+
+### Environmental chain reactions
+
+Fire, explosions and electric fields unfolding through a prepared scene rendered by the real game engine.
+
+![Engine-staged environmental chain reactions](assets/readme/environment-chain.gif)
+
+### Rewrite a real encounter
+
+English desktop gameplay: select a tampering word, preview the edit and its cost, then apply it on a generated combat map.
+
+![English desktop reality-tampering demonstration](assets/readme/tamper-desktop-en.gif)
+
+### Compose an equipment sentence
+
+English desktop gameplay: pick up, move and rotate equipment, place a function word, then use the resulting build in combat.
+
+![English desktop equipment-board demonstration](assets/readme/equipment-desktop-en.gif)
+
+### A wider dreamscape
+
+![Omniscient overview of a generated dream map](assets/readme/background-full-map-itch.png)
+
+Development captures may differ from this source snapshot. The overview uses omniscient framing; the environmental demonstration is staged in-engine. Tampering and equipment GIFs were recorded in the desktop game on generated maps. [Capture notes](assets/readme/README.md).
 
 <a id="en-features"></a>
 
@@ -146,9 +178,17 @@ Developers can run a noninteractive smoke check with a separate save directory:
 python run_demo.py --smoke --save-dir save-smoke
 ```
 
-The native Windows build entry point is maintained in the development repository: [build.py](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/build.py). See [CONTRIBUTING.md](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CONTRIBUTING.md) for development conventions.
+For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.md). Build scripts for native release packaging are not part of this checkout.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-source)
+
+<a id="en-technical"></a>
+
+## Technical overview
+
+The game uses Python 3.11+, Textual/Rich, NumPy, Pillow/FontTools, asciimatics and pygame, with WezTerm as the recommended terminal. Session commands connect the UI to game rules; board compilation, tamper settlement, environmental simulation and map presentation are organized as distinct systems.
+
+See the [technical overview](TECHNICAL_EN.md) for the architecture diagram, source map, system explanations and reproducible smoke-check commands. This source-focused checkout does not include the web frontend, platform binaries, portable terminal vendor directory or full maintainer test/build tools.
 
 <a id="en-contribute"></a>
 
@@ -158,12 +198,8 @@ Bug reports, play experiences, translations, new content, and code improvements 
 
 For a bug report, include the game version, operating system, terminal, reproduction steps, and expected versus actual behavior. Screenshots and error logs help. Check saves and logs for personal information before sharing them.
 
-- [Contributing guide](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CONTRIBUTING.md): development and submission conventions.
-- [Code of conduct](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CODE_OF_CONDUCT.md): community participation.
-- [Security policy](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/SECURITY.md): vulnerability reporting; do not disclose security details in public issues.
-- [Changelog](https://github.com/dis5mZl1e/dream-strata/blob/b88331f963fcfc41ef93c41441dfe483460ca4d1/CHANGELOG.md): recorded version changes.
 
-The full test suite and development tools are maintained in the original development repository and are not included in this source-only repository. Contribution checks are described in the contributing guide.
+The full test suite and development tools are not included in this source-only repository. Available checks are described in the [technical guide](TECHNICAL_EN.md#development-checks); review requirements are in the [AI and contribution policy](#en-ai-policy) below.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-contribute)
 

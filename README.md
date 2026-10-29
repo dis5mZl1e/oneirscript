@@ -1,5 +1,7 @@
 # 梦层 / Oneirscript
 
+![Oneirscript — generated dreamscape](assets/readme/banner-1920x640.png)
+
 *Rewrite the dream. Face what follows.*
 
 **[简体中文](README_CN.md) · [English](README_EN.md)**
@@ -24,6 +26,45 @@ Oneirscript is a traditional roguelike set in the subconscious. Read the situati
 **观察与探索 → 处理遭遇 → 调整构筑 → 累积崩解度 → 继续搜寻或下潜。** 根据本局得到的能力与环境找解法，失败后重新尝试。
 
 **Observe and explore → resolve encounters → adjust your build → accumulate dissolution → keep searching or descend.** Find solutions with this run's abilities and surroundings, then learn from each attempt.
+
+## 实机演示 / Gameplay
+
+**环境连锁反应 / Environmental chain reactions**
+
+![Engine-staged fire, explosions and electric fields](assets/readme/environment-chain.gif)
+
+真实引擎布置场景，展示发生与蔓延过程。A prepared in-engine scene showing hazards developing and spreading.
+
+**现实篡改 / Reality tampering**
+
+![English desktop reality tampering on a generated combat map](assets/readme/tamper-desktop-en.gif)
+
+英文桌面版，在生成的战斗地图中预览并执行改写。English desktop recording: preview and apply an edit during an encounter.
+
+**语法装备 / Equipment sentences**
+
+![English desktop equipment placement, rotation and function words](assets/readme/equipment-desktop-en.gif)
+
+拿起、移动、旋转、放置功能词并展示效果。Pick up, move, rotate and place a function word, then put the build to work.
+
+素材录自开发构建，可能与当前源码快照不同；详见 [素材说明 / capture notes](assets/readme/README.md)。
+
+## 技术概览 / Technical overview
+
+Python 3.11+ · Textual / Rich · NumPy · Pillow / FontTools · asciimatics · pygame · WezTerm
+
+游戏会话将输入分派给规则与世界状态；装备语句、篡改结算、材料反应、地图生成与终端呈现分别组织。
+篡改是本地规则系统，不依赖在线生成式 AI。
+
+Session commands feed the rules and world state. Equipment compilation, tamper settlement, material reactions, map generation and terminal presentation have separate responsibilities. Reality tampering uses local rules rather than an online generative AI service.
+
+| 技术文档 / Technical guide | 内容 / Contents |
+|---|---|
+| [中文技术介绍](TECHNICAL_CN.md) | 架构、代码导航、系统实现、运行检查与仓库范围 |
+| [English technical guide](TECHNICAL_EN.md) | Architecture, code map, system implementation, development checks and repository scope |
+
+本仓库提供桌面源码，不包含网页版、便携终端 vendor、发行包或完整维护者工具链。
+This repository contains desktop source; the web frontend, portable terminal vendor directory, release binaries and full maintainer toolchain are not included.
 
 ## 阅读指南 / Guides
 
