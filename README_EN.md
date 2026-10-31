@@ -88,16 +88,16 @@ Mind, lucidity, and imagination serve different purposes. Portents, noise, and c
 
 ## Downloads
 
-**Download v0.1.0:** choose your platform and processor below.
+**Download v0.1.1:** choose your platform and processor below.
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Windows-x86_64-en.zip) |
-| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Linux-x86_64-en.tar.gz) |
-| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-arm64-en.zip) |
-| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-Intel-en.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Windows-x86_64-en.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Linux-x86_64-en.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-arm64-en.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-Intel-en.zip) |
 
-[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)
 
 Extract the entire archive. Desktop packages include their terminal and fonts; Python is not required. macOS packages are unsigned and not notarized. If blocked, use System Settings → Privacy & Security → Open Anyway. Linux requires a graphical desktop.
 
@@ -185,8 +185,8 @@ For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.
 
 ### Install the Python distribution
 
-The Release also provides a wheel and source distribution for Python 3.11+.
-Download the wheel, install it with your virtual environment's pip, then launch:
+The v0.1.1 Release focuses on desktop packages and the corresponding source archive.
+The Python 3.11+ wheel and source distribution remain in the [v0.1.0 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0). To use them, download that wheel, install it with your virtual environment's pip, then launch:
 
 ```sh
 python -m pip install oneirscript-0.1.0-py3-none-any.whl

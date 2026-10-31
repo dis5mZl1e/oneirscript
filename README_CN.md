@@ -86,16 +86,16 @@
 
 ## 下载
 
-**下载 v0.1.0：** 按系统与处理器选择发行包。
+**下载 v0.1.1：** 按系统与处理器选择发行包。
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Windows-x86_64-zh.zip) |
-| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-Linux-x86_64-zh.tar.gz) |
-| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-arm64-zh.zip) |
-| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.0/Oneirscript-v0.1.0-20261029-macOS-Intel-zh.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Windows-x86_64-zh.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Linux-x86_64-zh.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-arm64-zh.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-Intel-zh.zip) |
 
-[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)
 
 请完整解压。桌面包已包含终端与字体，无需安装 Python。macOS 包未签名、未公证，若被拦截请在“系统设置 → 隐私与安全性”选择“仍要打开”；Linux 需要图形桌面。
 
@@ -183,7 +183,7 @@ python run_demo.py --smoke --save-dir save-smoke
 
 ### 安装 Python 分发包
 
-Release 另提供适用于 Python 3.11+ 的 wheel 和源码分发包。下载 wheel 后，在虚拟环境中安装并启动：
+v0.1.1 Release 以桌面包和对应源码包为主；Python 3.11+ 的 wheel 与源码分发包仍保留在 [v0.1.0 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)。如需使用，下载该版本的 wheel 后安装并启动：
 
 ```sh
 python -m pip install oneirscript-0.1.0-py3-none-any.whl
