@@ -9,7 +9,7 @@
 - 日志改为时间线，任务改为目标和进度卡片，个人数值分组展示；整理联想盘、篡改、图鉴和设置的阅读层次。
 - 宽屏主页将入梦与存档分列。
 
-> 发布说明：桌面版 0.1.1 已于 2026-11-01 发行（Windows / Linux / macOS 中英 8 包，另附源码包与校验清单）；网页端更新随本仓库源码提供，未单独制作网页发行包。桌面发行见 [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)。
+> 发布说明：桌面版 0.1.1 已于 2026-11-01 发行（Windows / Linux / macOS 中英 8 包，另附源码包与校验清单）；网页前端源码由开发仓库维护，本桌面源码仓库不包含网页端；本次未单独制作网页发行包。桌面发行见 [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)。
 
 ## 本轮桌面内容同步
 

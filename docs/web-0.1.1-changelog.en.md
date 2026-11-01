@@ -9,7 +9,7 @@
 - Added journal timelines, task progress cards and grouped personal statistics; revised board, tamper, codex and settings reading layouts.
 - Split new-game controls and save slots into columns on wide home screens.
 
-> Release note: the desktop 0.1.1 build was released on 2026-11-01 (eight Chinese/English packages for Windows, Linux and macOS, plus a source archive and checksums). The web update is provided as source in this repository; no separate web release package was produced. See the [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1).
+> Release note: the desktop 0.1.1 build was released on 2026-11-01 (eight Chinese/English packages for Windows, Linux and macOS, plus a source archive and checksums). The web frontend source is maintained in the development repository and is not included in this desktop-source repository; no separate web release package was produced. See the [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1).
 
 ## Latest Desktop Features
 

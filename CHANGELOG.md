@@ -10,7 +10,7 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-提交粒度的完整历史请直接阅读 [git log](https://github.com/dis5mZl1e/oneirscript/commits)（280+ 次提交，feat/fix/docs 规范）。
+提交粒度的完整开发历史由开发仓库维护；本仓库保留公开源码基线与发行文档。
 
 ### [Unreleased]
 
@@ -124,7 +124,7 @@
 
 All notable changes to this project are recorded here.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/). For the complete commit-level history, use `git log` (the existing Chinese record notes more than 280 commits using feat/fix/docs conventions).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/). The detailed commit history is maintained in the development repository; this repository keeps the public source baseline and release documentation.
 
 ### [Unreleased]
 
