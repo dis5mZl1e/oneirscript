@@ -57,7 +57,7 @@
 - 修复贴身攻击异象后移动可能引发的闪退，补充运行期错误记录与相关回归检查。
 - 优化地图移动与自动行走：减少重复字体校验、视野射线和视距计算，缓存帧内地形字形与可复用的隐藏/记忆地图格，减少无变化区域的重绘。
 - 缓存重复日志排版，减少植物照明查询与原生图形解码、传输中的重复复制；保持回合结算、可见信息和默认画质规则。
-- 本机真实 WezTerm 的固定 24 步对照样本中，动作结算加刷新中位耗时从 44.501 ms 降至 36.173 ms。此数值不是显示帧率或所有场景的性能保证；测量范围见[性能记录](docs/2026-11-01-performance-followups.md)。
+- 本机真实 WezTerm 的固定 24 步对照样本中，动作结算加刷新中位耗时从 44.501 ms 降至 36.173 ms。此数值不是显示帧率或所有场景的性能保证；详细测量记录保留在开发仓库，不在本仓库重复分发。
 - 修复英文模式资源条起点错位、旧存档植物空值导致回合中断、图像层首次初始化错误，以及容器盛装/倒出后右栏跳回默认页的问题。
 - 补记调整：少量清水喷雾为 3 单位、消耗 3 想象力，双胞胎吹风机仍为 6。
 - 更新回归检查与探针兼容性：Python 3.11 探针关闭可能引起解释器崩溃的分配采样，平台专属用例按平台跳过，并同步字形和滚动视窗断言。
@@ -171,7 +171,7 @@ This update improves desktop map responsiveness, inventory and combat controls, 
 - Fix a crash that could occur while moving after a melee attack against an anomaly, with runtime error reporting and regression coverage.
 - Reduce repeated font checks, visibility rays and sight-range calculations during movement and automatic walking. Cache terrain glyphs within a frame and reusable hidden/remembered map cells, and avoid redrawing unchanged regions.
 - Cache repeated log layout and reduce plant-light queries and redundant copies during native graphics decoding and transport. Preserve turn settlement, information visibility and default visual quality.
-- In a local, fixed 24-move WezTerm comparison, median action-plus-refresh time decreased from 44.501 ms to 36.173 ms. This is neither a display frame rate nor a guarantee for every scene; see the [measurement notes](docs/2026-11-01-performance-followups.md).
+- In a local, fixed 24-move WezTerm comparison, median action-plus-refresh time decreased from 44.501 ms to 36.173 ms. This is neither a display frame rate nor a guarantee for every scene; the detailed measurement notes are kept in the development repository and are not redistributed here.
 - Fix misaligned English resource bars, empty plant values interrupting turns in older saves, first-frame image-layer initialization, and the sidebar returning to its default page after container fill/pour actions.
 - Record an earlier adjustment: a small clean-water spray uses 3 units and costs 3 imagination; the twin hairdryer remains at 6.
 - Update regression and probe compatibility: disable allocation sampling that could crash Python 3.11 probes, skip platform-specific cases where appropriate, and update glyph and scrolling-viewport expectations.
