@@ -47,17 +47,20 @@ existing save directory before changing versions.
 - `Oneirscript-v0.1.1-20261101-desktop-source.zip` is the corresponding source
   archive for this release. It was produced from development snapshot
   `d553842a34ec7d4f74b5c8c296f6b08daf9ffa7c`.
-- This repository's tracked source baseline remains the v0.1.0 desktop snapshot;
-  the v0.1.1 release assets above are the authoritative binaries and source for
-  the 0.1.1 build.
+- The main-branch source in this repository is synchronized to v0.1.1 from the
+  same snapshot; the `desktop-source-v0.1.1` tag records it. The source archive
+  matches that tree, with the Python-installation adapters listed separately in
+  `DESKTOP-SOURCE.json`.
 - `RELEASE-MANIFEST.json` records size, SHA-256, version and architecture for each
   asset; `SHA256SUMS.txt` is a plain checksum list.
 
 ## Python distributions
 
-The v0.1.1 release focuses on the desktop packages and their source archive.
-The Python 3.11+ wheel and source distribution remain available in the
-[v0.1.0 release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0).
+The release also includes Python 3.11+ distributions built from the same source:
+`oneirscript-0.1.1-py3-none-any.whl` and `oneirscript-0.1.1.tar.gz`. Install the
+wheel in a virtual environment and run `oneirscript`; the first normal launch may
+download the external WezTerm terminal, while `oneirscript --compat-terminal`
+stays in the current terminal.
 
 ---
 
@@ -67,5 +70,5 @@ The Python 3.11+ wheel and source distribution remain available in the
 地图缩放、PUA 字形与植物/材料/气体/液体重绘；键位表和篡改编辑器说明；
 发射源卡片、弹匣与手动装填；移动/自动行走与渲染缓存、贴身战斗闪退修复。
 完整记录见仓库 `CHANGELOG.md`。桌面包含随包 WezTerm 与字体，无需安装 Python；
-macOS 包未签名，首次打开按“仍要打开”处理。v0.1.1 Release 以桌面包和对应源码
-ZIP 为主，Python wheel/sdist 仍见 v0.1.0 Release。
+macOS 包未签名，首次打开按“仍要打开”处理。Release 另含同源 Python
+`oneirscript-0.1.1-py3-none-any.whl` 与 `oneirscript-0.1.1.tar.gz`。
