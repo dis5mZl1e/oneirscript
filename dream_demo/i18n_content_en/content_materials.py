@@ -337,6 +337,8 @@ EN_MATERIALS_SEP18: dict[str, str] = {
     "一只气球拴在门把手上，不升也不落。": "A balloon tied to the door handle, neither rising nor falling.",
     "玩具的回忆": "Memories of Toys",
     "玩具箱壁": "Toy-Box Wall",
+    "玩具的回忆的墙体。木纹里嵌着发条与积木的钝响；箱中解谜期间不可摧毁，落在别的位面仍可打碎。":
+        "The wall of Memories of Toys. Clockwork and blocks thud dully inside its grain; unbreakable while the puzzle-box runs, yet still smashable in other realms.",
     "缺一只眼的布偶熊": "One-Eyed Teddy",
     "上弦的士兵": "Wind-Up Soldier",
     "提线木偶": "Marionette",

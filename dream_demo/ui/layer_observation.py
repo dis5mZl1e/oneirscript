@@ -364,7 +364,7 @@ class LayerObservationMixin:
         text.append(tr('PgUp/PgDn 滚动信息；Home/End 到首尾')+'\n',style='#8f9aa8')
         text.append(f'({view.cursor[0]}, {view.cursor[1]})\n')
         from .observation_marks import EDGE_LABELS, MARKS, marks_for
-        text.append(tr('图像：边缘标记；字符：加粗下划线；当前危险见下方状态。')+'\n', style='#8f9aa8')
+        text.append(tr('图像：预警与电场保留边缘标记；气体、火焰与危险见状态栏。')+'\n', style='#8f9aa8')
         for mark in MARKS.values():
             text.append(tr(mark.label)+' · '+tr(EDGE_LABELS[mark.edge])+'\n', style=mark.color)
         from ..core.map_scene import build_scene

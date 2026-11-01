@@ -606,6 +606,31 @@ class FXEngine:
                     and (snap.projectile_visible is None or cell in snap.projectile_visible)):
                 glyphs[cell] = (char, f"bold {color} on {_darken(color, 0.18)}")
 
+        # Sparse ASCII identity cues, never a floor wash or a large badge.
+        from .projectile_styles import AmbientGlyph
+        ambient_budget = min(12, max(2, width * height // 80))
+        for source in snap.sources:
+            if source.kind not in ('npc', 'event') or ambient_budget <= 0:
+                continue
+            phase = (t + source.phase) % 12
+            if phase >= 3:
+                continue
+            step = int(phase * 3)
+            offsets = (((-1, -1), (1, 1)) if source.kind == 'event'
+                       else ((-1, 0), (1, 0)))
+            for dx, dy in offsets:
+                cell = source.x + dx, source.y + dy
+                if (not (0 <= cell[0] < width and 0 <= cell[1] < height)
+                        or cell in snap.aura_protected or cell in snap.fixed_ground
+                        or cell in snap.opaque
+                        or snap.ambient_visible is not None and cell not in snap.ambient_visible):
+                    continue
+                char = ('.', "'", ':', "'", '.')[step % 5]
+                glyphs[cell] = (AmbientGlyph(char), '#8c978d' if source.kind == 'npc' else '#929ba7')
+                ambient_budget -= 1
+                if ambient_budget <= 0:
+                    break
+
         # 火舌、余电只点亮本格，用单列符号保留原有地图格宽。
         if quality:
             flame_budget = min(8 if quality >= 2 else 4, max(1, width*height//40))
@@ -722,6 +747,8 @@ class FXEngine:
         aura_cells = set()
         aura_budget = min(AURA_CELL_BUDGET, max(4, width*height//12))
         for source in snap.sources:
+            if source.kind in ('npc', 'event'):
+                continue  # foreground ASCII identity cues are drawn by frame()
             # §12 D 残余（2026-10-20）：激活短光只走光池，不叠呼吸光环。
             # 光环是 NPC / 事件点的身份标记（0.75±0.25 呼吸 + `_darken(.24)`），
             # 短光寿命 <1s 根本「呼吸」不起来；更要命的是半径 3 的暗色环正好
@@ -1020,7 +1047,8 @@ class FXEngine:
         for fx, fy in flames:
             torches.append((fx, fy, FLAME_RADIUS, FLAME_BRIGHTNESS, FLAME_COLOR))
         source_start = len(torches)
-        for src in snap.sources:  # 稳定意识 NPC 的蓝光池 + 登记过的环境来源
+        light_sources = tuple(src for src in snap.sources if src.kind not in ("npc", "event"))
+        for src in light_sources:  # Only physical/environmental light emitters
             # §12 A：逐源表现参数。None = 旧行为（灯半径 / NPC 亮度），
             # 因此未改造的调用方与历史快照保持原样。
             radius = LAMP_RADIUS if src.radius is None else max(0.5, float(src.radius))
@@ -1068,7 +1096,7 @@ class FXEngine:
                 else:
                     mx, my, allowed = entry
                     legacy_masks[(mx, my)] = allowed
-            for index, src in enumerate(snap.sources, start=source_start):
+            for index, src in enumerate(light_sources, start=source_start):
                 # 掩码只属于环境来源：同格 NPC/火焰不能被植物灯的掩码削掉
                 # （§12 A「同格多来源不能互相吞掉」）。
                 if src.kind and src.kind != "environment":

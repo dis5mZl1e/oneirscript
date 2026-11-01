@@ -508,6 +508,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         if self.home_mode:
             return
         map_view = self.query_one("#map", MapView)
+        self._map_overview_zoom = None
         levels = list(MAP_ZOOM_LEVELS)
         try:
             index = levels.index(map_view.zoom)
@@ -568,6 +569,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         set_language(str(self.config.get("language")))
         if previous_language != get_language() and self.is_running:
             self.refresh_bindings()  # 底栏键位描述随语言重排（见 I18nFooter）
+            self._relabel_language_chrome()  # compose 期取词的静态文案同步换语言
         state = self.session.state
         if self.sentence_aim is not None and self.sentence_aim['context'] != self._equipment_choice_context():
             self._cancel_sentence_aim()
@@ -1120,7 +1122,10 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         rows = self._panel_rows
         entry_rows = [index for index, value in enumerate(rows) if value >= 0]
         visible_row: int | None = None
-        if self.panel_mode == "equipment":
+        if self.panel_mode == "inventory":
+            visible_row = next((row for row, hits in enumerate(self._panel_cell_rows)
+                                if any(index == self.panel_selection for _x0, _x1, index in hits)), None)
+        elif self.panel_mode == "equipment":
             if 0 <= self.panel_selection < len(entry_rows):
                 visible_row = entry_rows[self.panel_selection]
         elif rows and 0 <= self.panel_selection < self._panel_item_count():
@@ -1299,6 +1304,12 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
     def resolved_map_display(self):
         """当前设置 + 能力解析后的地图显示模式（docs §13.2）。"""
         from ..map_display import resolve_map_display
+        from ...realm_glyphs import set_character_style
+        set_character_style(self.config.get("character_style") or "common",
+            refresh=False,
+            raster=not (self._image_restore_fallback or self.is_headless
+                        or self.config.get("map_character_fast"))
+                   and resolve_map_display(self.config)[0] == "image")
         from ..map_image_transport import set_kitty_graphics
         from ..map_presentation import set_character_fast as _set_scene_fast
         from ..render import set_character_fast as _set_render_fast
@@ -1348,11 +1359,22 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             return
         state = self.session.state
         if (self.home_mode or state.run_over or self.observe_mode or self.panel_mode == 'event_dialog'
-                or self._modal_menu_open() or self.layer_observation is not None
+                or self._modal_menu_open(allow_firing_choice=True) or self.layer_observation is not None
                 or getattr(self, '_floor_transition', None) is not None):
             return
         if getattr(self, 'construct_aim_id', None) is not None or self.sentence_aim is not None:
             # 构想瞄准不使用弹匣；不能穿透到背景里的普通武器。
+            return
+        # R 只有在发射器选择器或右侧发射页中才执行换弹；其它界面始终
+        # 打开发射器来源选择，避免误消耗回合。
+        pending = getattr(self, 'equipment_choice', None)
+        in_fire_context = bool(self.aiming
+                               or (isinstance(pending, dict)
+                                   and pending.get('command') == 'aim_equipment')
+                               or (self.panel_mode == 'actions'
+                                   and self._panel_subpage_id() == 'fire'))
+        if not in_fire_context:
+            self._open_firing_source_choice()
             return
         from ...core.firing_sources import (
             LEGACY_BASIC_ID, collect_firing_sources, equipment_emitters, legacy_basic_view,
@@ -1361,13 +1383,13 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         weapons = []
         if self.aiming:
             if not isinstance(selected, dict):
-                self.show_toast(tr('当前来源无需换弹。'), 3)
+                self._open_firing_source_choice()
                 return
             if selected.get('key') == LEGACY_BASIC_ID:
                 view = legacy_basic_view(state)
                 weapons = [view] if view is not None else []
             elif selected.get('key') == 'aggregate' or selected.get('kind') != 'fire':
-                self.show_toast(tr('当前来源无需换弹。'), 3)
+                self._open_firing_source_choice()
                 return
             else:
                 weapons = [item for item in equipment_emitters(state, 'fire', selected.get('key'))
@@ -1395,8 +1417,14 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                         continue
                     seen.add(item.instance_id)
                     weapons.append(item)
+        # R 只对未满弹匣的物理来源执行换弹；没有可换弹来源时，R 退化为
+        # 打开发射器选择，而不是对满弹匣重复执行一次无效换弹。
+        weapons = [item for item in weapons
+                   if getattr(item, 'magazine', None) is not None
+                   and int(getattr(item, 'magazine', 0) or 0)
+                   < int(getattr(item, 'magazine_capacity', 0) or 0)]
         if not weapons:
-            self.show_toast(tr('没有可换弹的武器。'), 3)
+            self._open_firing_source_choice()
             return
         if len(weapons) == 1:
             self._perform_reload(weapons[0].instance_id)
@@ -1409,6 +1437,19 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                                 definition_ids=[item.definition_id],
                                 quote_status=text, quote_blocked=blocked))
         self.equipment_choice = dict(command='reload_weapon_pick', args=(), options=options,
+                                     cursor=0, context=self._equipment_choice_context())
+        self.path.clear()
+        self.observe_walk_path.clear()
+        self._clear_held()
+        self.refresh_view()
+
+    def _open_firing_source_choice(self) -> None:
+        """Open the explicit firing-source selector without auto-aiming a remembered source."""
+        options = self._firing_source_options()
+        if not options:
+            self.show_toast(tr('没有可用的发射源。'), 3)
+            return
+        self.equipment_choice = dict(command='aim_equipment', args=(), options=options,
                                      cursor=0, context=self._equipment_choice_context())
         self.path.clear()
         self.observe_walk_path.clear()

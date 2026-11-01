@@ -7,6 +7,7 @@ from a permission-filtered scene. Cell rasters are bounded and cached.
 from __future__ import annotations
 
 from typing import Any
+from functools import lru_cache
 
 from PIL import Image, ImageDraw
 
@@ -20,6 +21,7 @@ MEMORY_DIM = 0.42
 DEFAULT_GROUND = (42, 42, 54)
 SMALL_CELL = 16
 ORDINARY_GROUNDS = ("", "普通聚合物", "空白聚合物")
+_LIQUID_COVERAGE = [round((value / 255) ** .5 * 255) for value in range(256)]
 
 
 def _hex(value: str, fallback=(80, 80, 96)) -> tuple[int, int, int]:
@@ -146,58 +148,61 @@ def _glyph_scale(cell: SceneCell, cw: int, ch: int, continuous: bool, dot: bool)
     return .82
 
 
+@lru_cache(maxsize=512)
+def _gas_band_alpha(glyph, cw, ch):
+    """Crop normal-scale shade ink, then tile it without changing its density."""
+    from .map_presentation import glyph_mask_compatible
+    band = max(1, round(ch * .3))
+    alpha = Image.new('L', (cw, band))
+    _, mask = glyph_mask_compatible(glyph, cw, ch, .95)
+    if mask is not None:
+        stamp = mask.getchannel('A').crop((0, 0, mask.width, band))
+        for x in range(0, cw, stamp.width):
+            alpha.paste(stamp, (x, 0))
+    return alpha
+
+
 def _draw_texture_band(draw, px, py, cw, ch, color, tier, *, upper, corner):
+    """Typeset the configured material glyph inside its original 30% band."""
+    from ..symbols import symbol
+    from .map_presentation import draw_glyph, glyph_mask_compatible
+    key = (('gas.faint', 'gas.mid', 'gas.high') if upper else
+           ('liquid.shallow', 'liquid.medium', 'liquid.deep'))[tier-1]
+    glyph = symbol(key, 'themed').strip()
     band = max(1, round(ch * .3))
     y0 = py if upper else py + ch - band
-    for dy in range(band):
-        gy = y0 + dy
-        for dx in range(cw):
-            gx = px + dx
-            if _inside(corner, gx, gy):
-                continue
-            if (dx + dy*2) % 4 < tier:
-                draw.point((gx, gy), fill=color)
+    layer = Image.new('RGBA', (cw, band))
+    if upper:
+        layer = Image.new('RGBA', (cw, band), (*color, 255))
+        layer.putalpha(_gas_band_alpha(glyph, cw, ch))
+    else:
+        _, mask = glyph_mask_compatible(glyph, cw, band, .95)
+        # Offset the centered ink to align all liquid depths with the bottom.
+        offset_y = (band-mask.height+1)//2 if mask is not None else 0
+        draw_glyph(layer, glyph, color, (0, offset_y, cw, band), scale=.95)
+    if corner:
+        rx, ry, rw, rh = corner
+        ImageDraw.Draw(layer).rectangle((rx-px, ry-y0, rx+rw-px-1, ry+rh-y0-1),
+                                        fill=(0, 0, 0, 0))
+    # Only liquids pass through draw_glyph's transparent RGBA paste and need
+    # squared-alpha recovery. Gas keeps the original shade coverage unchanged.
+    alpha = layer.getchannel('A')
+    maximum = alpha.getextrema()[1]
+    if maximum and not upper:
+        alpha = alpha.point(_LIQUID_COVERAGE)
+        layer = Image.new('RGBA', layer.size, (*color, 255))
+        layer.putalpha(alpha)
+    draw._image.paste(layer, (px, y0), layer)
 
 
 def _draw_materials(draw, cell: SceneCell, px, py, cw, ch, corner):
     from ..materials import gas_def, liquid_def
     materials = []
     if cell.gas:
-        materials.append((True, _hex(gas_def(cell.gas[0]).color), _tier(cell.gas[1], True), cell.gas[1]))
+        materials.append((True, _hex(gas_def(cell.gas[0]).color), _tier(cell.gas[1], True)))
     if cell.liquid:
-        materials.append((False, _hex(liquid_def(cell.liquid[0]).color), _tier(cell.liquid[1], False), cell.liquid[1]))
-    if not materials:
-        return
-    small = min(cw, ch) < SMALL_CELL
-    if cell.terrain and cell.terrain.solid:
-        # 墙体作为前景实体；材料只作为左右边缘纹理，不整宽覆盖上下带。
-        edge = max(1, min(3, cw // 8))
-        for upper, color, tier, _amount in materials:
-            columns = range(edge) if upper else range(cw-edge, cw)
-            for dy in range(ch):
-                for dx in columns:
-                    if (dx + dy*2) % 4 < tier:
-                        draw.point((px+dx, py+dy), fill=color)
-        return
-    if small and len(materials) > 1:
-        # 小格：只保留主材料条，另一材料降为角点提示，避免主体被两层带吃掉。
-        dominant = max(materials, key=lambda item: item[3])
-        upper, color, tier, _amount = dominant
-        band = max(1, min(2, ch // 4))
-        y0 = py if upper else py + ch - band
-        for dy in range(band):
-            for dx in range(cw):
-                gx, gy = px+dx, y0+dy
-                if not _inside(corner, gx, gy):
-                    draw.point((gx, gy), fill=color)
-        for other_upper, other_color, _other_tier, _amount in materials:
-            if other_color == color:
-                continue
-            mx = px + cw - 2
-            my = py + 1 if other_upper else py + ch - 3
-            draw.rectangle((mx, my, mx+1, my+1), fill=other_color)
-        return
-    for upper, color, tier, _amount in materials:
+        materials.append((False, _hex(liquid_def(cell.liquid[0]).color), _tier(cell.liquid[1], False)))
+    for upper, color, tier in materials:
         _draw_texture_band(draw, px, py, cw, ch, color, tier, upper=upper, corner=corner)
 
 
@@ -214,7 +219,7 @@ def _draw_container_materials(draw, cell: SceneCell, px, py, cw, ch) -> None:
     地面容器只有 1 格高；旧实现把它当墙体，只画左右 3px 边缘纹理，容器内容
     几乎不可辨（2026-10-22 用户反馈「图像地图分层渲染缺失」）。容器格改为
     上下整宽带：气体在上、液体在下，调用方随后再画容器图标——图标永远压在
-    材料带上层，不会被遮住。非容器 solid 仍走 _draw_materials 的边缘纹理。
+    材料带上层，不会被遮住。普通墙体也遵循上气下液，不再附加左右材料线。
     """
     from ..materials import gas_def, liquid_def
     materials = []
@@ -286,8 +291,6 @@ def _draw_elevation_cell(scene, cell, x, y, draw, image, px, py, cw, ch, visual)
                        fill=(110, 210, 235))
     if cell.site:
         draw.rectangle((px + cw - 3, py + 1, px + cw - 2, py + 3), fill=(225, 195, 110))
-    if cell.danger:
-        draw.line((px, py + ch - 1, px + cw - 1, py + ch - 1), fill=(230, 80, 80), width=1)
 
 
 def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24, 24),
@@ -415,7 +418,9 @@ def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24,
             radius=max(0,round(min(cw,ch)*.045))
             draw.rectangle((px+cw//2-radius,py+ch//2-radius,
                             px+cw//2+radius,py+ch//2+radius),fill=color)
-        elif not corner:
+        elif not corner and not (cell.plant and visual and visual.text == terrain.text):
+            # Plant foregrounds already carry their exact live/depleted icon.
+            # Painting the same antialiased mask twice thickens and joins edges.
             draw_glyph(image, terrain.text, terrain.color, (px, py, cw, ch),
                        scale=_glyph_scale(cell,cw,ch,continuous,dot))
         if not container_cell:
@@ -463,8 +468,6 @@ def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24,
         if cell.site:
             draw.rectangle((px+cw-3,py+1,px+cw-2,py+3),fill=(225,195,110))
         _draw_stack_badge(draw, cell, px, py, cw, ch)
-        if cell.danger:
-            draw.line((px,py+ch-1,px+cw-1,py+ch-1),fill=(230,80,80),width=1)
         if effect_glyphs and (x,y) in effect_glyphs and cell.status in ('visible','developed'):
             glyph, color = effect_glyphs[(x,y)]
             draw_glyph(image,glyph,color,(px,py,cw,ch),
@@ -477,7 +480,6 @@ def _render_scene_image(scene: SceneSnapshot, *, cell_px: tuple[int, int] = (24,
     return image
 
 
-from functools import lru_cache
 from dataclasses import replace
 
 from ..env_compat import get as env_get, name as env_name

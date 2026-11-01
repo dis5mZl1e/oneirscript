@@ -7,11 +7,11 @@
   "postscript_name": "DreamStrataUnified-Regular",
   "version": "1.0",
   "file": "DreamStrataUnified-Regular.ttf",
-  "sha256": "f80913884614b9403411cf81f20761d6c61b767e60edf874f85c8a9ee59df90d",
-  "size": 15365688,
+  "sha256": "6695d8750b743697b82499fff26ac079d5720013989c07ddf5c114de152be12b",
+  "size": 15366580,
   "base": {
     "file": "DreamStrataSongReading-Regular.ttf",
-    "sha256": "5d3ac0f2f54370bf209e4507a13ced229e3c737536cd3a7fb9b1389a6bf7528a",
+    "sha256": "ecffa424be1ac37d639834407b55b2fb90c3f2dcc68f72efef5988d611b49aab",
     "family": "Dream Strata Song Reading",
     "units_per_em": 1000,
     "half_advance": 500,
@@ -31,7 +31,7 @@
     },
     {
       "file": "DreamStrataInterfaceIcons.ttf",
-      "sha256": "0f49095e6b6b68d820156bd684d43ce2178cf99346f5b73faecf1bc866ad95e8",
+      "sha256": "e54fb6b126a63bd03cb6a9f04daadf0a0f91149ffa3e45ecb5721a9735ed51fb",
       "family": "Dream Strata Interface Icons",
       "upm": 1000,
       "licence": "MIT",
@@ -39,7 +39,7 @@
     },
     {
       "file": "DreamStrataMaterialIcons.ttf",
-      "sha256": "9fc8ddfa0b6a29a3e7c4d9e5489e1acece190d9219599b13c304f428586ae53d",
+      "sha256": "bed7c3a1c629b2e4952da8ca329bdac987b436a56317b7f6455e9d9bdd0612a8",
       "family": "Dream Strata Material Icons",
       "upm": 1000,
       "licence": "Apache-2.0",
@@ -47,7 +47,7 @@
     },
     {
       "file": "DreamStrataDreamIcons.ttf",
-      "sha256": "8487174f5a3e0151189b28456bca0e248155190576881c3fe94c69cd6b45cfba",
+      "sha256": "13bce6968006781797d4478a11ba7207207a07f38f6bbb4ad3f3c97c71b1c854",
       "family": "Dream Strata Dream Icons",
       "upm": 1000,
       "licence": "CC-BY-3.0",

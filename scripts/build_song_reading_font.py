@@ -28,7 +28,8 @@ def main():
                     sha256=hashlib.sha256(target.read_bytes()).hexdigest(), license='OFL-1.1',
                     builder='scripts/build_song_reading_font.py', half_width=500, full_width=1000,
                     row_height=1180, ascent=900, descent=-280, composite_outlines='decomposed',
-                    square_symbol_ink='two columns when followed by reserved space')
+                    square_symbol_ink='two columns when followed by reserved space',
+                    liquid_tile_glyphs='Original OFL-1.1 wave ribbons; 1/2/3 lines; shared low baseline; two-column reserved-space ink')
     (target.parent/'song-reading.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
 
 

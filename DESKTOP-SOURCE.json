@@ -1,6 +1,7 @@
 {
-  "desktop_source_commit": "fcc3349a3a8557441a6167ed0d091d230459d264",
-  "version": "0.1.0",
+  "desktop_source_commit": "d553842a34ec7d4f74b5c8c296f6b08daf9ffa7c",
+  "version": "0.1.1",
+  "source_note": "Generated from the v0.1.1 desktop snapshot merged into this repository. Python-installation adapters are listed separately and are not part of the desktop-only source baseline.",
   "source_files": [
     {
       "file": "LICENSE",
@@ -12,11 +13,15 @@
     },
     {
       "file": "THIRD-PARTY-NOTICES.md",
-      "sha256": "697c1c687021ae1bd9225c76d49f80bb97c20a4d993677816821f62585d7d692"
+      "sha256": "099d88efea37357a7f0b995fe843203450bab61f6c176d1461c947fd3fe00740"
     },
     {
       "file": "assets/CREDITS.md",
-      "sha256": "2743657f7e00c801e0ee4165aaddd818a3e9a1f9593bc8f028ead5e3cae29e09"
+      "sha256": "6687f3f15fc1aa96f89d0c53e961604d9bdda49903e7a5d77ecd653f413c5e5b"
+    },
+    {
+      "file": "assets/data/anomaly-skills.xlsx",
+      "sha256": "5065eef10e2287bc559b774c7b9e4dea57e9a8149e348086f841707b78f54be0"
     },
     {
       "file": "assets/fonts/ATTRIBUTION-GameIcons.md",
@@ -28,7 +33,7 @@
     },
     {
       "file": "assets/fonts/DreamStrataDreamIcons.ttf",
-      "sha256": "8487174f5a3e0151189b28456bca0e248155190576881c3fe94c69cd6b45cfba"
+      "sha256": "13bce6968006781797d4478a11ba7207207a07f38f6bbb4ad3f3c97c71b1c854"
     },
     {
       "file": "assets/fonts/DreamStrataIcons.ttf",
@@ -36,35 +41,47 @@
     },
     {
       "file": "assets/fonts/DreamStrataInterfaceIcons.ttf",
-      "sha256": "0f49095e6b6b68d820156bd684d43ce2178cf99346f5b73faecf1bc866ad95e8"
+      "sha256": "e54fb6b126a63bd03cb6a9f04daadf0a0f91149ffa3e45ecb5721a9735ed51fb"
     },
     {
       "file": "assets/fonts/DreamStrataInterfaceSans-Regular.ttf",
-      "sha256": "55962b75dbebc04e44990f539d6471811e9e986a81cf9a0f8a9d5d4337a36716"
+      "sha256": "ef627e173428988f7c2cae9a72cb8d558e3cf9e9879f532318d34ebef5ab0051"
     },
     {
       "file": "assets/fonts/DreamStrataLockOutline.ttf",
       "sha256": "7749b1c8c35211b09ffe9da8b2822585e895c56067d75968eee86e4ececf0c08"
     },
     {
+      "file": "assets/fonts/DreamStrataLongDream.ttf",
+      "sha256": "a058a103d222c00c8deb491ea4cecf62fa6695c4b217c8a0b297a8393195eb8b"
+    },
+    {
       "file": "assets/fonts/DreamStrataMaterialIcons.ttf",
-      "sha256": "9fc8ddfa0b6a29a3e7c4d9e5489e1acece190d9219599b13c304f428586ae53d"
+      "sha256": "bed7c3a1c629b2e4952da8ca329bdac987b436a56317b7f6455e9d9bdd0612a8"
     },
     {
       "file": "assets/fonts/DreamStrataMillenniumEmoji.ttf",
       "sha256": "b9774b93a53e64f978bb626e9aa1026ee38e5adfb2120387fce47cd0cbeef9b0"
     },
     {
+      "file": "assets/fonts/DreamStrataObjectEmoji.ttf",
+      "sha256": "43a6c42394d884fe913d0d0731b3e10380393e5d0e110521285b1d8b4d489cd3"
+    },
+    {
+      "file": "assets/fonts/DreamStrataPlantIcons.ttf",
+      "sha256": "694f453bb10d18d6db780f1991f3eefcafd31403e3b9d55c9b47638def028ada"
+    },
+    {
       "file": "assets/fonts/DreamStrataSerifMono-Regular.ttf",
-      "sha256": "1302cc97ee59c2eeb15d6a74d1f118619555339238b1c6d9141e8d4ea4ccd7fd"
+      "sha256": "83f78bc4d618e2887517ad75ccf7a5a1de45d72c536c8f361a367fd64732d20c"
     },
     {
       "file": "assets/fonts/DreamStrataSongReading-Regular.ttf",
-      "sha256": "5d3ac0f2f54370bf209e4507a13ced229e3c737536cd3a7fb9b1389a6bf7528a"
+      "sha256": "ecffa424be1ac37d639834407b55b2fb90c3f2dcc68f72efef5988d611b49aab"
     },
     {
       "file": "assets/fonts/DreamStrataUnified-Regular.ttf",
-      "sha256": "f80913884614b9403411cf81f20761d6c61b767e60edf874f85c8a9ee59df90d"
+      "sha256": "6695d8750b743697b82499fff26ac079d5720013989c07ddf5c114de152be12b"
     },
     {
       "file": "assets/fonts/ICONS-LICENSE.txt",
@@ -88,7 +105,7 @@
     },
     {
       "file": "assets/fonts/LICENSES.md",
-      "sha256": "946dc081091752f3cac4827ec25d827cb4ae36042bc370b4d7d9d75579428ca7"
+      "sha256": "b285cfe9e0f1620fd0f4fd3d615695b7651c600c46457195e969715450d8f1f6"
     },
     {
       "file": "assets/fonts/NOTICE-MDI.txt",
@@ -108,7 +125,7 @@
     },
     {
       "file": "assets/fonts/SEMANTIC-ICON-LICENSES.md",
-      "sha256": "e1448b69a3e79d7955b8a5f50e39aeb5d1687bfe5ab469c087975f8efe82c185"
+      "sha256": "06b35d16c759eb7819bb7eaca4413dd503823af7773d514f40bb47217c5b9b7b"
     },
     {
       "file": "assets/fonts/UNIFIED-LICENSE-NOTICE.md",
@@ -128,7 +145,19 @@
     },
     {
       "file": "assets/fonts/interface-sans.json",
-      "sha256": "c9db3283ae4bc6efeda299150aa37c2bdf9c7bc97aaa57c5a2ce516c98a93ab1"
+      "sha256": "42df5aa530dc32f00a5006b74c5caea538d1b163ac50faac74a89b86d88f75e4"
+    },
+    {
+      "file": "assets/fonts/long-dream-glyphs.json",
+      "sha256": "851b0a0faa92280333eda3caecdbc1c3eecd587bb7b3c42ac93f24ac1a14861c"
+    },
+    {
+      "file": "assets/fonts/object-emoji.json",
+      "sha256": "90011abd7a08d5ee55f44291970a708353000f278910aec25035bc6b45f66344"
+    },
+    {
+      "file": "assets/fonts/plant-glyphs.json",
+      "sha256": "d9a2198db257d6640f2c8b8c3beaa2235a9bddfee11e1b12f31c694319cda460"
     },
     {
       "file": "assets/fonts/semantic-icon-aliases.json",
@@ -136,15 +165,19 @@
     },
     {
       "file": "assets/fonts/semantic-icons.json",
-      "sha256": "6470bdfbf26417f72dea4db88117490122ab29e4aa308ad612342d441cdd5747"
+      "sha256": "1553deb2d411b0fcaac1e8426909bb80e4acd74e5348c885735e1ea9de87bcc3"
     },
     {
       "file": "assets/fonts/song-reading.json",
-      "sha256": "489cc0409c72a8f7492394dd4126198edceb3cf6f4c29305b9436fb05ca75e25"
+      "sha256": "dae36cdc8e850cfa4dfbd2e4c5c5c18f3048ed551156f1ed69463b3f43d7de7c"
+    },
+    {
+      "file": "assets/fonts/source/plants.recipe.json",
+      "sha256": "cc3297e22f518515034b8539c1c1d2d121a2df595b7dd0200d167ab4a7c7a1bc"
     },
     {
       "file": "assets/fonts/unified-font.json",
-      "sha256": "01f4d72450e997ecbc02345385cc587718cb5b2fdc9b5548662844e517d5edc2"
+      "sha256": "22d8421d66ed18aba808951de9ebb51ddcfb9142fe4b8962ecec0aee0f656e88"
     },
     {
       "file": "assets/icon.ico",
@@ -656,7 +689,7 @@
     },
     {
       "file": "build.py",
-      "sha256": "083ff5e58e2de5c4547b95ac83971a248a829211179cd50a06fd12ac03f9037f"
+      "sha256": "bd1aca1ff0867cd2b4a0fd6245c8ae61126b1c6783877d4c7b33e23f6cae5778"
     },
     {
       "file": "dream_demo/__init__.py",
@@ -668,11 +701,11 @@
     },
     {
       "file": "dream_demo/audio.py",
-      "sha256": "eb63131c531fcddee13743bb5b7f143357f4eed5cb2af8c30c66b7bdd7c79e04"
+      "sha256": "6ff7f6f378193212e3ac84fa7e6147f61c19a637414df132665102991272adcf"
     },
     {
       "file": "dream_demo/catalog_registry.py",
-      "sha256": "083469b0fd0b7f75ba14be4575fd1aa7d2d713b868a49d0cbc17ee0212b34199"
+      "sha256": "2dc3edb2c2d9f38a7ef2bf256c42bfb1d6b492c072f069f461eca213ad6f11d0"
     },
     {
       "file": "dream_demo/cell_size.py",
@@ -684,7 +717,7 @@
     },
     {
       "file": "dream_demo/config.py",
-      "sha256": "882bb9cd7dd74c8b216c583b1524f011f5e77a15b0b4a42f56241d24089181a8"
+      "sha256": "36b887a38f704c2cb4d9cddfe7b613f8ab5f4612a11599de1e71a00b08261044"
     },
     {
       "file": "dream_demo/controls.py",
@@ -740,7 +773,7 @@
     },
     {
       "file": "dream_demo/core/cast_fx.py",
-      "sha256": "b8e20722195937404834bb146d7b3996be7c4aeaee88671d7da8d13b824c80ee"
+      "sha256": "84daa58913302056faf344cd1769d28855142786c4b3d05578806d5474fe1122"
     },
     {
       "file": "dream_demo/core/chaos.py",
@@ -936,7 +969,7 @@
     },
     {
       "file": "dream_demo/core/map_scene.py",
-      "sha256": "955a8cf879b715786ff7953e855151ef8d1dc458a5ff8393e40e395fb657df7d"
+      "sha256": "e63b5780791bca646905ef299a5f41ff4aaa9f533aa3e55388aa69a2b535133e"
     },
     {
       "file": "dream_demo/core/materials_sim.py",
@@ -1200,7 +1233,7 @@
     },
     {
       "file": "dream_demo/core/vision/glow.py",
-      "sha256": "6313e562f42c4c1345f3adaf52dbad75ec49faa12fc89231fe626f3dbfd2bb11"
+      "sha256": "0b429cd9e46a4c9479d1bab1d96fda9a6d4eee7da33dd7e927b40ed21ca5015f"
     },
     {
       "file": "dream_demo/core/vision/knowledge.py",
@@ -1220,7 +1253,7 @@
     },
     {
       "file": "dream_demo/core/vision/sight.py",
-      "sha256": "d54f964e47c6caad58334d9701aedf4cbe20379242433cc9786f09d192ea3e8d"
+      "sha256": "7f7dd5c93459e54634fed018cc213eacdc040242d78f9230f88cd7fa8614bf2e"
     },
     {
       "file": "dream_demo/core/vision/sight_kernel.py",
@@ -1247,6 +1280,10 @@
       "sha256": "60d454bed00e28a8f621623c3f0657df330eed9470935d220bbf53b3e6ad2137"
     },
     {
+      "file": "dream_demo/data/ability_categories.py",
+      "sha256": "56fe1acc8e53037f64d81062ea96a871d780df05b459bd8e4461ddb7163e275e"
+    },
+    {
       "file": "dream_demo/data/ability_facts.py",
       "sha256": "88d5b1bb127c71f4acdae51b315276400afc4e4fb0d63d23becb4e4a4dd24de2"
     },
@@ -1264,7 +1301,7 @@
     },
     {
       "file": "dream_demo/data/anomaly_skills.py",
-      "sha256": "97ccfb265267e42482c87bbbb1b1d96ef69e55aecdb68a02a846ac17881f869a"
+      "sha256": "41f5abad416a39897da8978f2da348083e2610b8f17e57266a2e27629d833291"
     },
     {
       "file": "dream_demo/data/cast_fx.py",
@@ -1324,7 +1361,7 @@
     },
     {
       "file": "dream_demo/data/expansion/catalog.json",
-      "sha256": "5e51c25e79a9e2abdf40141b6c7a5b94a9ba0e8827be6893184da4fcbca8977a"
+      "sha256": "b4c7b6ff59a5a268e7d3558edfb7b55025236e17255c165a76ed8f36643d9bb7"
     },
     {
       "file": "dream_demo/data/expansion/catalog.py",
@@ -1347,8 +1384,12 @@
       "sha256": "d86b197c930f69597347fd4620878283a2b7653577141df60944c951d21de894"
     },
     {
+      "file": "dream_demo/data/game_intro.py",
+      "sha256": "cebe40e51f80a7a7ea742d0a120a72286c861837c31067dcc866d5c0bd1f5adc"
+    },
+    {
       "file": "dream_demo/data/hospital.py",
-      "sha256": "fbea7b2e252d3ac70129261e7147c920b7f77a0d2dc8b9492abc8badd9e81556"
+      "sha256": "d587a3889d8c18203c08a92463d5fb3eecf5124dfeffa6d42714175cd2789b28"
     },
     {
       "file": "dream_demo/data/icon_glyphs.py",
@@ -1367,8 +1408,16 @@
       "sha256": "aa33111aebcad341819dbcbe2e369f5b5abcdb34a25b9cb793f0fa632f3dd6a6"
     },
     {
+      "file": "dream_demo/data/inventory_styles.py",
+      "sha256": "ce1a617b70ee0e8e922ef38740cb8a31872399b666c4abd6ea067cbd3092c470"
+    },
+    {
+      "file": "dream_demo/data/item_color_families.json",
+      "sha256": "5ceb79f34227e07725a7811cf207c0217816a58d384a690f50e2d3894f89c4fd"
+    },
+    {
       "file": "dream_demo/data/item_icons.py",
-      "sha256": "ad698c3961bd45d4cb7b2670a97f45115af618d7a2a07dcb0c9b8d0db4868c28"
+      "sha256": "f38569cce2095bcd85ec9e93fc57a6255a3c3b3ffbfd50562832ed98ec267499"
     },
     {
       "file": "dream_demo/data/item_prose.py",
@@ -1416,7 +1465,7 @@
     },
     {
       "file": "dream_demo/data/items/usables.py",
-      "sha256": "39df9d49d33c64ce73a08bc8ad304ea65b4d284b57f7a54369ede0c4895b019a"
+      "sha256": "58b14a03346c78ece06122904f64801831a5d8ab4b7e00938dddf31846ced928"
     },
     {
       "file": "dream_demo/data/library.py",
@@ -1425,6 +1474,10 @@
     {
       "file": "dream_demo/data/light_sources.py",
       "sha256": "ec1171c446ecc405f483b5952b5cf6e28457fc5052958e808375fd155bb72da1"
+    },
+    {
+      "file": "dream_demo/data/long_dream_glyphs.json",
+      "sha256": "a652531a5d85556cf3e32ca15ea5700fb81dacd5d28b26693e334e73d35521c1"
     },
     {
       "file": "dream_demo/data/memory.py",
@@ -1440,11 +1493,19 @@
     },
     {
       "file": "dream_demo/data/npcs.py",
-      "sha256": "1ce22febbf3119b1e1dabb6ec165ab6aa0750c143d7abb8727fa2cfeb78b7737"
+      "sha256": "4bc09fb2aff7b70aff8823fd3e8d5d1633b5909794243124098bcffe935aaf8a"
+    },
+    {
+      "file": "dream_demo/data/object_glyph_routes.json",
+      "sha256": "c286e03bb2990b0e178c993c154d00f2caede6926e13203c280cccc4a80be984"
     },
     {
       "file": "dream_demo/data/perception.py",
       "sha256": "8b7d7c6fa20fdd373648b3cd7e3be8687c6d0a5eb79893743d1f6c756da2dbca"
+    },
+    {
+      "file": "dream_demo/data/plant_glyphs.json",
+      "sha256": "eee0ed961b500aec4c508f30be541bbbd22a6c026f09bc51c58e782320fb401a"
     },
     {
       "file": "dream_demo/data/quests.py",
@@ -1468,7 +1529,7 @@
     },
     {
       "file": "dream_demo/data/semantic_icons.py",
-      "sha256": "87b5cb6542e2eb2df417dbc13ae1d242d4f1b6bb1daed9fcf092f78e9b7289f1"
+      "sha256": "08954ba779eba4c16229d42625e263dc10df91c1358de873b8966759ad05b2ce"
     },
     {
       "file": "dream_demo/data/skill_prose.py",
@@ -1489,6 +1550,10 @@
     {
       "file": "dream_demo/data/tamper_combinations.py",
       "sha256": "44390d12a29121716bcb068c883f1b86530dd965b84d59dd3f3fc0a362422c58"
+    },
+    {
+      "file": "dream_demo/data/tamper_guide.py",
+      "sha256": "69540734353c96976c5113060f217e840d2bf4967b8bd22ea1bdcc65464088c2"
     },
     {
       "file": "dream_demo/data/tamper_protection.py",
@@ -1700,11 +1765,11 @@
     },
     {
       "file": "dream_demo/font_assets.py",
-      "sha256": "5e331f217edce9d1f6cc75bdd45ea47c9de52300c11c6a64daa182a2b97fdb70"
+      "sha256": "a3cc0a10f962f0ad70e47a6b4165ba95fe1e95ae2fd910c85003cd3399810712"
     },
     {
       "file": "dream_demo/i18n.py",
-      "sha256": "38f4d42fed023bad8553cd4506b49d966eb80da6d1ab6f07b3261b28ddf5cbd0"
+      "sha256": "fbe1277dace0b2209805e42a6f84f1ecff9b7ab09f9975dfe131c4f822f4c332"
     },
     {
       "file": "dream_demo/i18n_codex_en.py",
@@ -1724,11 +1789,11 @@
     },
     {
       "file": "dream_demo/i18n_content_en/content_extra.py",
-      "sha256": "cc535b07f371d2b4b6fbc9d16e7a349a7771362873cf5c2d0d8f14efe2bc3935"
+      "sha256": "14b4b2af876c92b9dd9bbfaca2bdacf8ba1a6684f77f96567ada394b8398e516"
     },
     {
       "file": "dream_demo/i18n_content_en/content_materials.py",
-      "sha256": "c106b918a9b504228a6177f65be1c90ec0bfd77dc48d7eb9ce081eae2dff6f1e"
+      "sha256": "36a0c9bd412a9c78cb0003e92c56213c20e1255c01a13fcf6294e4231b765661"
     },
     {
       "file": "dream_demo/i18n_content_en/content_realms.py",
@@ -1760,7 +1825,7 @@
     },
     {
       "file": "dream_demo/i18n_expansion_gaps_en.py",
-      "sha256": "4a8bcb9773fc6084f0a28d75c198f09b1bea8c6df5114de92426f4f265989f19"
+      "sha256": "730cf3d44d08e96ad27e0c5506af1fb78551c53ce6525ffcb89542f03a202ccc"
     },
     {
       "file": "dream_demo/i18n_insight_memory_gaps_en.py",
@@ -1808,7 +1873,7 @@
     },
     {
       "file": "dream_demo/i18n_tamper_en.py",
-      "sha256": "b1c72f5cc57a219fd0caa3b52edf7cf3603d1eea1bb8b7a49fdb9de77617cb35"
+      "sha256": "9dd4fb3788274d0aa042240419591db0670a6a9498e0999a3815e7efbcbb8633"
     },
     {
       "file": "dream_demo/i18n_tamper_protection_en.py",
@@ -1820,7 +1885,7 @@
     },
     {
       "file": "dream_demo/i18n_ui_en.py",
-      "sha256": "1e838c1c01973bd29bfec13f73e3a59e3efd307fe15268d065b2654868e8d1e1"
+      "sha256": "1b9ca30d6da3c63fb125c90232b9f9d1aa7b3d802ab2ef6a10933b05d7f1a3d9"
     },
     {
       "file": "dream_demo/i18n_vaults_en.py",
@@ -1904,7 +1969,7 @@
     },
     {
       "file": "dream_demo/materials/descriptions.py",
-      "sha256": "93aa136c4607a96a55e07b4ae32b54bb089e9488559ca468d0bbe4c107fc1407"
+      "sha256": "d5aa4303535b95103263eb1df80b8d9668e1e3fbb647c132794578e69afd4306"
     },
     {
       "file": "dream_demo/materials/floors.py",
@@ -1940,11 +2005,11 @@
     },
     {
       "file": "dream_demo/materials/walls.py",
-      "sha256": "e34da2cab4c6093ac4a49a6b79e388a7bd87a1246025e2db1a6b17a75d2aa4a4"
+      "sha256": "f732864ed0f2028e3cc08f2ee0e24b198c42f0adcc64412c6611326358ef5763"
     },
     {
       "file": "dream_demo/menu_pages.py",
-      "sha256": "4801622af5b482cb5ebe795e6037b0a3146bebe30e1d626831f90bceca78c582"
+      "sha256": "c29a042de53f54bffdda4f8e7f00549fce958ec5c08fe1a99b51fef9e3fc16ef"
     },
     {
       "file": "dream_demo/mouse_protocol.py",
@@ -1963,16 +2028,24 @@
       "sha256": "9506b8c245f0d4d5f977e2924a21cd3c86fde371a454874a945b2304d4abf934"
     },
     {
+      "file": "dream_demo/plant_glyphs.py",
+      "sha256": "97cf29970987ff8e61f8c3e1d6bcac10b9da3557d68a123cf4d3c1bd3d19fbc4"
+    },
+    {
       "file": "dream_demo/posix_mouse.py",
       "sha256": "45436ba256802fac1682622fa2ea35e133d79e2a975cbfb53f84a61a6cce6e00"
     },
     {
       "file": "dream_demo/rarity_colors.py",
-      "sha256": "8c9c9790f6cbeca24c1507f7f3dfa1c824320bc2cccce403d5a869a38888d03f"
+      "sha256": "c38bb3babd652e3ceb1e805585d9ac670258b131c83130f7c3b74bc217069a3e"
+    },
+    {
+      "file": "dream_demo/realm_glyphs.py",
+      "sha256": "bffe62d3d0d21dfbdeb5a6b07506d00f00f1319f1c07bacc24c77325863103e4"
     },
     {
       "file": "dream_demo/symbols.py",
-      "sha256": "502eca35ed95a76dfb591f50363b0a5067d375c534cd46dce5d944b994dbf418"
+      "sha256": "a40948ecf242b575176b77cffbda468d0ae9f5aaadf72b2e788ae6608842de65"
     },
     {
       "file": "dream_demo/system_locale.py",
@@ -1984,7 +2057,7 @@
     },
     {
       "file": "dream_demo/terminal_launch.py",
-      "sha256": "76f633cccfbe9932e5311ae1be467ddd9e15ac96eb3cc09059b8034b8c03c492"
+      "sha256": "07178f32bdab0a61e0b5f19a77aac38d5293d7785b7ad06788cbc204e3da414a"
     },
     {
       "file": "dream_demo/ui/__init__.py",
@@ -1996,11 +2069,11 @@
     },
     {
       "file": "dream_demo/ui/_native_image_plane.py",
-      "sha256": "f356d634c057665beae0e68daee75787ba7860fac19315f062f321d0711a4319"
+      "sha256": "d86d4a74f70da418a19e2033cafdba537c9aafab47a38cbf126e5ab09cdc91d6"
     },
     {
       "file": "dream_demo/ui/_native_map_scene.py",
-      "sha256": "8a30fe68e682566fba93926bb6d504a4d759f62941e218d0629eb9d101f0c55f"
+      "sha256": "f82bf8bbb6d7e19bd503975936d942a920a499f6cb05ecf7690d4e4486d68b55"
     },
     {
       "file": "dream_demo/ui/_native_plane_ipc.py",
@@ -2008,15 +2081,15 @@
     },
     {
       "file": "dream_demo/ui/_native_plane_worker.py",
-      "sha256": "8f1876b89afde692dd809d8c2cd5063fce21a429872d125162507f2b3f22a0b9"
+      "sha256": "e73ed42bb7062e688b32e0735e573b7c34bc13ad2c799d26e9841339a88abdb8"
     },
     {
       "file": "dream_demo/ui/_wide_compositor.py",
-      "sha256": "43fe4d00edc75c920a58861d9b0b4a9cd8ea9c4bf19c42ea7331f7f05020cad3"
+      "sha256": "969865520edb7000bf1f071b3b88d2c6aeea4a1ab2c71e60bad329ecc77ac218"
     },
     {
       "file": "dream_demo/ui/aiming.py",
-      "sha256": "f435358aa9c713863dd452f2f5996d7ff6a539ed8d0c854d212bb0d5a20e4038"
+      "sha256": "f96c215f8836d6187a12a326bbbbcddcafee6f6c810b83213ec9eb0638b50bc7"
     },
     {
       "file": "dream_demo/ui/anomaly_intent_marks.py",
@@ -2028,15 +2101,15 @@
     },
     {
       "file": "dream_demo/ui/app/app.py",
-      "sha256": "42c1b11254c3e6151e512069ab59c3872caaa6a6fe9b527b4d4edf678cb04438"
+      "sha256": "d11d15d89ce4dc7ba33172052d4048e55d46f74add8c24f90dba2781593ff8e4"
     },
     {
       "file": "dream_demo/ui/app/board_editor.py",
-      "sha256": "cd653f5415f7ae27c95389be9b3452200100e7e19824fe743ca075d703485f1b"
+      "sha256": "b08215c5b9605482e63c9f7482d07636ec9f0117a6ad519747e86a5f03f8dbb2"
     },
     {
       "file": "dream_demo/ui/app/css.py",
-      "sha256": "d9b2d1401843c47f04924728e608541da92ee959d56b6ec99c094b259501ad42"
+      "sha256": "3d65c22b1f9d41d061a2dbd847bdb29b3ecb4e11c012b932ac906141e8f88237"
     },
     {
       "file": "dream_demo/ui/app/footer.py",
@@ -2048,7 +2121,7 @@
     },
     {
       "file": "dream_demo/ui/app/navigation.py",
-      "sha256": "62afb60df8fb44ae228248cf87f155241be3eb2007813336db2d2c8d95353f6b"
+      "sha256": "a422df86be6861c3c5a039c762992bbde2d4388010998ea99e292bda0de2f403"
     },
     {
       "file": "dream_demo/ui/app/panels.py",
@@ -2060,7 +2133,7 @@
     },
     {
       "file": "dream_demo/ui/app/session.py",
-      "sha256": "1984febbc06f99049c11e9a6d500cb361220b81c5e9ae9c8f9675dbdf2693aef"
+      "sha256": "3d5e5569ba7eae0b117268bd15f746032e64ca627879ab33b85c898c762484c3"
     },
     {
       "file": "dream_demo/ui/asciimatics_bridge.py",
@@ -2068,7 +2141,7 @@
     },
     {
       "file": "dream_demo/ui/board_editor.py",
-      "sha256": "3189f10108facd7c2692ed275a0b27a5a61938b78a229683a0e98d91fc65d813"
+      "sha256": "0076a4dc247da76ac69e7621c12fad1b480b2fd8b68d4974cc2d363c315eb0b3"
     },
     {
       "file": "dream_demo/ui/border_feedback.py",
@@ -2108,7 +2181,7 @@
     },
     {
       "file": "dream_demo/ui/controls_help.py",
-      "sha256": "af42b0eff0c8a119fe001189855e582ffc8933d60824d71e154e563c94e01549"
+      "sha256": "088f575178f2ffa1a376243136ff4115795ce2172d7071a62023020e141b6819"
     },
     {
       "file": "dream_demo/ui/debug_panel.py",
@@ -2124,7 +2197,7 @@
     },
     {
       "file": "dream_demo/ui/effects.py",
-      "sha256": "51bb18f1e748a5b528e50d04b4d01566dbaefaad60a6d6da4671c85d21ad9876"
+      "sha256": "2b29ecf9a09b20f9b24ef44abc651a84bf891dbea7595b947c3e0e695558231b"
     },
     {
       "file": "dream_demo/ui/elevation.py",
@@ -2143,8 +2216,12 @@
       "sha256": "a438b1799fd503c01b438679b0dca2f66d4fb7d2a8bd183f0ffddce5b7520911"
     },
     {
+      "file": "dream_demo/ui/firing_cards.py",
+      "sha256": "6c97af17d9a7f921723dceaeca6dbe9d4cebe47c09dcc4babc12fca7a78d6381"
+    },
+    {
       "file": "dream_demo/ui/firing_presentation.py",
-      "sha256": "e3fdb566600620ca4954661aebbd7bb41b6d24af863de84ca94220da60d19799"
+      "sha256": "7dea7152b0112b703f7a4bd9ec482605f990c5aee83752cc73239e5176cb6275"
     },
     {
       "file": "dream_demo/ui/floating_toast.py",
@@ -2157,6 +2234,10 @@
     {
       "file": "dream_demo/ui/fx_diagnostics.py",
       "sha256": "f2d40666e87af1d61748893254bc33f5452d5a434a9c60326c87b0de708b4dba"
+    },
+    {
+      "file": "dream_demo/ui/game_intro.py",
+      "sha256": "a980e54a6cdc5562ae0c9a009608ffdc64dbbf24460fd4e950254d8c523ae9ae"
     },
     {
       "file": "dream_demo/ui/gas_status.py",
@@ -2196,15 +2277,23 @@
     },
     {
       "file": "dream_demo/ui/input/context_actions.py",
-      "sha256": "3e1b2ace69ad3963d91c7881b9a2aa6f1f35ceb11b17c60c4672fe54d5820125"
+      "sha256": "8025cf0ab3bc12c4170ae25fc12e41f081e730a927bc95a3b9e3031dc5759418"
     },
     {
       "file": "dream_demo/ui/input/key_routing.py",
-      "sha256": "9483f15924df422bae5ea5d6c50eb53cd6eb57f4e7c9b666295147ccff800312"
+      "sha256": "2104c73e267ab1a5e09b23b9ece0d4f557e83a8149cc190ccab4a1f14a0a7686"
     },
     {
       "file": "dream_demo/ui/input/mouse_routing.py",
-      "sha256": "378f0a6b30bf2dd81250717042a190e07335c4a09456d81352b58372f554a031"
+      "sha256": "665e4c5d43a7ea743bc4a181ab03c1f9d71ce829cbebc0a9828e4c4d9fe883d5"
+    },
+    {
+      "file": "dream_demo/ui/inventory_grid.py",
+      "sha256": "83bf1b41ee943c314078cdae49dbadc88f4180cf8455a3a8a5bb53dfe8b374ff"
+    },
+    {
+      "file": "dream_demo/ui/inventory_icons.py",
+      "sha256": "661a30d3bcd89f47ba5b4e4cf668a0ce06405940a5e5da38c9146d71e7569bcf"
     },
     {
       "file": "dream_demo/ui/layer_info.py",
@@ -2212,7 +2301,7 @@
     },
     {
       "file": "dream_demo/ui/layer_observation.py",
-      "sha256": "8d015fb07531c320029eb9c92d88d90b910bf9c981da139eb0a9a42707125b5a"
+      "sha256": "1dcc591fe906e56261794b929a67bf47165f70a3837acb310a56e521d4d6e693"
     },
     {
       "file": "dream_demo/ui/left_event_log.py",
@@ -2220,7 +2309,7 @@
     },
     {
       "file": "dream_demo/ui/live_map.py",
-      "sha256": "2072024353761f40dedba81876c0e875dd200e2da3580ed323ad446d37bccc0b"
+      "sha256": "9806b5b02264b1c273f45c98898143ff3df92332ec9b75a86a105c2630a3d86a"
     },
     {
       "file": "dream_demo/ui/map_display.py",
@@ -2232,7 +2321,7 @@
     },
     {
       "file": "dream_demo/ui/map_image.py",
-      "sha256": "409c0a3c57980ead8eda561d06dd890b2e54024372153cba23133dfbb924e117"
+      "sha256": "d4286662e55525548db698cc527bcc71d6e16c321fdf33819aaff6299f8341bb"
     },
     {
       "file": "dream_demo/ui/map_image_transport.py",
@@ -2240,11 +2329,11 @@
     },
     {
       "file": "dream_demo/ui/map_particles.py",
-      "sha256": "c6cfcc8f4c3c6183ca088bfcbea052bba96dec4247d9f3626c9eeeaffefddffd"
+      "sha256": "f93fbe465e46ee8e9446f496ed4d42eabeff109ab14af75369640f12b4368862"
     },
     {
       "file": "dream_demo/ui/map_presentation.py",
-      "sha256": "fa7e985527c2e4f6315af10bbaf3712acc63948bf654919781b13becbef431c4"
+      "sha256": "1bfcbd915112b59b2ae29cb29289e4277a07097a3c124530293ee4d2802b7028"
     },
     {
       "file": "dream_demo/ui/movement_presentation.py",
@@ -2256,7 +2345,7 @@
     },
     {
       "file": "dream_demo/ui/navigation_labels.py",
-      "sha256": "6290ab96251edb90302fa428670c16fb31c7d3ca7c978cc506ad31e3e5b5d9bd"
+      "sha256": "1c6f089d9f558e92168a2c25983b09e78618aff6acd7b7cf367cb7cae8299eab"
     },
     {
       "file": "dream_demo/ui/newgame_options.py",
@@ -2264,7 +2353,7 @@
     },
     {
       "file": "dream_demo/ui/observation_marks.py",
-      "sha256": "3671d274215b1a1964c352b1aeda622ff508c0eae15bd90f63df59d44984820a"
+      "sha256": "2995f2fcc60d3cee62b258755f891cdbbb34142b998ec296abb17137885d3fe9"
     },
     {
       "file": "dream_demo/ui/ornament_frame.py",
@@ -2284,7 +2373,7 @@
     },
     {
       "file": "dream_demo/ui/panels.py",
-      "sha256": "35bc511db2e775e855e5599c3cac6e207e6a2acd5c6a6f5c94bc3d6f1643aea9"
+      "sha256": "21ebc3dcc2c32af5a8ed7291f5b2686f1c47b2812454bf951241cb73240a3099"
     },
     {
       "file": "dream_demo/ui/paper_zones.py",
@@ -2292,11 +2381,11 @@
     },
     {
       "file": "dream_demo/ui/projectile_styles.py",
-      "sha256": "19f81993e1e89037d5b77277e9cc95dff0413fbeb122939a75941219815303cf"
+      "sha256": "230d5db302574df88b77b902b28f56f8d7074a4ef50d376b8d59d77ba56b9d3b"
     },
     {
       "file": "dream_demo/ui/qol.py",
-      "sha256": "e8cd6530714e5492714af1f3c57da54c588efd8e6c502dc75e326be0f129a10d"
+      "sha256": "dbb6f0615c155b4dca98aabafc207fd8fd6b2337369fdd877799eff05a8a45c0"
     },
     {
       "file": "dream_demo/ui/raster_kernel.py",
@@ -2312,7 +2401,7 @@
     },
     {
       "file": "dream_demo/ui/render.py",
-      "sha256": "f318910266b286016b5505118d0b4975dccb0a268fbc823e9344a555753ce16d"
+      "sha256": "1ee3d2be5df95a5aedca4645e5e010f46f5559913d7bc3cd6137529da038c554"
     },
     {
       "file": "dream_demo/ui/self_audit.py",
@@ -2332,7 +2421,7 @@
     },
     {
       "file": "dream_demo/ui/sidebar_management.py",
-      "sha256": "ee5916bf9739a50be8336314d56c2ae357420a64d2db944a0bee86b7e8b28fc4"
+      "sha256": "6131275e56d6ff76712ba0e2d21f10ecbad637d8c3747892799449303cbf1eb2"
     },
     {
       "file": "dream_demo/ui/sidebar_models.py",
@@ -2340,7 +2429,7 @@
     },
     {
       "file": "dream_demo/ui/sidebar_workspaces.py",
-      "sha256": "28d94507725f74856fa31b113a15a3fe59f3efd5aaa89b6122bd58d6082939ad"
+      "sha256": "d7dfd1b53e4e47122fd0f2131c764dcc168dc24c5000582e5417c5ab5cebd9cf"
     },
     {
       "file": "dream_demo/ui/signal_status.py",
@@ -2356,11 +2445,15 @@
     },
     {
       "file": "dream_demo/ui/styles.py",
-      "sha256": "550abe14f7dd57ae56c8e48be58272aa5c8373210221b8258eb0837850682af5"
+      "sha256": "30d08e764df6ee4e8f84ef2adff7e11291f7fddc5e9b7121a10776ed5733e74f"
     },
     {
       "file": "dream_demo/ui/tamper_animation.py",
       "sha256": "f56fe0ceaf2d5653fd9e0da18a87811268a552325a20fd2b287aa87abaf3df81"
+    },
+    {
+      "file": "dream_demo/ui/tamper_guide.py",
+      "sha256": "084044c51eab36ebe062d62e33ba80f47779aa3bbdfac1bc9a26a4f6e6233f3d"
     },
     {
       "file": "dream_demo/ui/tamper_host.py",
@@ -2372,15 +2465,15 @@
     },
     {
       "file": "dream_demo/ui/tamper_presentation.py",
-      "sha256": "bc663bdd9f6ddc4336129c7ded2656ac21111ff3a71b478e03e786c843a17711"
+      "sha256": "7c2b54acc7fadc51197b8a193acb1480e86a6b8c5c5da6c6dabb035611fbdd30"
     },
     {
       "file": "dream_demo/ui/tamper_world.py",
-      "sha256": "12785c223b1bf837f0a7811d522efcf0beb2f6c37188864375a27a063b546909"
+      "sha256": "2500ea957be5c85cbc26e8db24542884598f9b046a8254a2776f6b0cb24a1568"
     },
     {
       "file": "dream_demo/ui/tampering.py",
-      "sha256": "5eaef0e4b2febd545b6bedccfe5af8cba1e015367f58daa758e181068445cc70"
+      "sha256": "4b8bc59621bac8ae8b5253d511f64d95815541f3a2f60a08ae93c5584a732f16"
     },
     {
       "file": "dream_demo/ui/task_journal.py",
@@ -2392,7 +2485,7 @@
     },
     {
       "file": "dream_demo/ui/terse.py",
-      "sha256": "488596a8d604cd334212be8726cf998b8613439710537bbf2e9bacd941a4669c"
+      "sha256": "38657fe8d7593ada76ebd4b4f9f9668abcc559d71bf4e4c0221008e25df7129c"
     },
     {
       "file": "dream_demo/ui/transition.py",
@@ -2416,7 +2509,7 @@
     },
     {
       "file": "dream_demo/ui/typography.py",
-      "sha256": "8d36f2387db36e908a3d9ff8fdb7133834f3e97f2ed4d0fddf04151e45905dca"
+      "sha256": "529a7de4da4c203d0533a01818915faab0568b3e23682b6fc6031a6c52e8f870"
     },
     {
       "file": "dream_demo/ui/visual_compositor.py",
@@ -2448,7 +2541,7 @@
     },
     {
       "file": "dream_demo/ui/widgets.py",
-      "sha256": "6ef46293d9d3725b8cbfb39b43e567f48d54f3eaa19f886c4f0ce89da038f272"
+      "sha256": "61ae917c24d569937ffc553dc388d3cec9cfc71a0f89898436ca32db2e9fe809"
     },
     {
       "file": "dream_demo/ui/world_renderer.py",
@@ -2456,15 +2549,15 @@
     },
     {
       "file": "dream_demo/user_config.py",
-      "sha256": "669f60b7ed15cf3d3cf9fd623ed5c65c31ac76f4b928a0762aac38832056714f"
+      "sha256": "4e1a9cc873de859e8d96d3093bc51bc552a534e359e23864edfdaf4a0fa7239c"
     },
     {
       "file": "dream_demo/wezterm_effects.py",
-      "sha256": "16a02980eb750e2ab5c3a12d0921adf2e3aee9dfce0907d6a044289045b00f89"
+      "sha256": "fa8a51d4e44157c39e745d8b8ce1b1d8def81827cf8dcbb95d8545e2226d049b"
     },
     {
       "file": "dream_demo/wezterm_setup.py",
-      "sha256": "14e97c078dd3950a01ecccf1ee5ce66db50ae63f6db6c31eb22ca2c625df6c1d"
+      "sha256": "0aa8cde12dcf2cb6df25c90a5635326b384ca753930daa330c36866d38e35c53"
     },
     {
       "file": "dream_demo/windows_ime.py",
@@ -2512,11 +2605,11 @@
     },
     {
       "file": "requirements.txt",
-      "sha256": "b26708022401049a46c39c30a084416dd3e3022e65c1dd6e1e96833ff39f03ee"
+      "sha256": "7b94f3d20fd8404f760dddf96e21cdf731f8636dc98373e0c4f79b03728cebf1"
     },
     {
       "file": "run_demo.py",
-      "sha256": "6f3d0fdb40a1699d85f4830603110f132ab3f27cf24cccbabab0989fa4642bd4"
+      "sha256": "f6ea6f6f08abb0fbceaae18e562eac16bfd6b37b6ab2e6a3a27ca37282eece8c"
     },
     {
       "file": "scripts/build_cython_ext.py",
@@ -2524,7 +2617,7 @@
     },
     {
       "file": "scripts/build_interface_font.py",
-      "sha256": "2386347d539870298c43a0c8030e59c3390c0cee490825ea7a1b19bba00ca86a"
+      "sha256": "568f7a80ab1f91069a1e1f3becdd95d9dddd53c628e5c7a3ff9ecc343b143c8a"
     },
     {
       "file": "scripts/build_portable_bundle.py",
@@ -2532,11 +2625,11 @@
     },
     {
       "file": "scripts/build_serif_mono_font.py",
-      "sha256": "af692f49917c656e762d2279837b78362f4bfde8c217d72b969244ac4caf144a"
+      "sha256": "fb281923af7d2a87c275889e03f9964cfa8faeddc055cc024e8ba1f5cb01bbae"
     },
     {
       "file": "scripts/build_song_reading_font.py",
-      "sha256": "3cb15513d35abd7772dcaad9a9eb8b177f6ab013454d2fb2c0a27e5d42f702b3"
+      "sha256": "2ce59215eddc97705e007eadc2c3beb0aa31a80055d370a0eeff750c85cc0be9"
     },
     {
       "file": "scripts/build_unified_game_font.py",
@@ -2557,10 +2650,28 @@
     {
       "file": "scripts/windows_bootstrap.cs",
       "sha256": "4726fb8277b617a91bc32c63cd7368ae0cbeb706c1681ce27bfd0e10c9aa6655"
+    }
+  ],
+  "packaging_adaptations": [
+    {
+      "file": "dream_demo/cli.py",
+      "sha256": "3f036578d2fae32638144c5006f1da07d52c05f7977a52c817c497f424c83ce5"
     },
     {
-      "file": "\u68a6\u5c42\u5f02\u8c61\u4e3b\u52a8\u6280\u80fd\u5f00\u53d1\u8868.xlsx",
-      "sha256": "5065eef10e2287bc559b774c7b9e4dea57e9a8149e348086f841707b78f54be0"
+      "file": "dream_demo/resource_paths.py",
+      "sha256": "794b04f573b6ee33fc648c3176d16dfb652b5f945731dcfecfabf63ed5378343"
+    },
+    {
+      "file": "setup.py",
+      "sha256": "a034a22ea2a314098c83c48f564addaca639c57817418e64c10c3947d5f271dc"
+    },
+    {
+      "file": "MANIFEST.in",
+      "sha256": "a0fba31263c90405ffaff5e94afbb17af984ec351af7c892d5a165d8570d60fb"
+    },
+    {
+      "file": "pyproject.toml",
+      "sha256": "cc02e28669b441b5247d2fdb8bd6de413b265601e79ea3f50c65f22e09284843"
     }
   ]
 }

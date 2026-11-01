@@ -183,10 +183,10 @@ python run_demo.py --smoke --save-dir save-smoke
 
 ### 安装 Python 分发包
 
-v0.1.1 Release 以桌面包和对应源码包为主；Python 3.11+ 的 wheel 与源码分发包仍保留在 [v0.1.0 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0)。如需使用，下载该版本的 wheel 后安装并启动：
+v0.1.1 Release 同时提供 Python 3.11+ 的 wheel 与源码分发包。下载 `oneirscript-0.1.1-py3-none-any.whl` 后安装并启动：
 
 ```sh
-python -m pip install oneirscript-0.1.0-py3-none-any.whl
+python -m pip install oneirscript-0.1.1-py3-none-any.whl
 oneirscript
 ```
 

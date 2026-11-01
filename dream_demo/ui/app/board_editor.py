@@ -86,11 +86,13 @@ from ..widgets import (
 from ..tampering import TamperUIMixin
 from ..board_editor import (
     FIELD_COLORS,
+    INFO_LABEL,
     BoardEditorController,
     BoardEditorView,
     BoardGridView,
     BoardSideView,
     BoardToolButton,
+    board_info_text,
 )
 
 class BoardEditorMixin:
@@ -132,6 +134,8 @@ class BoardEditorMixin:
         self.set_focus(None)
         self.query_one("#layout").styles.display = "none"
         self.query_one("#board-editor").styles.display = "block"
+        # 说明窗每次打开编辑器都是关着的：上一次的悬浮窗不跨会话保留。
+        self.set_board_info(False)
         self.refresh_view()
         # Reopening begins with the comparison headings, even after scrolling
         # down to the effect details in an earlier editing session.
@@ -163,6 +167,7 @@ class BoardEditorMixin:
         if self.board_editor is None:
             return
         self.board_editor = None
+        self.set_board_info(False)
         self.query_one('#board-editor-sentence', SentenceWriter).clear()
         self.query_one('#board-editor-help', Static).update(Text())
         self.query_one("#board-editor").styles.display = "none"
@@ -201,6 +206,65 @@ class BoardEditorMixin:
         sentence = result.data.get('equipment_sentence')
         if sentence:
             self.query_one('#equipment-sentence', SentenceWriter).write(sentence, force=True)
+
+    # ---- 玩法要点悬浮窗（2026-10-31） ----
+    def toggle_board_info(self) -> None:
+        self._info_context = ''
+        self.set_board_info(not getattr(self, '_board_info_open', False))
+
+    def open_tamper_info(self) -> None:
+        self._info_context = 'tamper'
+        self.set_board_info(True)
+
+    def open_game_intro(self):
+        from ...config import SettingChange
+        self._game_intro_step = 0
+        self._info_context = 'intro'
+        self.set_board_info(True)
+        return SettingChange(False, '')
+
+    def game_intro_action(self, action: str) -> None:
+        from ..game_intro import INTRO_PAGES
+        if action == 'close' or (action == 'next' and self._game_intro_step == len(INTRO_PAGES)-1):
+            self.close_board_info()
+            return
+        self._game_intro_step = max(0, min(len(INTRO_PAGES)-1,
+            self._game_intro_step + (1 if action == 'next' else -1)))
+        self.set_board_info(True)
+
+    def game_intro_key(self, key: str) -> None:
+        if key in ('enter', 'return', 'space', 'right'):
+            self.game_intro_action('next')
+        elif key == 'left':
+            self.game_intro_action('previous')
+        elif key in ('escape', 'q'):
+            self.game_intro_action('close')
+
+    def set_board_info(self, open_: bool) -> None:
+        """开/关 ℹ 说明窗。关窗不动草稿，也不刷新盘面文字。"""
+        self._board_info_open = bool(open_)
+        if not open_:
+            self._info_context = ''
+        try:
+            pane = self.query_one('#board-editor-info-pane')
+        except Exception:
+            return
+        if self._board_info_open:
+            if getattr(self, '_info_context', '') == 'intro':
+                from ..game_intro import intro_text
+                body = intro_text(self._game_intro_step)
+            elif getattr(self, '_info_context', '') == 'tamper':
+                from ..tamper_guide import tamper_info_text
+                body = tamper_info_text()
+            else:
+                body = board_info_text()
+            self.query_one('#board-editor-info-body', Static).update(body)
+            self.query_one('#board-editor-info-card').scroll_home(animate=False)
+        pane.set_class(self._board_info_open, 'open')
+
+    def close_board_info(self) -> None:
+        self.set_board_info(False)
+        self._info_context = ''
 
     def board_editor_action(self, action: str) -> None:
         if self._inspection_active():
@@ -301,6 +365,11 @@ class BoardEditorMixin:
         # 终端收不到 Ctrl 组合（2026-10-10 玩家反馈）：确认走 Enter，
         # 拿放/安置走 a（自动安置保留在大写 A）。
         self._mark_key_handled(key)
+        # 说明窗开着时，任意一键先关窗（含 Esc、Enter）：这样玩家不会在
+        # 读说明的时候顺手确认了本次整理。
+        if getattr(self, '_board_info_open', False):
+            self.close_board_info()
+            return True
         if key in ("enter", "return"):
             self.commit_board_editor()
             return True
@@ -367,6 +436,10 @@ class BoardEditorMixin:
             style="bold " + CARRIED_IMAGE_STYLE,
         ))
         self.query_one("#board-editor-grid", Static).update(editor.render_grid())
+        self.query_one("#board-editor-info", Static).update(Text(tr(INFO_LABEL), style="#c9a0ff"))
+        if getattr(self, '_board_info_open', False):
+            # 切语言后重开或是刷新时，正文按当前语言重排。
+            self.query_one('#board-editor-info-body', Static).update(board_info_text())
         # Predict initial widths from the fixed grid column and screen. Reading
         # an auto-sized, still-hidden child yields zero and can freeze narrow
         # wrapping before that child ever receives a visible resize event.

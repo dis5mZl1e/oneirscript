@@ -313,6 +313,15 @@ class SightMixin:
         1.3ms/动作。``use_kernel=None`` 表示「没有批内值」（``can_see``／
         ``glow.reveals`` 等单格入口），此时仍在这里现读，因此开关不跨调用缓存。
         """
+        # Each ray step costs at least one unit; obstruction and smoke only
+        # reduce the budget. Reject impossible targets before walking terrain
+        # or entering the compiled kernel. The observer's own tile stays visible.
+        dx = abs(x1 - observer.x)
+        dy = abs(y1 - observer.y)
+        if dx == 0 and dy == 0:
+            return True
+        if max(dx, dy) > radius:
+            return False
         if use_kernel is None:
             # 单格入口没有批内开关可复用：现读，保证运行时切换
             # ONEIRSCRIPT_CY_KERNEL_SIGHT 在下一次调用立即生效。
@@ -509,22 +518,23 @@ class SightMixin:
                             shift = gear_light.shift_of(table, x, y)
                             if shift is None:
                                 continue
-                        if self._sight_reaches(x, y, shift, use_kernel=use_kernel):
+                        if self._observer_sight_reaches(
+                                self.player, x, y, radius + shift, use_kernel=use_kernel):
                             cells.add((x, y))
                             continue
                         bonus = bonus_by_cell.get((x, y), 0)
                         if shift > 0:
                             bonus = max(bonus, shift)
-                        if bonus and self._sight_reaches(x, y, bonus,
-                                                         use_kernel=use_kernel):
+                        if bonus and self._observer_sight_reaches(
+                                self.player, x, y, radius + bonus, use_kernel=use_kernel):
                             cells.add((x, y))
                             continue
                         if (x, y) in extra:
                             # 被引过去／闪出来的光：那几格算「亮着」，看得见多远处
                             # 都按同一条带预算的射线结算（墙后照样不行）。
                             span = gear_light.extra_span(self, x, y, radius)
-                            if span and self._sight_reaches(x, y, span,
-                                                            use_kernel=use_kernel):
+                            if span and self._observer_sight_reaches(
+                                    self.player, x, y, radius + span, use_kernel=use_kernel):
                                 cells.add((x, y))
                 # 本帧的延长表顺手发布给逐格问句（glow.sight_bonus），免得同一
                 # 步里 can_see／reveals 再逐格重扫 49 格光源窗口。

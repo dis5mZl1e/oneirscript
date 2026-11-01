@@ -71,7 +71,18 @@ class _WideCompositor(Compositor):
         return False
 
     def render_partial_update(self):
-        update = super().render_partial_update()
+        # Textual unions all damage into one bounding rectangle. Two small
+        # updates on opposite panes then render both panes on both rows. Keep
+        # the original row spans while gathering jobs, before atomic wide-glyph
+        # expansion below. Full repaints have no partial span restriction.
+        spans_by_row = {}
+        for y, start, end in self._regions_to_spans(self._dirty_regions):
+            spans_by_row.setdefault(y, []).append((start, end))
+        self._partial_damage_spans = spans_by_row
+        try:
+            update = super().render_partial_update()
+        finally:
+            self._partial_damage_spans = None
         if update is None:
             return None
         # 脏区自身也可能仅覆盖双宽字的一半。把同一前景片段作为原子更新，
@@ -124,12 +135,17 @@ class _WideCompositor(Compositor):
         bounds = self.size.region
         crop = bounds if crop is None else crop.intersection(bounds)
         jobs = {}
+        damage = getattr(self, '_partial_damage_spans', None)
         for y in crop.line_range:
             if not is_rendered_line(y):
                 continue
             owners = self._wide_owners[y]
             for start, end in zip(cuts[y], cuts[y][1:]):
                 if end <= crop.x or start >= crop.right:
+                    continue
+                if damage is not None and not any(
+                        left < end and right > start
+                        for left, right in damage.get(y, ())):
                     continue
                 widget = owners[start]
                 if widget is not None:

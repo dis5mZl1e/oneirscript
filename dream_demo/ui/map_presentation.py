@@ -102,6 +102,9 @@ def terrain_glyph(cell, mode='themed', wide=True):
         from ..materials import plant_def_for
         definition = plant_def_for(cell.plant)
         key, color = definition.key, definition.color
+        # Occupancy captures the visible live/depleted state, without reading
+        # mutable world data or painting a live plant underneath its remnant.
+        key = next((o.icon for o in cell.occupants if o.kind == 'plant'), key)
     elif terrain.solid:
         definition = wall_def(terrain.wall_kind)
         key, color = definition.symbol_key, definition.color
@@ -225,7 +228,16 @@ def font_sources():
     if path is None:
         raise OSError('Bundled map font unavailable')
     # 以当前生效字体为键：切换候选后图像端不会继续复用旧字体的缓存。
-    return _font_sources(path)
+    from ..realm_glyphs import available_codes, available_emoji_codes, FONT_FILE
+    from .. import plant_glyphs
+    codes = available_codes()
+    dedicated = ((str(path.parent / FONT_FILE), codes),) if codes else ()
+    plant_codes = plant_glyphs.available_codes()
+    plants = ((str(path.parent / plant_glyphs.FONT_FILE), plant_codes),) if plant_codes else ()
+    sources = _font_sources(path)
+    emoji_codes = available_emoji_codes()
+    emoji = ((str(path.parent / "DreamStrataObjectEmoji.ttf"), emoji_codes),) if emoji_codes else ()
+    return sources[:1] + dedicated + plants + emoji + sources[1:]
 
 
 @lru_cache(maxsize=2)
@@ -255,6 +267,11 @@ def raster_font(path, size):
 @lru_cache(maxsize=2048)
 def glyph_source(value):
     sources = font_sources()
+    from ..realm_glyphs import EMOJI_EDITS
+    if any(ord(c) in EMOJI_EDITS for c in value.strip()):
+        curated = next(((p,codes) for p,codes in sources if p.endswith("DreamStrataObjectEmoji.ttf")), None)
+        if curated and all(ord(c) in curated[1] for c in value.strip()):
+            return curated[0], False
     path = next((path for path, codes in sources
                  if all(ord(c) in codes for c in value.strip())), sources[1][0])
     return path, 'MillenniumEmoji' in path
@@ -285,8 +302,13 @@ def glyph_mask(value, width, height, scale=.82):
     canvas = canvas.crop(box)
     scale = float(scale)
     fit = min(max(1,width)*scale/canvas.width, max(1,height)*scale/canvas.height)
-    return canvas.resize((max(1,round(canvas.width*fit)), max(1,round(canvas.height*fit))),
-                         Image.Resampling.LANCZOS)
+    result = canvas.resize((max(1,round(canvas.width*fit)), max(1,round(canvas.height*fit))),
+                           Image.Resampling.LANCZOS)
+    if font_path.endswith('DreamStrataPlantIcons.ttf'):
+        # Plant tiles are pixel silhouettes. Snap coverage after fitting so
+        # small leaf gaps stay clean, without grey halos joining nearby parts.
+        result.putalpha(result.getchannel('A').point(lambda alpha: 255 if alpha >= 128 else 0))
+    return result
 
 
 # 图像端缺字回退（2026-10-22）：随包字体没有部分 emoji 字形——实测思绪容器

@@ -145,3 +145,16 @@ EN_EXPANSION_GAPS = {
     "捡起回声里那把聚光把手": "Pick the Lost Spotlight Handle out of the echo",
     "搬走最后一排那张空椅": "Carry off the Empty Seat in the Back Row",
 }
+
+# ---- 2026-10-31：扩展包奖励选项的六条线索名与「稀有消耗品」 ----
+# 这些名字在 event_options() 里以 ``tr(变量)`` 取词，AST 覆盖测试看不见，
+# 只有真把事件面板渲染一遍才露出来（scripts/probe_en_residual_261024.py）。
+EN_EXPANSION_GAPS.update({
+    "声源线索": "Sound-Source Clue",
+    "光场线索": "Light-Field Clue",
+    "地势线索": "Elevation Clue",
+    "轨迹线索": "Trajectory Clue",
+    "电路线索": "Circuit Clue",
+    "边界线索": "Boundary Clue",
+    "稀有消耗品": "Rare Consumable",
+})

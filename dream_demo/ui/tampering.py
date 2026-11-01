@@ -360,6 +360,7 @@ class TamperUIMixin(TamperHostMixin):
         pulse_kind, pulse_progress = self._tamper_pulse_view()
         add(('title',), tr("篡改"),
             anim.pulse_title_style(TITLE_STYLE, pulse_kind, pulse_progress))
+        add(('info',), tr('ℹ 篡改玩法说明'), 'bold ' + presentation.CONDITION)
         # The full sentence is visible from the first word selection onward.
         # Preview shows the complete result first; the original anchors remain
         # available below for repositioning with the mouse.
@@ -466,7 +467,7 @@ class TamperUIMixin(TamperHostMixin):
         editor.sentence_row = -1
         max_rows = max(1, int(max_rows))
         tags = [tag for tag, _ in flat]
-        top = {('title',), ('result',)}
+        top = {('title',), ('info',), ('result',)}
         if editor.phase != 'preview':
             top.add(('sentence',))
         # Actions always have priority over long risk prose on extreme resizes.
@@ -784,6 +785,9 @@ class TamperUIMixin(TamperHostMixin):
             return True
         tag = editor.rows[row]
         if tag is None:
+            return True
+        if tag[0] == 'info':
+            self.open_tamper_info()
             return True
         if tag[0] == 'details':
             editor.details_expanded = not editor.details_expanded

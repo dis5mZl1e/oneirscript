@@ -542,6 +542,9 @@ class TamperWorldUIMixin:
         editor = self.world_tamper_editor
         if editor is None or not key:
             return
+        if key == 'editor:info':
+            self.open_tamper_info()
+            return
         if key == 'editor:view':
             self._toggle_tamper_map()
             return
@@ -645,6 +648,8 @@ class TamperWorldUIMixin:
                 return 'word:' + editor.word_ids[entry]
             if 100 <= entry < 100 + len(editor.sentence.slots):
                 return f'wslot:{entry-100}'
+            if entry == 906:
+                return 'editor:info'
             if entry == 900:
                 return 'degree:cycle'
             if entry == 901:
@@ -666,6 +671,8 @@ class TamperWorldUIMixin:
                 lines.append((chunk, style))
                 row.append(entry)
 
+        info = Text(tr('ℹ 篡改玩法说明'), style='bold ' + presentation.CONDITION)
+        emit(info, '', 906)
         allowed = word_allowed(editor.word_id, editor.slot, editor.sentence)
         point, after_clause, effect_note = insertion_preview(
             editor.sentence, editor.word_id, editor.slot_index,
@@ -714,26 +721,40 @@ class TamperWorldUIMixin:
         for slot in editor.sentence.slots:
             original_line.highlight_words([slot.display_name()],
                                           _world_slot_color(slot.category))
-        emit(original_line, '', -5)
+        # 原句区：使用边框和背景色区分
+        from .paper_zones import ZONE_NOTE
+        emit_box_line = lambda content, style='': emit(content, style, -5)
+        from .panels import paper_pad
+        original_padded = paper_pad(original_line, ZONE_NOTE, width)
+        emit_box_line(original_padded)
+
         # Keep the complete result above all selectors, including during scrolling.
-        sentence_line = Text(tr('改后：'), style='bold ' + presentation.EFFECT)
-        sentence_line.append(after_sentence, style=presentation.EFFECT)
+        # 增强改后句的视觉效果 - 使用更醒目的颜色和边框
+        from .paper_zones import ZONE_CAST_PREVIEW
+        sentence_content = Text('▎' + tr('改后：'), style='bold ' + presentation.EFFECT)
+        sentence_content.append(after_sentence, style='bold ' + presentation.EFFECT)
         for slot in editor.sentence.slots:
-            sentence_line.highlight_words([slot.display_name()],
+            sentence_content.highlight_words([slot.display_name()],
                                           _world_slot_color(slot.category))
+        sentence_line = paper_pad(sentence_content, ZONE_CAST_PREVIEW, width)
         emit(sentence_line, '', -3)
         if range_supported:
-            emit(tr('范围：{mode}（R 或点击切换）',
+            range_text = Text()
+            range_text.append('◆ ', style='bold ' + presentation.CONDITION)
+            range_text.append(tr('范围：{mode}（R 或点击切换）',
                     mode=tr('全视野') if editor.range_mode == 'vision' else tr('这一处')),
-                 'bold ' + presentation.CONDITION, 902)
+                 style='bold ' + presentation.CONDITION)
+            emit(range_text, '', 902)
         if editor.range_mode == 'vision':
             if range_error:
-                emit(range_error, presentation.RISK, -6)
+                emit(Text('  ⚠ ', style='bold ' + presentation.RISK) + Text(range_error, style=presentation.RISK), presentation.RISK, -6)
             elif range_plan is not None:
-                emit(tr('范围提示：{label} · {n} 处 · 排除 {excluded} 处',
+                hint = Text('  ▸ ', style=presentation.CONDITION)
+                hint.append(tr('范围提示：{label} · {n} 处 · 排除 {excluded} 处',
                         label=range_plan.label, n=range_plan.count,
                         excluded=len(range_plan.excluded)),
-                     presentation.CONDITION, -6)
+                     style=presentation.CONDITION)
+                emit(hint, presentation.CONDITION, -6)
         overflow = int(getattr(editor.sentence, 'overflow', 0) or 0)
         if overflow > 0:
             # 句子只点名有限处，多出来的仍在眼前：如实说明，别让玩家以为视野里
@@ -760,20 +781,28 @@ class TamperWorldUIMixin:
         emit(tr("── 目标 ──"), 'bold #9ab8d9', -1)
         for index, slot in enumerate(editor.sentence.slots):
             current = index == editor.slot_index
-            marker = "▸ " if current else "  "
+            marker = "▶ " if current else "  "
             label = tr("〔{category}〕{label}",
                        category=_category_label(slot.category),
                        label=slot.display_name())
             if getattr(slot, "region_members", ()):
                 from ..core.tamper_regions import slot_range_text
                 label += "  " + slot_range_text(slot)
-            emit(f"{marker}{label}", ('bold underline ' if current else '') + slot.color, 100 + index)
+            # 增强选中槽的视觉效果：使用反色背景
+            slot_line = Text()
+            if current:
+                # 选中项：反色背景+粗体
+                slot_line.append('◆ ', style=f'bold {slot.color}')
+                slot_line.append(f"{marker}{label}", style=f'bold reverse {slot.color}')
+            else:
+                slot_line.append(f"{marker}{label}", style=slot.color)
+            emit(slot_line, '', 100 + index)
         choices = degree_options(editor.word_id)
         if len(choices) > 1:
             names = {None: tr('通常'), 'gently': tr('轻轻'), 'forcefully': tr('用力')}
             label = ' / '.join(f'[{names[value]}]' if value == editor.degree_id else names[value] for value in choices)
             from ..data.semantic_icons import icon_label
-            emit(icon_label('ui.degree',tr('程度：{value}（点击或 - = 切换）', value=label),presentation.DEGREE), presentation.DEGREE, 900)
+            emit(icon_label('ui.degree',tr('◆ 程度：{value}（点击或 - = 切换）', value=label),presentation.DEGREE), presentation.DEGREE, 900)
         left = [(Text(tr('── 字词 ──'),style='bold '+presentation.WORD),-1,None)]
         right = []
         def left_emit(content, style, entry):
@@ -792,11 +821,24 @@ class TamperWorldUIMixin:
                           'delete': 'tamper.erase'}
             icon = semantic_icon(word_icons.get(word_id, '')) if word_id in word_icons else ''
             style = ('bold underline ' if current else '') + (presentation.WORD if usable else PANEL_MUTED)
-            if icon:
-                label = Text(('▸ ' if current else '  ') + icon + tr(_word_def(word_id)['name']),style=style)
+            # 使用更醒目的标记
+            marker = '▸ ' if current else '  '
+            prefix = ''
+            # 添加选中背景条效果（通过特殊样式）
+            if current:
+                # 选中项：深色背景+亮色文字+粗体
+                bg_style = f'bold reverse {presentation.WORD}' if usable else f'bold reverse {PANEL_MUTED}'
+                if icon:
+                    label = Text(prefix + marker + icon + tr(_word_def(word_id)['name']), style=bg_style)
+                else:
+                    label = Text(prefix + marker, style=bg_style)
+                    label.append_text(icon_label('tamper.word.'+word_id, tr(_word_def(word_id)['name']), bg_style))
             else:
-                label = Text('▸ ' if current else '  ',style=style)
-                label.append_text(icon_label('tamper.word.'+word_id,tr(_word_def(word_id)['name']),style))
+                if icon:
+                    label = Text(prefix + marker + icon + tr(_word_def(word_id)['name']), style=style)
+                else:
+                    label = Text(prefix + marker, style=style)
+                    label.append_text(icon_label('tamper.word.'+word_id, tr(_word_def(word_id)['name']), style))
             left_emit(label,style,index)
             if current and not usable:
                 left_emit(reason or tr('这个字词用不到这个名字上。'), presentation.RISK, -1)
@@ -830,34 +872,65 @@ class TamperWorldUIMixin:
             # Confirmation's final quote and risks stay above the bottom edge
             # while targets, conditions and words remain independently scrollable.
             summary_entry = -2
+            # 代价区域使用边框和背景突出显示
+            from .paper_zones import ZONE_ENV_SURVEY
+            cost_box_top = Text('▎', style='bold ' + presentation.COST)
+            cost_box_top.append(tr('代价预览'), style='bold ' + presentation.COST)
+            emit(cost_box_top, presentation.COST, summary_entry)
+
             if range_plan is not None:
-                emit(tr('代价（全视野 {n} 处）：想象力 {a} · 混乱 +{b}',
+                cost_line = Text('│ ◆ ', style='bold ' + presentation.COST)
+                cost_line.append(tr('代价（全视野 {n} 处）：想象力 {a} · 混乱 +{b}',
                         n=range_plan.count, a=cost_imagination, b=cost_delta),
-                     presentation.COST,summary_entry)
+                     style=presentation.COST)
             else:
-                emit(tr('代价：想象力 {a} · 混乱 +{b}',a=cost_imagination,b=cost_delta),
-                     presentation.COST,summary_entry)
+                cost_line = Text('│ ◆ ', style='bold ' + presentation.COST)
+                cost_line.append(tr('代价：想象力 {a} · 混乱 +{b}', a=cost_imagination, b=cost_delta),
+                     style=presentation.COST)
+            emit(paper_pad(cost_line, ZONE_ENV_SURVEY, width - 2), presentation.COST, summary_entry)
+
             from ..core.chaos import chaos_risk_tier, clamp_chaos
             after=clamp_chaos(state.chaos+cost_delta)
-            emit(tr('提交后混乱：{n}（{tier}）',n=after,tier=tr(chaos_risk_tier(after))),presentation.COST,summary_entry)
+            chaos_line = Text('│ ◇ ', style='bold ' + presentation.COST)
+            chaos_line.append(tr('提交后混乱：{n}（{tier}）', n=after, tier=tr(chaos_risk_tier(after))),
+                            style=presentation.COST)
+            emit(paper_pad(chaos_line, ZONE_ENV_SURVEY, width - 2), presentation.COST, summary_entry)
+
             from ..core.tamper_pipeline import risk_note
-            emit(risk_note(state, after, imagination_cost=cost_imagination), presentation.RISK, summary_entry)
+            risk_text = risk_note(state, after, imagination_cost=cost_imagination)
+            if risk_text:
+                risk_line = Text('│ ⚠ ', style='bold ' + presentation.RISK)
+                risk_line.append(risk_text, style=presentation.RISK)
+                emit(paper_pad(risk_line, ZONE_ENV_SURVEY, width - 2), presentation.RISK, summary_entry)
+
         if editor.phase == "confirm":
-            emit(tr('Tab 切条件 · Space 勾选 · [ ] 换组合 · Enter 执行 · Esc 返回'), "#aab0c2", -1)
+            help_text = Text('▸ ', style='bold ' + PANEL_MUTED)
+            help_text.append(tr('Tab 切条件 · Space 勾选 · [ ] 换组合 · Enter 执行 · Esc 返回'), PANEL_MUTED)
+            emit(help_text, "#aab0c2", -1)
         else:
-            emit(tr('↑↓ 选词 · Tab 切条件 · Space 勾选 · Enter 进确认 · Esc 退出'), "#aab0c2", -1)
+            help_text = Text('▸ ', style='bold ' + PANEL_MUTED)
+            help_text.append(tr('↑↓ 选词 · Tab 切条件 · Space 勾选 · Enter 进确认 · Esc 退出'), PANEL_MUTED)
+            emit(help_text, "#aab0c2", -1)
         if editor.side_available:
-            emit(tr('这一句也能在右栏改：Esc 先回右栏。'), "#aab0c2", -1)
+            hint = Text('ℹ ', style='bold ' + PANEL_MUTED)
+            hint.append(tr('这一句也能在右栏改：Esc 先回右栏。'), PANEL_MUTED)
+            emit(hint, "#aab0c2", 906)
         if editor.details_expanded and 'lure_to' in editor.word_ids:
-            emit(tr('固定异象后悬停环境，可改写两者的关系。'),PANEL_MUTED,-1)
+            hint = Text('ℹ ', style='bold ' + PANEL_MUTED)
+            hint.append(tr('固定异象后悬停环境，可改写两者的关系。'), PANEL_MUTED)
+            emit(hint, PANEL_MUTED, 906)
         from rich.cells import cell_len
         # Each action gets its own hit region, including after narrow wrapping.
+        # 添加操作按钮分隔线
+        emit(Text('─' * width, style=PANEL_MUTED), '', -1)
         action = Text()
         for label,key,color in ((tr('[确认]'),'editor:confirm',presentation.EFFECT),
                                 (tr('[取消]'),'editor:cancel',presentation.MUTED),
                                 (tr('[查看地图 V]'),'editor:view',presentation.CONDITION)):
             from ..data.semantic_icons import icon_label
-            label = icon_label('ui.'+key.split(':')[1],label,color)
+            # 增强按钮样式
+            button_style = f'bold {color}'
+            label = icon_label('ui.'+key.split(':')[1], label, button_style)
             label_width = cell_len(label.plain)
             if action and cell_len(action.plain)+2+label_width > width:
                 lines.append((action,'')); row.append(-4); action=Text()
@@ -865,7 +938,7 @@ class TamperWorldUIMixin:
                 action.append('  ')
             start = cell_len(action.plain)
             # Extremely narrow labels wrap into independently clickable pieces.
-            chunks = presentation.folded_lines(label,width,color)
+            chunks = presentation.folded_lines(label,width,button_style)
             if len(chunks)>1:
                 if action:
                     lines.append((action,'')); row.append(-4); action=Text()
@@ -942,6 +1015,10 @@ class TamperWorldUIMixin:
                 lines.append(wrapped)
                 rows.append(row_index)
 
+        add(Text(tr('[确认篡改]'), style='bold ' + presentation.EFFECT), 904)
+        add(Text(tr('[取消]'), style=presentation.MUTED), 905)
+        add(Text(tr('ℹ 篡改玩法说明'), style=presentation.CONDITION), 906)
+
         allowed = word_allowed(editor.word_id, editor.slot, editor.sentence)
         point, after_clause, effect_note = (
             insertion_preview(editor.sentence, editor.word_id, editor.slot_index,
@@ -959,7 +1036,10 @@ class TamperWorldUIMixin:
             result_line.highlight_words([slot.display_name()], _world_slot_color(slot.category))
         # 右栏不放原句行：改后句本来就是「原句 + 变更子句」的拼接（compose_after
         # 保留原句语篇），在 40 格宽的右栏里两句话要吃掉 5 行，把代价与入口顶到视野外。
-        add(result_line)
+        # 使用装饰性边框增强视觉层次
+        result_box = Text('▎', style=presentation.EFFECT)
+        result_box.append(result_line)
+        add(result_box)
 
         add(Text('── TGT ──' if compact else tr('── 目标 ──'), style='bold #9ab8d9'))
         for index, slot in enumerate(editor.sentence.slots):
@@ -969,8 +1049,18 @@ class TamperWorldUIMixin:
             if getattr(slot, 'region_members', ()):
                 from ..core.tamper_regions import slot_range_text
                 label += '  ' + slot_range_text(slot)
-            add(Text(('▸ ' if current else '  ') + label,
-                     style=('bold underline ' if current else '') + slot.color), 100 + index)
+            # 添加视觉标记增强选中效果
+            marker = '▶ ' if current else '  '
+            style_str = ('bold underline ' if current else '') + slot.color
+            slot_text = Text(marker + label, style=style_str)
+            # 添加装饰符号
+            if current:
+                decorated = Text()
+                decorated.append('◆ ', style='bold ' + slot.color)
+                decorated.append(slot_text)
+                add(decorated, 100 + index)
+            else:
+                add(slot_text, 100 + index)
 
         left = [(Text('── WORD ──' if compact else tr('── 字词 ──'), style='bold ' + presentation.WORD), -1, None)]
         right = []
@@ -1044,10 +1134,22 @@ class TamperWorldUIMixin:
         if allowed:
             cost_imagination, cost_delta = word_cost_with_conditions(
                 state, editor.word_id, editor.slot, editor.condition_ids)
-            cost_text = (f'COST: IMA {cost_imagination} · CHA +{cost_delta}' if compact else
-                         tr('代价：想象力 {a} · 混乱 +{b}', a=cost_imagination, b=cost_delta))
-            add(Text(cost_text,
-                     style=presentation.COST))
+            # 增强代价显示的视觉层次
+            cost_line = Text()
+            if compact:
+                cost_line.append('◆ ', style='bold ' + presentation.COST)
+                cost_line.append(f'IMA {cost_imagination}', style='bold ' + presentation.COST)
+                cost_line.append('  ◇ ', style=presentation.COST)
+                cost_line.append(f'CHA +{cost_delta}', style=presentation.COST)
+            else:
+                cost_line.append('▎', style=presentation.COST)
+                cost_line.append(tr('代价：'), style='bold ' + presentation.COST)
+                detail_line = cost_line
+                detail_line.append(tr('想象力 {a}', a=cost_imagination), style='bold ' + presentation.COST)
+                detail_line.append('  ◇ ', style=presentation.COST)
+                detail_line.append(tr('混乱 +{b}', b=cost_delta), style=presentation.COST)
+                cost_line = detail_line
+            add(cost_line)
         add(Text(tr('↑↓ 选词 · Enter 进确认 · Esc 退出') if editor.phase != 'confirm' else
                  tr('↑↓ 选词 · ←→ 换目标 · Tab 切条件 · Space 勾选 · Enter 执行 · Esc 退出'),
                  style=PANEL_MUTED))
@@ -1135,9 +1237,33 @@ class TamperWorldUIMixin:
             reason = condition_blocked_reason(state, cid, editor.slot, editor.sentence, word_id=editor.word_id)
             cursor = editor.focus == 'condition' and index == editor.condition_cursor % max(1,len(singles))
             from ..data.semantic_icons import icon_label
-            style = ('bold ' if selected else '') + (PANEL_MUTED if reason else presentation.CONDITION)
-            label = Text(('▸ ' if cursor else '') + ('[✓] ' if selected else '[ ] '),style=style)
-            label.append_text(icon_label('tamper.condition.'+cid,tr(_condition_def(cid)['name']),style))
+            usable = not reason
+            # 基础样式
+            base_style = (PANEL_MUTED if reason else presentation.CONDITION)
+
+            # 光标在此项 + 选中：反色高亮背景
+            if cursor and selected:
+                style = f'bold reverse {base_style}'
+                marker = '▶ '
+                checkbox = '[✓] '
+            # 光标在此项但未选中：下划线+粗体
+            elif cursor:
+                style = f'bold underline {base_style}'
+                marker = '▶ '
+                checkbox = '[ ] '
+            # 已选中但光标不在：粗体
+            elif selected:
+                style = f'bold {base_style}'
+                marker = '  '
+                checkbox = '[✓] '
+            # 普通状态
+            else:
+                style = base_style
+                marker = '  '
+                checkbox = '[ ] '
+
+            label = Text(marker + checkbox, style=style)
+            label.append_text(icon_label('tamper.condition.'+cid, tr(_condition_def(cid)['name']), style))
             emit(label, style, 1000 + index)
             if reason and (editor.details_expanded or selected or cursor):
                 emit('    ' + reason, presentation.RISK, -1)

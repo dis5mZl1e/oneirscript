@@ -143,8 +143,10 @@ def plant_sight_delta(state, x: int, y: int) -> int:
 
 
 def plant_sight_delta_for(code: int) -> int:
+    if not code:
+        return 0
     from ...materials import plant_sight_delta as _delta
-    return _delta(code) if code else 0
+    return _delta(code)
 
 
 def frame_key(state) -> tuple:
@@ -203,7 +205,9 @@ def sight_bonus(state, x: int, y: int) -> int:
             best = max(best, MECHANICAL_SIGHT_BONUS)
         elif spec.mechanical:
             best = max(best, STRONG_SIGHT_BONUS if spec.strong else MECHANICAL_SIGHT_BONUS)
-    bonus = max(0, best + plant_sight_delta(state, x, y))
+    # Plants only attenuate mechanical light; without light there is no bonus
+    # to attenuate, so AI queries need not inspect the nine neighbouring cells.
+    bonus = max(0, best + plant_sight_delta(state, x, y)) if best else 0
     if frame is not None:
         # 窗口外的问题记进补问表：一步里面板／异象 AI 会把同一格问好几遍
         # （帧路径每步刷三次），第二次起就只查表。

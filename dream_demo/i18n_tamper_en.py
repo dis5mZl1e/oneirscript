@@ -443,3 +443,22 @@ EN_TAMPER = {
 EN_TAMPER.update({
     '物件': 'Prop',
 })
+
+# 2026-10-31：篡改面板小节标题改用粗横线分隔（━）
+EN_TAMPER.update({
+    "━━ 目标 ━━": "━━ Targets ━━",
+    "━━ 字词 ━━": "━━ Words ━━",
+    "改后句": "Rewritten Sentence",
+    "代价": "Price",
+    "想象力 {a}": "Imagination {a}",
+    "混乱 +{b}": "Chaos +{b}",
+    "◆ 程度：{value}（点击或 - = 切换）": "◆ Degree: {value} (click or - = to change)",
+    "代价预览": "Price Preview",
+    "━━ 条件 ━━": "━━ Conditions ━━",
+    "原句": "Original Sentence",
+})
+
+# ---- 2026-10-31：篡改面板代价行（'代价：' 带全角冒号） ----
+EN_TAMPER.update({
+    "代价：": "Price: ",
+})

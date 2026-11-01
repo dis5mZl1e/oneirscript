@@ -127,7 +127,8 @@ def _build_native_packet(view, image):
     canvas = Image.new('RGB', ((gr-gl)*cell_px[0], (gb-gt)*cell_px[1]))
     canvas.paste(image, ((left-gl)*cell_px[0], (top-gt)*cell_px[1]))
     canvas.paste(tile, ((player[0]-gl)*cell_px[0], (player[1]-gt)*cell_px[1]))
-    guard_key = (view.symbol_mode, bool(view.animated_combat), (gl, gt, gr, gb))
+    from ..realm_glyphs import presentation_token
+    guard_key = (presentation_token(), view.symbol_mode, bool(view.animated_combat), (gl, gt, gr, gb))
     cached = getattr(view, '_native_guard_scenes', None)
     if cached is None or cached[0] is not scene or cached[1] != guard_key:
         scenes = []

@@ -1,0 +1,2563 @@
+{
+  "frayed_sleeve": {
+    "kind": "private",
+    "key": "realm-item:frayed_sleeve",
+    "fallback": "♖",
+    "label": "磨薄的袖套",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "broken_tooth_thimble": {
+    "kind": "private",
+    "key": "realm-item:broken_tooth_thimble",
+    "fallback": "╱",
+    "label": "断齿顶针",
+    "reason": "顶针被画成注射器；改带缺口的顶针",
+    "authored_icon": "",
+    "legacy_key": "item.syringe"
+  },
+  "binder_clip_launcher": {
+    "kind": "private",
+    "key": "realm-item:binder_clip_launcher",
+    "fallback": "➶",
+    "label": "长尾夹发射器",
+    "reason": "全部借用弓形轮廓；夹子发射器、声波器、钉枪、镖枪、投石索应拆分",
+    "authored_icon": "",
+    "legacy_key": "item.launcher"
+  },
+  "voice_recorder_pen": {
+    "kind": "private",
+    "key": "realm-item:voice_recorder_pen",
+    "fallback": "✎",
+    "label": "录音笔",
+    "reason": "笔形可留给钢笔；录音设备、墨滴、批注不能都画成同一支笔",
+    "authored_icon": "",
+    "legacy_key": "item.pen"
+  },
+  "dream_tapir_flute": {
+    "kind": "private",
+    "key": "realm-item:dream_tapir_flute",
+    "fallback": "♪",
+    "label": "梦貘鼻烟壶",
+    "reason": "音符覆盖鼻烟壶、哨、音叉和汽笛；歌的记忆可保留音符",
+    "authored_icon": "",
+    "legacy_key": "item.flute"
+  },
+  "null_pen": {
+    "kind": "private",
+    "key": "realm-item:null_pen",
+    "fallback": "✎",
+    "label": "没水的笔",
+    "reason": "笔形可留给钢笔；录音设备、墨滴、批注不能都画成同一支笔",
+    "authored_icon": "",
+    "legacy_key": "item.pen"
+  },
+  "lead_lined_apron": {
+    "kind": "private",
+    "key": "realm-item:lead_lined_apron",
+    "fallback": "♖",
+    "label": "铅衬里的围裙",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "static_poncho": {
+    "kind": "private",
+    "key": "realm-item:static_poncho",
+    "fallback": "♖",
+    "label": "静电披风",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "echo_emitter": {
+    "kind": "private",
+    "key": "realm-item:echo_emitter",
+    "fallback": "➶",
+    "label": "小型回声发射器",
+    "reason": "全部借用弓形轮廓；夹子发射器、声波器、钉枪、镖枪、投石索应拆分",
+    "authored_icon": "",
+    "legacy_key": "item.launcher"
+  },
+  "headphone_coil": {
+    "kind": "private",
+    "key": "realm-item:headphone_coil",
+    "fallback": "∩",
+    "label": "旧耳机的线圈",
+    "reason": "耳机与裸线圈不是同一种轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.headphone"
+  },
+  "unfinished_editor": {
+    "kind": "private",
+    "key": "realm-item:unfinished_editor",
+    "fallback": "✎",
+    "label": "未完成的批注",
+    "reason": "笔形可留给钢笔；录音设备、墨滴、批注不能都画成同一支笔",
+    "authored_icon": "",
+    "legacy_key": "item.pen"
+  },
+  "lighthouse_lens": {
+    "kind": "private",
+    "key": "realm-item:lighthouse_lens",
+    "fallback": "⌕",
+    "label": "灯塔透镜",
+    "reason": "放大镜、灯塔透镜、护目片不是同一种器物",
+    "authored_icon": "",
+    "legacy_key": "item.lens"
+  },
+  "sketch_gloves": {
+    "kind": "private",
+    "key": "realm-item:sketch_gloves",
+    "fallback": "⊓",
+    "label": "速写手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "gravestone_wristband": {
+    "kind": "private",
+    "key": "realm-item:gravestone_wristband",
+    "fallback": "◈",
+    "label": "碑文护腕",
+    "reason": "书签轮廓覆盖护腕、封蜡、心搏标签；按物体轮廓拆分",
+    "authored_icon": "",
+    "legacy_key": "item.seal"
+  },
+  "high_pressure_pump": {
+    "kind": "private",
+    "key": "realm-item:high_pressure_pump",
+    "fallback": "↥",
+    "label": "高压水泵",
+    "reason": "淋浴喷头覆盖泵、水枪和虹吸管，应拆分器物轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.pump"
+  },
+  "water_gun": {
+    "kind": "private",
+    "key": "realm-item:water_gun",
+    "fallback": "↥",
+    "label": "喷水枪",
+    "reason": "淋浴喷头覆盖泵、水枪和虹吸管，应拆分器物轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.pump"
+  },
+  "nail_gun": {
+    "kind": "private",
+    "key": "realm-item:nail_gun",
+    "fallback": "➶",
+    "label": "钉枪",
+    "reason": "全部借用弓形轮廓；夹子发射器、声波器、钉枪、镖枪、投石索应拆分",
+    "authored_icon": "",
+    "legacy_key": "item.launcher"
+  },
+  "sonic_whistle": {
+    "kind": "private",
+    "key": "realm-item:sonic_whistle",
+    "fallback": "♪",
+    "label": "音爆哨",
+    "reason": "音符覆盖鼻烟壶、哨、音叉和汽笛；歌的记忆可保留音符",
+    "authored_icon": "",
+    "legacy_key": "item.flute"
+  },
+  "dart_gun": {
+    "kind": "private",
+    "key": "realm-item:dart_gun",
+    "fallback": "➶",
+    "label": "冻凝镖枪",
+    "reason": "全部借用弓形轮廓；夹子发射器、声波器、钉枪、镖枪、投石索应拆分",
+    "authored_icon": "",
+    "legacy_key": "item.launcher"
+  },
+  "ignite_gloves": {
+    "kind": "private",
+    "key": "realm-item:ignite_gloves",
+    "fallback": "⊓",
+    "label": "点火手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "blast_ring": {
+    "kind": "private",
+    "key": "realm-item:blast_ring",
+    "fallback": "○",
+    "label": "爆破扳指",
+    "reason": "五项环形共用，可保留基础戒环，给扳指/调焦环结构差异；不强求零重复",
+    "authored_icon": "",
+    "legacy_key": "item.ring"
+  },
+  "arsonist_watch": {
+    "kind": "private",
+    "key": "realm-item:arsonist_watch",
+    "fallback": "◷",
+    "label": "纵火者怀表",
+    "reason": "手表轮廓覆盖怀表/发条，至少把发条与表壳分开",
+    "authored_icon": "",
+    "legacy_key": "item.watch"
+  },
+  "heavy_stapler": {
+    "kind": "private",
+    "key": "realm-item:heavy_stapler",
+    "fallback": "⌇",
+    "label": "沉重的订书机",
+    "reason": "订书机被画成回形针；改底座、压柄和订书头",
+    "authored_icon": "",
+    "legacy_key": "item.clip"
+  },
+  "patched_pajamas": {
+    "kind": "private",
+    "key": "realm-item:patched_pajamas",
+    "fallback": "♖",
+    "label": "打补丁的睡衣",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "leather_apron": {
+    "kind": "private",
+    "key": "realm-item:leather_apron",
+    "fallback": "♖",
+    "label": "皮革围裙",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "warm_gloves": {
+    "kind": "private",
+    "key": "realm-item:warm_gloves",
+    "fallback": "⊓",
+    "label": "缺指的手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "screwdriver": {
+    "kind": "private",
+    "key": "realm-item:screwdriver",
+    "fallback": "⚒",
+    "label": "小号螺丝刀",
+    "reason": "扳手覆盖螺丝刀、凿子、螺丝和铆钉；按实际器物区分",
+    "authored_icon": "",
+    "legacy_key": "item.tool"
+  },
+  "lightless_cloak": {
+    "kind": "private",
+    "key": "realm-item:lightless_cloak",
+    "fallback": "♖",
+    "label": "无光斗篷",
+    "reason": "一件外套覆盖袖套、围裙、睡衣和斗篷，物理类别不符",
+    "authored_icon": "",
+    "legacy_key": "item.coat"
+  },
+  "deep_thought_chisel": {
+    "kind": "private",
+    "key": "realm-item:deep_thought_chisel",
+    "fallback": "⚒",
+    "label": "深念凿子",
+    "reason": "扳手覆盖螺丝刀、凿子、螺丝和铆钉；按实际器物区分",
+    "authored_icon": "",
+    "legacy_key": "item.tool"
+  },
+  "rift_wax_seal": {
+    "kind": "private",
+    "key": "realm-item:rift_wax_seal",
+    "fallback": "◈",
+    "label": "裂缝蜡印",
+    "reason": "书签轮廓覆盖护腕、封蜡、心搏标签；按物体轮廓拆分",
+    "authored_icon": "",
+    "legacy_key": "item.seal"
+  },
+  "dreamweaver_gloves": {
+    "kind": "private",
+    "key": "realm-item:dreamweaver_gloves",
+    "fallback": "⊓",
+    "label": "织梦手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "swift_thought_ring": {
+    "kind": "private",
+    "key": "realm-item:swift_thought_ring",
+    "fallback": "○",
+    "label": "迅念指环",
+    "reason": "五项环形共用，可保留基础戒环，给扳指/调焦环结构差异；不强求零重复",
+    "authored_icon": "",
+    "legacy_key": "item.ring"
+  },
+  "prism_pendant": {
+    "kind": "private",
+    "key": "realm-item:prism_pendant",
+    "fallback": "◇",
+    "label": "三棱镜的吊坠",
+    "reason": "同一钻石覆盖棱镜和机箱挂饰；棱镜改三棱外形、挂饰有连接环",
+    "authored_icon": "",
+    "legacy_key": "item.gem"
+  },
+  "salt_soaked_coil": {
+    "kind": "private",
+    "key": "realm-item:salt_soaked_coil",
+    "fallback": "∩",
+    "label": "浸盐的线圈",
+    "reason": "耳机与裸线圈不是同一种轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.headphone"
+  },
+  "hunting_lanyard": {
+    "kind": "private",
+    "key": "realm-item:hunting_lanyard",
+    "fallback": "⌁",
+    "label": "追味的皮绳",
+    "reason": "区分皮绳、松线、拆迁线轴、手术线圈",
+    "authored_icon": "",
+    "legacy_key": "item.thread"
+  },
+  "split_tuning_fork": {
+    "kind": "private",
+    "key": "realm-item:split_tuning_fork",
+    "fallback": "♪",
+    "label": "分岔的音叉",
+    "reason": "音符覆盖鼻烟壶、哨、音叉和汽笛；歌的记忆可保留音符",
+    "authored_icon": "",
+    "legacy_key": "item.flute"
+  },
+  "blank_cheque_book": {
+    "kind": "private",
+    "key": "realm-item:blank_cheque_book",
+    "fallback": "▤",
+    "label": "空白支票簿",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "singed_gloves": {
+    "kind": "private",
+    "key": "realm-item:singed_gloves",
+    "fallback": "⊓",
+    "label": "焦边的手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "throwing_gloves": {
+    "kind": "private",
+    "key": "realm-item:throwing_gloves",
+    "fallback": "⊓",
+    "label": "投掷手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "focus_ring": {
+    "kind": "private",
+    "key": "realm-item:focus_ring",
+    "fallback": "○",
+    "label": "调焦环",
+    "reason": "五项环形共用，可保留基础戒环，给扳指/调焦环结构差异；不强求零重复",
+    "authored_icon": "",
+    "legacy_key": "item.ring"
+  },
+  "sling": {
+    "kind": "private",
+    "key": "realm-item:sling",
+    "fallback": "➶",
+    "label": "投石索",
+    "reason": "全部借用弓形轮廓；夹子发射器、声波器、钉枪、镖枪、投石索应拆分",
+    "authored_icon": "",
+    "legacy_key": "item.launcher"
+  },
+  "crystal_charm": {
+    "kind": "private",
+    "key": "realm-item:crystal_charm",
+    "fallback": "◇",
+    "label": "水晶机箱挂饰",
+    "reason": "同一钻石覆盖棱镜和机箱挂饰；棱镜改三棱外形、挂饰有连接环",
+    "authored_icon": "",
+    "legacy_key": "item.gem"
+  },
+  "impact_fold": {
+    "kind": "private",
+    "key": "realm-item:impact_fold",
+    "fallback": "▤",
+    "label": "冲击折页",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "battery_back": {
+    "kind": "private",
+    "key": "realm-item:battery_back",
+    "fallback": "▣",
+    "label": "电池的背面",
+    "reason": "电池本体与身体/储备记忆应适当区分",
+    "authored_icon": "",
+    "legacy_key": "item.battery"
+  },
+  "folded_projectile": {
+    "kind": "private",
+    "key": "realm-item:folded_projectile",
+    "fallback": "▤",
+    "label": "折叠弹影",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "wet_fold": {
+    "kind": "private",
+    "key": "realm-item:wet_fold",
+    "fallback": "▤",
+    "label": "湿折页",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "hollow_step": {
+    "kind": "private",
+    "key": "realm-item:hollow_step",
+    "fallback": "∴",
+    "label": "空心的台阶",
+    "reason": "脚印适合行走记忆，不适合台阶和折叠逃生路线",
+    "authored_icon": "",
+    "legacy_key": "item.step"
+  },
+  "double_frame": {
+    "kind": "private",
+    "key": "realm-item:double_frame",
+    "fallback": "▷",
+    "label": "双重曝光底片",
+    "reason": "双重曝光底片被画成投影仪；改双框底片",
+    "authored_icon": "",
+    "legacy_key": "item.projector"
+  },
+  "molotov": {
+    "kind": "private",
+    "key": "realm-item:molotov",
+    "fallback": "♙",
+    "label": "燃烧瓶",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "detonator_capsule": {
+    "kind": "private",
+    "key": "realm-item:detonator_capsule",
+    "fallback": "※",
+    "label": "雷管胶囊",
+    "reason": "圆炸弹覆盖雷管胶囊和燃烧弹，应按实际爆破器结构区分",
+    "authored_icon": "",
+    "legacy_key": "item.blast"
+  },
+  "sparkler_bundle": {
+    "kind": "private",
+    "key": "realm-item:sparkler_bundle",
+    "fallback": "♨",
+    "label": "烟花束",
+    "reason": "火焰不能区分火柴、烟花束和光焰弹；给实际物体轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.match"
+  },
+  "tar_bomb": {
+    "kind": "private",
+    "key": "realm-item:tar_bomb",
+    "fallback": "※",
+    "label": "焦油燃烧弹",
+    "reason": "圆炸弹覆盖雷管胶囊和燃烧弹，应按实际爆破器结构区分",
+    "authored_icon": "",
+    "legacy_key": "item.blast"
+  },
+  "flare_bolt": {
+    "kind": "private",
+    "key": "realm-item:flare_bolt",
+    "fallback": "♨",
+    "label": "光焰弹",
+    "reason": "火焰不能区分火柴、烟花束和光焰弹；给实际物体轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.match"
+  },
+  "spellbook": {
+    "kind": "emoji",
+    "character": "📚",
+    "fallback": "📚",
+    "label": "破损的书卷",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "📚",
+    "legacy_key": "📚"
+  },
+  "torn_page": {
+    "kind": "emoji",
+    "character": "📜",
+    "fallback": "📜",
+    "label": "断裂的残页",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "📜",
+    "legacy_key": "📜"
+  },
+  "pixel_scrap": {
+    "kind": "private",
+    "key": "realm-item:pixel_scrap",
+    "fallback": "◇",
+    "label": "像素碎片",
+    "reason": "蓝色菱块覆盖像素碎片和不同玻璃；像素应是方块/坏点，镜片应带裂面",
+    "authored_icon": "",
+    "legacy_key": "item.glass"
+  },
+  "dial_tone": {
+    "kind": "private",
+    "key": "realm-item:dial_tone",
+    "fallback": "⌕",
+    "label": "拨号音",
+    "reason": "电话符号适合忙音记忆；56k猫应是调制解调器，拨号音须有拨号声意象",
+    "authored_icon": "",
+    "legacy_key": "item.phone"
+  },
+  "screensaver_soda": {
+    "kind": "private",
+    "key": "realm-item:screensaver_soda",
+    "fallback": "∪",
+    "label": "屏保气泡水",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "modem_56k": {
+    "kind": "private",
+    "key": "realm-item:modem_56k",
+    "fallback": "⌕",
+    "label": "56k 猫",
+    "reason": "电话符号适合忙音记忆；56k猫应是调制解调器，拨号音须有拨号声意象",
+    "authored_icon": "",
+    "legacy_key": "item.phone"
+  },
+  "night_shift_beacon": {
+    "kind": "private",
+    "key": "realm-item:night_shift_beacon",
+    "fallback": "☼",
+    "label": "误点的夜班灯",
+    "reason": "灯泡覆盖焰火和完整灯具，应区分发光体外壳",
+    "authored_icon": "",
+    "legacy_key": "item.bulb"
+  },
+  "portable_siphon": {
+    "kind": "private",
+    "key": "realm-item:portable_siphon",
+    "fallback": "↥",
+    "label": "折叠虹吸管",
+    "reason": "淋浴喷头覆盖泵、水枪和虹吸管，应拆分器物轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.pump"
+  },
+  "wax_emergency_seal": {
+    "kind": "private",
+    "key": "realm-item:wax_emergency_seal",
+    "fallback": "◈",
+    "label": "应急蜡封",
+    "reason": "书签轮廓覆盖护腕、封蜡、心搏标签；按物体轮廓拆分",
+    "authored_icon": "",
+    "legacy_key": "item.seal"
+  },
+  "winter_sample": {
+    "kind": "private",
+    "key": "realm-item:winter_sample",
+    "fallback": "♙",
+    "label": "冬天的样本",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "breach_spool": {
+    "kind": "private",
+    "key": "realm-item:breach_spool",
+    "fallback": "⌁",
+    "label": "拆迁用的线轴",
+    "reason": "区分皮绳、松线、拆迁线轴、手术线圈",
+    "authored_icon": "",
+    "legacy_key": "item.thread"
+  },
+  "folded_escape_route": {
+    "kind": "private",
+    "key": "realm-item:folded_escape_route",
+    "fallback": "∴",
+    "label": "折好的逃生通道",
+    "reason": "脚印适合行走记忆，不适合台阶和折叠逃生路线",
+    "authored_icon": "",
+    "legacy_key": "item.step"
+  },
+  "waking_reserve": {
+    "kind": "private",
+    "key": "realm-item:waking_reserve",
+    "fallback": "∪",
+    "label": "留给醒来的那一口",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "bottled_sunrise": {
+    "kind": "private",
+    "key": "realm-item:bottled_sunrise",
+    "fallback": "♙",
+    "label": "瓶装天亮",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "warm_coffee": {
+    "kind": "private",
+    "key": "realm-item:warm_coffee",
+    "fallback": "∪",
+    "label": "半罐温咖啡",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "cold_tea": {
+    "kind": "private",
+    "key": "realm-item:cold_tea",
+    "fallback": "∪",
+    "label": "凉的半罐茶",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "expired_pill": {
+    "kind": "private",
+    "key": "realm-item:expired_pill",
+    "fallback": "+",
+    "label": "过期的糖衣药丸",
+    "reason": "药物类仍有6项共用同一轮廓；区分药丸、含片、糖滴及包装",
+    "authored_icon": "",
+    "legacy_key": "item.pill"
+  },
+  "espresso_shot": {
+    "kind": "private",
+    "key": "realm-item:espresso_shot",
+    "fallback": "∪",
+    "label": "浓缩咖啡因",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "mint_lozenge": {
+    "kind": "private",
+    "key": "realm-item:mint_lozenge",
+    "fallback": "+",
+    "label": "薄荷锭",
+    "reason": "药物类仍有6项共用同一轮廓；区分药丸、含片、糖滴及包装",
+    "authored_icon": "",
+    "legacy_key": "item.pill"
+  },
+  "strong_mint_tea": {
+    "kind": "private",
+    "key": "realm-item:strong_mint_tea",
+    "fallback": "∪",
+    "label": "特浓薄荷茶",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "wormwood_pastille": {
+    "kind": "private",
+    "key": "realm-item:wormwood_pastille",
+    "fallback": "+",
+    "label": "苦艾糖滴",
+    "reason": "药物类仍有6项共用同一轮廓；区分药丸、含片、糖滴及包装",
+    "authored_icon": "",
+    "legacy_key": "item.pill"
+  },
+  "espresso_tablet": {
+    "kind": "private",
+    "key": "realm-item:espresso_tablet",
+    "fallback": "+",
+    "label": "浓缩咖啡锭",
+    "reason": "药物类仍有6项共用同一轮廓；区分药丸、含片、糖滴及包装",
+    "authored_icon": "",
+    "legacy_key": "item.pill"
+  },
+  "inspiration_coffee": {
+    "kind": "private",
+    "key": "realm-item:inspiration_coffee",
+    "fallback": "∪",
+    "label": "灵感咖啡",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "sleeping_lozenge": {
+    "kind": "private",
+    "key": "realm-item:sleeping_lozenge",
+    "fallback": "+",
+    "label": "安眠含片",
+    "reason": "药物类仍有6项共用同一轮廓；区分药丸、含片、糖滴及包装",
+    "authored_icon": "",
+    "legacy_key": "item.pill"
+  },
+  "dream_electrolytes": {
+    "kind": "private",
+    "key": "realm-item:dream_electrolytes",
+    "fallback": "∪",
+    "label": "梦境电解水",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "deep_thought_tea": {
+    "kind": "private",
+    "key": "realm-item:deep_thought_tea",
+    "fallback": "∪",
+    "label": "深念茶",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "mint_dew": {
+    "kind": "private",
+    "key": "realm-item:mint_dew",
+    "fallback": "♙",
+    "label": "薄荷露",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "lighter_match": {
+    "kind": "private",
+    "key": "realm-item:lighter_match",
+    "fallback": "♨",
+    "label": "引火人的火柴",
+    "reason": "火焰不能区分火柴、烟花束和光焰弹；给实际物体轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.match"
+  },
+  "whistle": {
+    "kind": "private",
+    "key": "realm-item:whistle",
+    "fallback": "♪",
+    "label": "汽笛",
+    "reason": "音符覆盖鼻烟壶、哨、音叉和汽笛；歌的记忆可保留音符",
+    "authored_icon": "",
+    "legacy_key": "item.flute"
+  },
+  "thermal_residue": {
+    "kind": "private",
+    "key": "realm-item:thermal_residue",
+    "fallback": "∪",
+    "label": "保温杯的余热",
+    "reason": "杯型家族过多；区分罐装饮料、杯/茶具、药剂与记忆，不要求每杯茶完全不同",
+    "authored_icon": "",
+    "legacy_key": "item.drink"
+  },
+  "clockwork_half": {
+    "kind": "private",
+    "key": "realm-item:clockwork_half",
+    "fallback": "◷",
+    "label": "发条半卷",
+    "reason": "手表轮廓覆盖怀表/发条，至少把发条与表壳分开",
+    "authored_icon": "",
+    "legacy_key": "item.watch"
+  },
+  "mirror_shard": {
+    "kind": "private",
+    "key": "realm-item:mirror_shard",
+    "fallback": "◇",
+    "label": "镜面碎片",
+    "reason": "蓝色菱块覆盖像素碎片和不同玻璃；像素应是方块/坏点，镜片应带裂面",
+    "authored_icon": "",
+    "legacy_key": "item.glass"
+  },
+  "magnesium_match": {
+    "kind": "private",
+    "key": "realm-item:magnesium_match",
+    "fallback": "♨",
+    "label": "镁光火柴",
+    "reason": "火焰不能区分火柴、烟花束和光焰弹；给实际物体轮廓",
+    "authored_icon": "",
+    "legacy_key": "item.match"
+  },
+  "glass_bottle": {
+    "kind": "emoji",
+    "character": "🧪",
+    "fallback": "🧪",
+    "label": "玻璃瓶",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "🧪",
+    "legacy_key": "🧪"
+  },
+  "balloon": {
+    "kind": "emoji",
+    "character": "🎈",
+    "fallback": "🎈",
+    "label": "气球",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "🎈",
+    "legacy_key": "🎈"
+  },
+  "mirror_of_insight": {
+    "kind": "emoji",
+    "character": "🪞",
+    "fallback": "🪞",
+    "label": "洞察之镜",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "🪞",
+    "legacy_key": "🪞"
+  },
+  "ideal_vessel": {
+    "kind": "emoji",
+    "character": "🫙",
+    "fallback": "🫙",
+    "label": "理想气体容器",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "🫙",
+    "legacy_key": "🫙"
+  },
+  "signal_flare": {
+    "kind": "private",
+    "key": "realm-item:signal_flare",
+    "fallback": "☼",
+    "label": "信号焰火",
+    "reason": "灯泡覆盖焰火和完整灯具，应区分发光体外壳",
+    "authored_icon": "",
+    "legacy_key": "item.bulb"
+  },
+  "glass_shard": {
+    "kind": "private",
+    "key": "realm-item:glass_shard",
+    "fallback": "◇",
+    "label": "彩玻碎片",
+    "reason": "蓝色菱块覆盖像素碎片和不同玻璃；像素应是方块/坏点，镜片应带裂面",
+    "authored_icon": "",
+    "legacy_key": "item.glass"
+  },
+  "model_screw": {
+    "kind": "private",
+    "key": "realm-item:model_screw",
+    "fallback": "⚒",
+    "label": "模型盒里多出的螺丝",
+    "reason": "扳手覆盖螺丝刀、凿子、螺丝和铆钉；按实际器物区分",
+    "authored_icon": "",
+    "legacy_key": "item.tool"
+  },
+  "stair_bolt": {
+    "kind": "private",
+    "key": "realm-item:stair_bolt",
+    "fallback": "⚒",
+    "label": "楼梯铆钉",
+    "reason": "扳手覆盖螺丝刀、凿子、螺丝和铆钉；按实际器物区分",
+    "authored_icon": "",
+    "legacy_key": "item.tool"
+  },
+  "guestbook_page": {
+    "kind": "private",
+    "key": "realm-item:guestbook_page",
+    "fallback": "▤",
+    "label": "留言板签名",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "lighthouse_keeper_memory": {
+    "kind": "private",
+    "key": "realm-item:lighthouse_keeper_memory",
+    "fallback": "▤",
+    "label": "守塔人的夜班表",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "paint_smell_memory": {
+    "kind": "emoji",
+    "character": "🖌",
+    "fallback": "🖌",
+    "label": "油漆味的走廊",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.paint"
+  },
+  "rain_machine_memory_2": {
+    "kind": "emoji",
+    "character": "📻",
+    "fallback": "📻",
+    "label": "收音机里的雨",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.radio"
+  },
+  "model_room_memory": {
+    "kind": "private",
+    "key": "realm-item:model_room_memory",
+    "fallback": "☼",
+    "label": "模型房间的灯",
+    "reason": "灯泡覆盖焰火和完整灯具，应区分发光体外壳",
+    "authored_icon": "",
+    "legacy_key": "item.bulb"
+  },
+  "draft_margin_memory": {
+    "kind": "private",
+    "key": "realm-item:draft_margin_memory",
+    "fallback": "▤",
+    "label": "草稿边缘的折痕",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "choir_note": {
+    "kind": "private",
+    "key": "realm-item:choir_note",
+    "fallback": "▤",
+    "label": "受潮的乐谱页",
+    "reason": "纸页家族过多；区分支票簿、折页、签名板、乐谱和夜班表",
+    "authored_icon": "",
+    "legacy_key": "item.page"
+  },
+  "attic_dust": {
+    "kind": "emoji",
+    "character": "🕸",
+    "fallback": "🕸",
+    "label": "阁楼的灰尘",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.dust"
+  },
+  "last_window": {
+    "kind": "emoji",
+    "character": "🚌",
+    "fallback": "🚌",
+    "label": "末班车的窗",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.bus"
+  },
+  "salt_crust": {
+    "kind": "private",
+    "key": "realm-item:salt_crust",
+    "fallback": "⌕",
+    "label": "盐渍的护目片",
+    "reason": "放大镜、灯塔透镜、护目片不是同一种器物",
+    "authored_icon": "",
+    "legacy_key": "item.lens"
+  },
+  "dry_gloves": {
+    "kind": "private",
+    "key": "realm-item:dry_gloves",
+    "fallback": "⊓",
+    "label": "干涸的手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "burn_scar": {
+    "kind": "emoji",
+    "character": "🔥",
+    "fallback": "🔥",
+    "label": "火燎的旧疤",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.fire"
+  },
+  "wide_lung": {
+    "kind": "emoji",
+    "character": "🫁",
+    "fallback": "🫁",
+    "label": "撑开的肺叶",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.lung"
+  },
+  "deep_reserve": {
+    "kind": "private",
+    "key": "realm-item:deep_reserve",
+    "fallback": "▣",
+    "label": "深埋的储备",
+    "reason": "电池本体与身体/储备记忆应适当区分",
+    "authored_icon": "",
+    "legacy_key": "item.battery"
+  },
+  "usb_drive_memory": {
+    "kind": "emoji",
+    "character": "📼",
+    "fallback": "📼",
+    "label": "随身听的旧歌单",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.tape"
+  },
+  "tape_hiss_memory": {
+    "kind": "emoji",
+    "character": "📼",
+    "fallback": "📼",
+    "label": "磁带的底噪",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.tape"
+  },
+  "pixel_pet_memory": {
+    "kind": "emoji",
+    "character": "🐾",
+    "fallback": "🐾",
+    "label": "像素宠物的墓碑",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.pet"
+  },
+  "bubble_wrap_memory": {
+    "kind": "emoji",
+    "character": "🧽",
+    "fallback": "🧽",
+    "label": "气泡膜的解压",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.sponge"
+  },
+  "grass_slip_memory": {
+    "kind": "emoji",
+    "character": "🌿",
+    "fallback": "🌿",
+    "label": "草叶的松脱",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "item.leaf"
+  },
+  "poison_vial_memory": {
+    "kind": "private",
+    "key": "realm-item:poison_vial_memory",
+    "fallback": "♙",
+    "label": "空药瓶的回甘",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "scribe_ink_memory": {
+    "kind": "private",
+    "key": "realm-item:scribe_ink_memory",
+    "fallback": "✎",
+    "label": "执笔者的一滴墨",
+    "reason": "笔形可留给钢笔；录音设备、墨滴、批注不能都画成同一支笔",
+    "authored_icon": "",
+    "legacy_key": "item.pen"
+  },
+  "echo_ring_memory": {
+    "kind": "private",
+    "key": "realm-item:echo_ring_memory",
+    "fallback": "○",
+    "label": "回响戒指的颤动",
+    "reason": "五项环形共用，可保留基础戒环，给扳指/调焦环结构差异；不强求零重复",
+    "authored_icon": "",
+    "legacy_key": "item.ring"
+  },
+  "expansion.sound.m04": {
+    "kind": "emoji",
+    "character": "🥁",
+    "fallback": "🥁",
+    "label": "没落下的鼓点",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.m04"
+  },
+  "expansion.sound.m05": {
+    "kind": "emoji",
+    "character": "📢",
+    "fallback": "📢",
+    "label": "候车室的广播",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.m05"
+  },
+  "expansion.sound.m06": {
+    "kind": "emoji",
+    "character": "🪟",
+    "fallback": "🪟",
+    "label": "海边关窗的夜里",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.m06"
+  },
+  "expansion.light.m01": {
+    "kind": "emoji",
+    "character": "🛏",
+    "fallback": "🛏",
+    "label": "被窝里的手电",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.m01"
+  },
+  "expansion.light.m03": {
+    "kind": "emoji",
+    "character": "🔴",
+    "fallback": "🔴",
+    "label": "暗房的红灯",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.m03"
+  },
+  "expansion.light.m05": {
+    "kind": "emoji",
+    "character": "🚘",
+    "fallback": "🚘",
+    "label": "雨夜的车灯",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.m05"
+  },
+  "expansion.light.m06": {
+    "kind": "emoji",
+    "character": "🪔",
+    "fallback": "🪔",
+    "label": "母亲留下的床头灯",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.m06"
+  },
+  "expansion.terrain.m01": {
+    "kind": "emoji",
+    "character": "🌧",
+    "fallback": "🌧",
+    "label": "雨靴灌水那天",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.m01"
+  },
+  "expansion.terrain.m02": {
+    "kind": "emoji",
+    "character": "🦯",
+    "fallback": "🦯",
+    "label": "扶栏下楼",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.m02"
+  },
+  "expansion.terrain.m03": {
+    "kind": "emoji",
+    "character": "☁",
+    "fallback": "☁",
+    "label": "蒸笼旁的白雾",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.m03"
+  },
+  "expansion.terrain.m04": {
+    "kind": "emoji",
+    "character": "👣",
+    "fallback": "👣",
+    "label": "湿纸上的鞋印",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.m04"
+  },
+  "expansion.terrain.m06": {
+    "kind": "emoji",
+    "character": "🚰",
+    "fallback": "🚰",
+    "label": "窗台外的雨槽",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.m06"
+  },
+  "expansion.projectile.m01": {
+    "kind": "emoji",
+    "character": "📌",
+    "fallback": "📌",
+    "label": "掌心的弹壳",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.m01"
+  },
+  "expansion.projectile.m02": {
+    "kind": "emoji",
+    "character": "🎧",
+    "fallback": "🎧",
+    "label": "射击棚的耳塞",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.m02"
+  },
+  "expansion.projectile.m03": {
+    "kind": "emoji",
+    "character": "🎯",
+    "fallback": "🎯",
+    "label": "第一次脱靶",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.m03"
+  },
+  "expansion.projectile.m06": {
+    "kind": "emoji",
+    "character": "🧱",
+    "fallback": "🧱",
+    "label": "靶心背后的墙",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.m06"
+  },
+  "expansion.circuit.m01": {
+    "kind": "emoji",
+    "character": "🔋",
+    "fallback": "🔋",
+    "label": "握错的电池",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.m01"
+  },
+  "expansion.circuit.m03": {
+    "kind": "emoji",
+    "character": "🧵",
+    "fallback": "🧵",
+    "label": "没烧完的保险丝",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.m03"
+  },
+  "expansion.circuit.m04": {
+    "kind": "emoji",
+    "character": "🥛",
+    "fallback": "🥛",
+    "label": "玻璃杯里的裂纹",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.m04"
+  },
+  "expansion.circuit.m05": {
+    "kind": "emoji",
+    "character": "🔌",
+    "fallback": "🔌",
+    "label": "家里停电的傍晚",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.m05"
+  },
+  "expansion.circuit.m06": {
+    "kind": "emoji",
+    "character": "☝",
+    "fallback": "☝",
+    "label": "烫在指尖的字",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.m06"
+  },
+  "expansion.realm.m01": {
+    "kind": "emoji",
+    "character": "🎫",
+    "fallback": "🎫",
+    "label": "候诊的号码纸",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.m01"
+  },
+  "expansion.realm.m03": {
+    "kind": "emoji",
+    "character": "💉",
+    "fallback": "💉",
+    "label": "凌晨的输液声",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.m03"
+  },
+  "expansion.realm.m05": {
+    "kind": "emoji",
+    "character": "🪑",
+    "fallback": "🪑",
+    "label": "出院门口的长椅",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.m05"
+  },
+  "expansion.realm.m06": {
+    "kind": "emoji",
+    "character": "💌",
+    "fallback": "💌",
+    "label": "三十层之外的回信",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.m06"
+  },
+  "hospital.suture_coil": {
+    "kind": "private",
+    "key": "realm-item:hospital.suture_coil",
+    "fallback": "⌁",
+    "label": "缝合线圈",
+    "reason": "区分皮绳、松线、拆迁线轴、手术线圈",
+    "authored_icon": "",
+    "legacy_key": "item.thread"
+  },
+  "hospital.lymph_filter": {
+    "kind": "private",
+    "key": "realm-item:hospital.lymph_filter",
+    "fallback": "⊞",
+    "label": "淋巴滤环",
+    "reason": "滤环应是带滤网的环，不是蜘蛛网",
+    "authored_icon": "",
+    "legacy_key": "item.filter"
+  },
+  "hospital.cerebral_ampoule": {
+    "kind": "private",
+    "key": "realm-item:hospital.cerebral_ampoule",
+    "fallback": "♙",
+    "label": "脑脊安瓿",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "hospital.sterile_glove": {
+    "kind": "private",
+    "key": "realm-item:hospital.sterile_glove",
+    "fallback": "⊓",
+    "label": "无垢手套",
+    "reason": "手套家族过多；以缺指、线缝、笔尖、点火头等外形细节区分，不能只换颜色",
+    "authored_icon": "",
+    "legacy_key": "item.glove"
+  },
+  "hospital.glass_rib": {
+    "kind": "private",
+    "key": "realm-item:hospital.glass_rib",
+    "fallback": "⌁",
+    "label": "玻璃肋",
+    "reason": "骨形轮廓合理，但可加玻璃肋弧面，避免和骨髓记忆相同",
+    "authored_icon": "",
+    "legacy_key": "item.bone"
+  },
+  "hospital.pulse_tag": {
+    "kind": "private",
+    "key": "realm-item:hospital.pulse_tag",
+    "fallback": "◈",
+    "label": "心搏标签",
+    "reason": "书签轮廓覆盖护腕、封蜡、心搏标签；按物体轮廓拆分",
+    "authored_icon": "",
+    "legacy_key": "item.seal"
+  },
+  "hospital.sealed_ampoule": {
+    "kind": "private",
+    "key": "realm-item:hospital.sealed_ampoule",
+    "fallback": "♙",
+    "label": "封口安瓿",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "hospital.clean_air_bottle": {
+    "kind": "private",
+    "key": "realm-item:hospital.clean_air_bottle",
+    "fallback": "♙",
+    "label": "净气小瓶",
+    "reason": "喷瓶轮廓覆盖燃烧瓶、安瓿、样本和气瓶；应按容器结构拆分",
+    "authored_icon": "",
+    "legacy_key": "item.bottle"
+  },
+  "hospital.filter_sac": {
+    "kind": "private",
+    "key": "realm-item:hospital.filter_sac",
+    "fallback": "⊞",
+    "label": "滤膜囊",
+    "reason": "滤膜囊与滤环共用网状图；改囊体和收口",
+    "authored_icon": "",
+    "legacy_key": "item.filter"
+  },
+  "hospital.diagnostic_slide": {
+    "kind": "private",
+    "key": "realm-item:hospital.diagnostic_slide",
+    "fallback": "+",
+    "label": "诊断玻片",
+    "reason": "诊断玻片被画成听诊器；改长玻片与样本窗",
+    "authored_icon": "",
+    "legacy_key": "item.medical"
+  },
+  "expansion.sound.e01": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e01",
+    "fallback": "⚿",
+    "label": "缠布的门扣",
+    "reason": "带钥匙方框不是缠布门扣；改门扣和包布",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e01"
+  },
+  "expansion.sound.e02": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e02",
+    "fallback": "⌔",
+    "label": "碎瓷鞋垫",
+    "reason": "几何菱框不是碎瓷鞋垫；改鞋垫外沿和瓷片",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e02"
+  },
+  "expansion.sound.e03": {
+    "kind": "emoji",
+    "character": "🎧",
+    "fallback": "🎧",
+    "label": "左右相反的耳罩",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e03"
+  },
+  "expansion.sound.e04": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e04",
+    "fallback": "♮",
+    "label": "抽屉里的调音叉",
+    "reason": "还原号不是音叉；改叉齿和柄",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e04"
+  },
+  "expansion.sound.e05": {
+    "kind": "emoji",
+    "character": "🛎",
+    "fallback": "⚙",
+    "path": "M80.0 520.0H880.0V440.0H80.0V520.0ZM240.0 188.0H640.0V132.0H240.0V188.0ZM612.836 166.7908 732.836 646.7919999999999 787.164 633.208 667.164 153.20919999999998 612.836 166.7908ZM760.0 612.0H120.0V668.0H760.0V612.0ZM147.164 646.7919999999999 267.164 166.7908 212.836 153.20919999999998 92.836 633.208 147.164 646.7919999999999ZM520.0 760.0 517.2760000000001 780.7040000000001 509.28400000000005 800.0 496.568 816.568 480.0 829.284 460.704 837.276 440.0 840.0 419.296 837.276 400.0 829.284 383.4316 816.568 370.718 800.0 362.726 780.7040000000001 360.0 760.0 362.726 739.2959999999999 370.718 720.0 383.4316 703.432 400.0 690.716 419.296 682.724 440.0 680.0 460.704 682.724 480.0 690.716 496.568 703.432 509.28400000000005 720.0 517.2760000000001 739.2959999999999 520.0 760.0ZM920.0 480.0 917.276 500.704 909.284 520.0 896.568 536.568 880.0 549.284 860.7040000000001 557.2760000000001 840.0 560.0 819.2959999999999 557.2760000000001 800.0 549.284 783.432 536.568 770.716 520.0 762.724 500.704 760.0 480.0 762.724 459.296 770.716 440.0 783.432 423.432 800.0 410.71599999999995 819.2959999999999 402.724 840.0 400.0 860.7040000000001 402.724 880.0 410.71599999999995 896.568 423.432 909.284 440.0 917.276 459.296 920.0 480.0ZM878.6360000000001 469.64799999999997 874.64 460.0 868.284 451.716 860.0 445.36 850.3520000000001 441.36400000000003 840.0 440.0 829.6479999999999 441.36400000000003 820.0 445.36 811.716 451.716 805.36 460.0 801.3639999999999 469.64799999999997 800.0 480.0 801.3639999999999 490.35200000000003 805.36 500.0 811.716 508.284 820.0 514.64 829.6479999999999 518.636 840.0 520.0 850.3520000000001 518.636 860.0 514.64 868.284 508.284 874.64 500.0 878.6360000000001 490.35200000000003 880.0 480.0 878.6360000000001 469.64799999999997Z",
+    "label": "沿墙滚动的铃轴",
+    "reason": "齿轮可解释轴但不能区分铃轴；加铃体",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e05"
+  },
+  "expansion.sound.e06": {
+    "kind": "emoji",
+    "character": "🔔",
+    "fallback": "🔔",
+    "label": "没有铃舌的铃",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e06"
+  },
+  "expansion.sound.e07": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e07",
+    "fallback": "⏷",
+    "label": "反扣的铁漏斗",
+    "reason": "倒三角不是铁漏斗；改漏斗口和细管",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e07"
+  },
+  "expansion.sound.e08": {
+    "kind": "emoji",
+    "character": "🩺",
+    "fallback": "🩺",
+    "label": "一头松开的听诊管",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e08"
+  },
+  "expansion.sound.e09": {
+    "kind": "emoji",
+    "character": "🛠",
+    "fallback": "⚒",
+    "path": "M75.3968 107.6192 795.396 227.6192 804.604 172.3808 84.60319999999999 52.3808 75.3968 107.6192ZM773.0759999999999 192.308 693.0759999999999 472.308 746.9240000000001 487.692 826.9240000000001 207.692 773.0759999999999 192.308ZM724.864 452.428 44.866 332.42600000000004 35.134 387.57399999999996 715.136 507.572 724.864 452.428ZM67.7184 363.9596 107.71839999999999 83.95960000000001 52.2816 76.0404 12.2814 356.0404 67.7184 363.9596ZM322.0488 382.01120000000003 202.0488 902.012 357.9512 937.988 477.952 417.988 322.0488 382.01120000000003Z",
+    "label": "留声的木槌",
+    "reason": "交叉工具不够像木槌；改木槌emoji字形",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e09"
+  },
+  "expansion.sound.e10": {
+    "kind": "emoji",
+    "character": "👢",
+    "fallback": "👢",
+    "label": "只响第二步的靴",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e10"
+  },
+  "expansion.sound.e12": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e12",
+    "fallback": "≋",
+    "label": "回音分账器",
+    "reason": "水波线不能表达分账器；改分路计数器",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e12"
+  },
+  "expansion.sound.e13": {
+    "kind": "emoji",
+    "character": "👣",
+    "fallback": "👣",
+    "label": "借来的脚步机",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e13"
+  },
+  "expansion.sound.e14": {
+    "kind": "emoji",
+    "character": "📣",
+    "fallback": "📣",
+    "label": "错接的传声筒",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e14"
+  },
+  "expansion.sound.e15": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.e15",
+    "fallback": "♯",
+    "label": "乐池的指挥棒",
+    "reason": "升号不是指挥棒；改细棒和手柄",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e15"
+  },
+  "expansion.sound.e16": {
+    "kind": "emoji",
+    "character": "🪑",
+    "fallback": "🪑",
+    "label": "最后一排的空椅",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.e16"
+  },
+  "expansion.light.e01": {
+    "kind": "emoji",
+    "character": "💡",
+    "fallback": "💡",
+    "label": "遮住一半的台灯",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e01"
+  },
+  "expansion.light.e02": {
+    "kind": "emoji",
+    "character": "🥽",
+    "fallback": "🥽",
+    "label": "磨砂护目片",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e02"
+  },
+  "expansion.light.e03": {
+    "kind": "emoji",
+    "character": "🔘",
+    "fallback": "🔘",
+    "label": "蓄光袖扣",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e03"
+  },
+  "expansion.light.e04": {
+    "kind": "emoji",
+    "character": "🗡",
+    "fallback": "🗡",
+    "label": "漏光的拆信刀",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e04"
+  },
+  "expansion.light.e05": {
+    "kind": "emoji",
+    "character": "🔦",
+    "fallback": "🔦",
+    "label": "窄缝手电",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e05"
+  },
+  "expansion.light.e06": {
+    "kind": "emoji",
+    "character": "⛱",
+    "fallback": "⛱",
+    "path": "M240.0 108.0H680.0V52.0H240.0V108.0ZM653.2760000000001 88.3516 853.2760000000001 728.352 906.7239999999999 711.648 706.7239999999999 71.6484 653.2760000000001 88.3516ZM880.0 692.0H40.0V748.0H880.0V692.0ZM66.7256 728.352 266.7256 88.3516 213.27439999999999 71.6484 13.27456 711.648 66.7256 728.352ZM170.3488 115.4384 90.3488 635.4399999999999 149.65120000000002 644.5600000000001 229.6512 124.5616 170.3488 115.4384ZM690.3480000000001 124.5616 770.3480000000001 644.5600000000001 829.6519999999999 635.4399999999999 749.6519999999999 115.4384 690.3480000000001 124.5616ZM560.0 800.0 555.912 831.06 543.924 860.0 524.852 884.8520000000001 500.0 903.924 471.06 915.912 440.0 920.0 408.94 915.912 380.0 903.924 355.1472 884.8520000000001 336.07680000000005 860.0 324.08880000000005 831.06 320.0 800.0 324.08880000000005 768.94 336.07680000000005 740.0 355.1472 715.1479999999999 380.0 696.076 408.94 684.088 440.0 680.0 471.06 684.088 500.0 696.076 524.852 715.1479999999999 543.924 740.0 555.912 768.94 560.0 800.0ZM509.548 781.3639999999999 502.352 764.0 490.91200000000003 749.088 476.0 737.6479999999999 458.63599999999997 730.452 440.0 728.0 421.36400000000003 730.452 404.0 737.6479999999999 389.0884 749.088 377.646 764.0 370.4532 781.3639999999999 368.0 800.0 370.4532 818.6360000000001 377.646 836.0 389.0884 850.912 404.0 862.3520000000001 421.36400000000003 869.548 440.0 872.0 458.63599999999997 869.548 476.0 862.3520000000001 490.91200000000003 850.912 502.352 836.0 509.548 818.6360000000001 512.0 800.0 509.548 781.3639999999999Z",
+    "label": "搬家的灯罩",
+    "reason": "遮阳伞不像可搬灯罩；选灯罩emoji或手改emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e06"
+  },
+  "expansion.light.e07": {
+    "kind": "emoji",
+    "character": "🦺",
+    "fallback": "🦺",
+    "label": "黑布背心",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e07"
+  },
+  "expansion.light.e08": {
+    "kind": "emoji",
+    "character": "🧷",
+    "fallback": "🧷",
+    "label": "回光别针",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e08"
+  },
+  "expansion.light.e09": {
+    "kind": "emoji",
+    "character": "📽",
+    "fallback": "📽",
+    "label": "斜口投影筒",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e09"
+  },
+  "expansion.light.e10": {
+    "kind": "emoji",
+    "character": "📏",
+    "fallback": "📏",
+    "label": "校光尺",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e10"
+  },
+  "expansion.light.e11": {
+    "kind": "private",
+    "key": "realm-item:expansion.light.e11",
+    "fallback": "◐",
+    "label": "焦黑遮片",
+    "reason": "半圆可表达遮片，需补焦边以区别其他半圆",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e11"
+  },
+  "expansion.light.e12": {
+    "kind": "emoji",
+    "character": "👓",
+    "fallback": "👓",
+    "label": "两面有色的镜框",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e12"
+  },
+  "expansion.light.e13": {
+    "kind": "private",
+    "key": "realm-item:expansion.light.e13",
+    "fallback": "☼",
+    "label": "遗失的聚光把手",
+    "reason": "太阳符号不是聚光把手；改把手和聚光筒",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e13"
+  },
+  "expansion.light.e14": {
+    "kind": "emoji",
+    "character": "✂",
+    "fallback": "✂",
+    "label": "逆光的裁纸刀",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e14"
+  },
+  "expansion.light.e15": {
+    "kind": "emoji",
+    "character": "🕯",
+    "fallback": "🕯",
+    "label": "不肯熄灭的灯芯架",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e15"
+  },
+  "expansion.light.e16": {
+    "kind": "emoji",
+    "character": "🧣",
+    "fallback": "🧣",
+    "label": "摄影师的黑披布",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.e16"
+  },
+  "expansion.terrain.e01": {
+    "kind": "emoji",
+    "character": "👞",
+    "fallback": "👞",
+    "label": "带槽的木底鞋",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e01"
+  },
+  "expansion.terrain.e02": {
+    "kind": "emoji",
+    "character": "🥄",
+    "fallback": "🥄",
+    "label": "短柄舀勺",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e02"
+  },
+  "expansion.terrain.e03": {
+    "kind": "emoji",
+    "character": "📐",
+    "fallback": "📐",
+    "label": "倾斜的水平尺",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e03"
+  },
+  "expansion.terrain.e04": {
+    "kind": "emoji",
+    "character": "🪝",
+    "fallback": "🪝",
+    "label": "栏杆挂钩",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e04"
+  },
+  "expansion.terrain.e05": {
+    "kind": "emoji",
+    "character": "🥾",
+    "fallback": "🥾",
+    "label": "塞满砂的鞋套",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e05"
+  },
+  "expansion.terrain.e06": {
+    "kind": "emoji",
+    "character": "⚓",
+    "fallback": "⚓",
+    "path": "M280.0 68.0H680.0V12.0H280.0V68.0ZM652.0 40.0V200.0H708.0V40.0H652.0ZM680.0 172.0H280.0V228.0H680.0V172.0ZM308.0 200.0V40.0H252.0V200.0H308.0ZM440.0 200.0V560.0H520.0V200.0H440.0ZM200.0 548.0H760.0V492.0H200.0V548.0ZM732.28 516.04 692.28 796.04 747.72 803.96 787.72 523.96 732.28 516.04ZM707.48 774.9559999999999 467.47999999999996 894.9559999999999 492.52000000000004 945.0440000000001 732.52 825.0440000000001 707.48 774.9559999999999ZM492.52000000000004 894.9559999999999 252.522 774.9559999999999 227.478 825.0440000000001 467.47999999999996 945.0440000000001 492.52000000000004 894.9559999999999ZM267.71840000000003 796.04 227.7184 516.04 172.2816 523.96 212.2816 803.96 267.71840000000003 796.04Z",
+    "label": "折口排水铲",
+    "reason": "锚不是排水铲；改铲形emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e06"
+  },
+  "expansion.terrain.e07": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.e07",
+    "fallback": "⎇",
+    "label": "桌沿导流片",
+    "reason": "功能键符号不是桌沿导流片；改槽口和桌缘夹",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e07"
+  },
+  "expansion.terrain.e08": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.e08",
+    "fallback": "⌇",
+    "label": "只装上层的吸管",
+    "reason": "竖标记不是吸管；改弯管口与液面分层",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e08"
+  },
+  "expansion.terrain.e09": {
+    "kind": "emoji",
+    "character": "⏏",
+    "fallback": "⏏",
+    "path": "M148.0 760.0V360.0H92.0V760.0H148.0ZM142.7844 376.27479999999997 342.7844 96.2748 297.2156 63.7252 97.2156 343.72520000000003 142.7844 376.27479999999997ZM320.0 108.0H640.0V52.0H320.0V108.0ZM617.216 96.2748 817.2159999999999 376.27479999999997 862.7840000000001 343.72520000000003 662.7840000000001 63.7252 617.216 96.2748ZM812.0 360.0V760.0H868.0V360.0H812.0ZM840.0 732.0H120.0V788.0H840.0V732.0ZM120.0 840.0H840.0V760.0H120.0V840.0ZM320.0 550.0H640.0V490.0H320.0V550.0ZM400.0 280.0H560.0L480.0 440.0L400.0 280.0Z",
+    "label": "单向泄压罩",
+    "reason": "弹出符号不是泄压罩；改罩壳和单向气口",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e09"
+  },
+  "expansion.terrain.e10": {
+    "kind": "emoji",
+    "character": "🪣",
+    "fallback": "🪣",
+    "label": "漏底测量桶",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e10"
+  },
+  "expansion.terrain.e11": {
+    "kind": "emoji",
+    "character": "🗜",
+    "fallback": "📎",
+    "path": "M120.0 108.0H760.0V52.0H120.0V108.0ZM732.0 80.0V240.0H788.0V80.0H732.0ZM760.0 212.0H280.0V268.0H760.0V212.0ZM252.0 240.0V720.0H308.0V240.0H252.0ZM280.0 748.0H760.0V692.0H280.0V748.0ZM732.0 720.0V880.0H788.0V720.0H732.0ZM760.0 852.0H120.0V908.0H760.0V852.0ZM148.0 880.0V80.0H92.0V880.0H148.0ZM640.0 360.0V720.0H720.0V360.0H640.0ZM520.0 440.0H880.0V360.0H520.0V440.0Z",
+    "label": "登高的画板夹",
+    "reason": "回形针与画板夹相关但过泛；emoji中加夹体/支撑结构",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e11"
+  },
+  "expansion.terrain.e12": {
+    "kind": "emoji",
+    "character": "📍",
+    "fallback": "📍",
+    "label": "潮线刺针",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e12"
+  },
+  "expansion.terrain.e13": {
+    "kind": "emoji",
+    "character": "🪠",
+    "fallback": "🪠",
+    "label": "抽水员的反向泵",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e13"
+  },
+  "expansion.terrain.e14": {
+    "kind": "emoji",
+    "character": "🥼",
+    "fallback": "🥼",
+    "label": "沉箱工作服",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e14"
+  },
+  "expansion.terrain.e15": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.e15",
+    "fallback": "⊣",
+    "label": "分流的黄铜闸",
+    "reason": "数学⊣不是黄铜闸；改闸片与分流口",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e15"
+  },
+  "expansion.terrain.e16": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.e16",
+    "fallback": "▱",
+    "label": "能收起的堤岸",
+    "reason": "平行四边形不是可收堤岸；改可折叠挡水板",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.e16"
+  },
+  "expansion.projectile.e01": {
+    "kind": "emoji",
+    "character": "🔫",
+    "fallback": "🔫",
+    "label": "单钉装订枪",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e01"
+  },
+  "expansion.projectile.e02": {
+    "kind": "emoji",
+    "character": "🎽",
+    "fallback": "🎽",
+    "label": "旧射击围裙",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e02"
+  },
+  "expansion.projectile.e04": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.e04",
+    "fallback": "⎍",
+    "label": "弹簧推杆",
+    "reason": "电气符号不是弹簧推杆；改弹簧和杆头",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e04"
+  },
+  "expansion.projectile.e05": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.e05",
+    "fallback": "⚯",
+    "label": "双口标签枪",
+    "reason": "双圆连接符不能读成双口标签枪；改双出标口",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e05"
+  },
+  "expansion.projectile.e06": {
+    "kind": "emoji",
+    "character": "🔏",
+    "fallback": "🔏",
+    "path": "M80.0 680.0H880.0V880.0H80.0V680.0ZM136.0 736.0V824.0H824.0V736.0H136.0ZM280.0 240.0H680.0V680.0H280.0V240.0ZM336.0 296.0V624.0H624.0V296.0H336.0ZM600.0 120.0 595.912 151.0584 583.924 180.0 564.852 204.8528 540.0 223.9232 511.06 235.9112 480.0 240.0 448.94 235.9112 420.0 223.9232 395.1472 204.8528 376.07680000000005 180.0 364.08880000000005 151.0584 360.0 120.0 364.08880000000005 88.9416 376.07680000000005 60.0 395.1472 35.1472 420.0 16.07696 448.94 4.08892 480.0 0.0 511.06 4.08892 540.0 16.07696 564.852 35.1472 583.924 60.0 595.912 88.9416 600.0 120.0ZM545.684 102.4004 538.888 86.0 528.084 71.9168 514.0 61.1104 497.59999999999997 54.3172 480.0 52.0 462.40000000000003 54.3172 446.0 61.1104 431.916 71.9168 421.11199999999997 86.0 414.31600000000003 102.4004 412.0 120.0 414.31600000000003 137.5996 421.11199999999997 154.0 431.916 168.08319999999998 446.0 178.8896 462.40000000000003 185.68280000000001 480.0 188.0 497.59999999999997 185.68280000000001 514.0 178.8896 528.084 168.08319999999998 538.888 154.0 545.684 137.5996 548.0 120.0 545.684 102.4004ZM200.0 830.0H760.0V770.0H200.0V830.0Z",
+    "label": "开膛验章器",
+    "reason": "锁和笔emoji不像验章器；保留emoji并重画夹口与印头",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e06"
+  },
+  "expansion.projectile.e07": {
+    "kind": "emoji",
+    "character": "🦿",
+    "fallback": "🦿",
+    "path": "M440.0 80.0V520.0H520.0V80.0H440.0ZM453.24 490.26800000000003 53.2416 850.2679999999999 106.75840000000001 909.7320000000001 506.76 549.732 453.24 490.26800000000003ZM453.24 549.732 853.24 909.7320000000001 906.76 850.2679999999999 506.76 490.26800000000003 453.24 549.732ZM440.0 520.0V920.0H520.0V520.0H440.0ZM240.0 40.0H720.0V240.0H240.0V40.0ZM296.0 96.0V184.0H664.0V96.0H296.0Z",
+    "label": "换弹脚架",
+    "reason": "机械腿emoji不像换弹脚架；改脚架emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e07"
+  },
+  "expansion.projectile.e08": {
+    "kind": "emoji",
+    "character": "🪝",
+    "fallback": "🪝",
+    "label": "长柄退弹钩",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e08"
+  },
+  "expansion.projectile.e09": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.e09",
+    "fallback": "⎙",
+    "label": "折角压纸枪",
+    "reason": "打印符号不是压纸枪；改枪状压纸器",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e09"
+  },
+  "expansion.projectile.e10": {
+    "kind": "emoji",
+    "character": "🔩",
+    "fallback": "🔩",
+    "label": "散页铆钉器",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e10"
+  },
+  "expansion.projectile.e11": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.e11",
+    "fallback": "⟃",
+    "label": "延迟上膛套",
+    "reason": "箭头数学符号不是上膛套；改套筒、延迟扣",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e11"
+  },
+  "expansion.projectile.e12": {
+    "kind": "emoji",
+    "character": "🪢",
+    "fallback": "🪢",
+    "label": "软肩背带",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e12"
+  },
+  "expansion.projectile.e13": {
+    "kind": "emoji",
+    "character": "🧲",
+    "fallback": "🧲",
+    "label": "回收员的磁嘴",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e13"
+  },
+  "expansion.projectile.e14": {
+    "kind": "emoji",
+    "character": "🔫",
+    "fallback": "🔫",
+    "label": "镜缘短铳",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e14"
+  },
+  "expansion.projectile.e15": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.e15",
+    "fallback": "⎰",
+    "label": "只认末发的枪托",
+    "reason": "大括号片段不是枪托；改枪托与末发标记",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e15"
+  },
+  "expansion.projectile.e16": {
+    "kind": "emoji",
+    "character": "🪛",
+    "fallback": "🕹",
+    "path": "M80.0 276.0H760.0V204.0H80.0V276.0ZM724.0 240.0V440.0H796.0V240.0H724.0ZM760.0 404.0H480.0V476.0H760.0V404.0ZM444.0 440.0V800.0H516.0V440.0H444.0ZM480.0 764.0H240.0V836.0H480.0V764.0ZM275.78 803.976 315.78 443.976 244.22 436.024 204.22 796.024 275.78 803.976ZM280.0 404.0H80.0V476.0H280.0V404.0ZM116.0 440.0V240.0H44.0V440.0H116.0ZM760.0 280.0H920.0V400.0H760.0V280.0ZM800.0 320.0V360.0H880.0V320.0H800.0ZM40.0 120.0H480.0V200.0H40.0V120.0ZM840.0 520.0 920.0 680.0 800.0 720.0 840.0 520.0Z",
+    "label": "没有第二响的封蜡枪",
+    "reason": "摇杆不是封蜡枪；保留emoji路线改胶枪/封蜡枪",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.e16"
+  },
+  "expansion.circuit.e01": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e01",
+    "fallback": "⎓",
+    "label": "陶柄试电针",
+    "reason": "直流符号不能读成试电针；改陶柄和细针",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e01"
+  },
+  "expansion.circuit.e02": {
+    "kind": "emoji",
+    "character": "🧰",
+    "fallback": "🧰",
+    "path": "M280.0 108.0H640.0V52.0H280.0V108.0ZM612.0 80.0V280.0H668.0V80.0H612.0ZM625.596 304.01 825.596 424.008 854.404 375.98999999999995 654.404 255.99 625.596 304.01ZM812.096 397.6748 772.096 877.676 827.904 882.324 867.904 402.32399999999996 812.096 397.6748ZM800.0 852.0H80.0V908.0H800.0V852.0ZM107.9032 877.676 67.9032 397.6748 12.096720000000001 402.32399999999996 52.096799999999995 882.324 107.9032 877.676ZM52.522000000000006 425.044 292.522 305.044 267.478 254.956 27.477999999999998 374.956 52.522000000000006 425.044ZM308.0 280.0V80.0H252.0V280.0H308.0ZM280.0 520.0H640.0V760.0H280.0V520.0ZM336.0 576.0V704.0H584.0V576.0H336.0ZM667.6 27.6H833.1999999999999V193.2H667.6V27.6ZM686.0 46.00000000000001V174.8H814.8000000000001V46.00000000000001H686.0ZM667.6 78.2H833.1999999999999V69.0H667.6V78.2ZM709.0 27.6V193.2H718.1999999999999V27.6H709.0Z",
+    "label": "干燥的工具围布",
+    "reason": "工具箱不是工具围布；改围布emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e02"
+  },
+  "expansion.circuit.e03": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e03",
+    "fallback": "♆",
+    "label": "三齿拆线梳",
+    "reason": "海王星符号不是拆线梳；改三齿梳柄",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e03"
+  },
+  "expansion.circuit.e05": {
+    "kind": "emoji",
+    "character": "⚙",
+    "fallback": "⚙",
+    "label": "手摇脉冲盒",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e05"
+  },
+  "expansion.circuit.e06": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e06",
+    "fallback": "⎆",
+    "label": "单拍继电夹",
+    "reason": "键盘符号不是继电夹；改夹头与触点",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e06"
+  },
+  "expansion.circuit.e08": {
+    "kind": "emoji",
+    "character": "🖋",
+    "fallback": "🖋",
+    "label": "窄口焊笔",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e08"
+  },
+  "expansion.circuit.e09": {
+    "kind": "emoji",
+    "character": "🪒",
+    "fallback": "🪒",
+    "label": "分料刮刀",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e09"
+  },
+  "expansion.circuit.e10": {
+    "kind": "emoji",
+    "character": "🕸",
+    "fallback": "🕸",
+    "label": "只进不出的滤网",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e10"
+  },
+  "expansion.circuit.e11": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e11",
+    "fallback": "⎵",
+    "label": "缓融铸模",
+    "reason": "括弧式符号不是铸模；改模腔和厚边",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e11"
+  },
+  "expansion.circuit.e12": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e12",
+    "fallback": "⋈",
+    "label": "双端熔断夹",
+    "reason": "蝴蝶结式数学符号可联想双端，但不是夹具；改双端夹",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e12"
+  },
+  "expansion.circuit.e13": {
+    "kind": "emoji",
+    "character": "⏱",
+    "fallback": "⏱",
+    "label": "校时继电器",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e13"
+  },
+  "expansion.circuit.e14": {
+    "kind": "emoji",
+    "character": "⚗",
+    "fallback": "⚗",
+    "label": "可拆的反应坩埚",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e14"
+  },
+  "expansion.circuit.e15": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.e15",
+    "fallback": "⑂",
+    "label": "两条线路的拨叉",
+    "reason": "数学分叉符不是拨叉；改两齿和拨杆",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e15"
+  },
+  "expansion.circuit.e16": {
+    "kind": "emoji",
+    "character": "🔨",
+    "fallback": "🔨",
+    "label": "半冷的铸字锤",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.e16"
+  },
+  "expansion.realm.e01": {
+    "kind": "emoji",
+    "character": "🔪",
+    "fallback": "🔪",
+    "label": "病历纸刀",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e01"
+  },
+  "expansion.realm.e02": {
+    "kind": "emoji",
+    "character": "📛",
+    "fallback": "📛",
+    "label": "空白访客章",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e02"
+  },
+  "expansion.realm.e03": {
+    "kind": "emoji",
+    "character": "📏",
+    "fallback": "📏",
+    "label": "划线员的尺",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e03"
+  },
+  "expansion.realm.e04": {
+    "kind": "emoji",
+    "character": "📔",
+    "fallback": "📔",
+    "label": "收过潮的书衣",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e04"
+  },
+  "expansion.realm.e05": {
+    "kind": "emoji",
+    "character": "🤏",
+    "fallback": "🤏",
+    "path": "M160.0 74.0H360.0V6.0H160.0V74.0ZM330.5756 57.0352 770.5759999999999 817.036 829.4240000000001 782.964 389.4244 22.964760000000002 330.5756 57.0352ZM771.712 781.1400000000001 691.712 901.1400000000001 748.288 938.8599999999999 828.288 818.8599999999999 771.712 781.1400000000001ZM749.8480000000001 903.72 509.848 463.72 450.152 496.28 690.1519999999999 936.28 749.8480000000001 903.72ZM449.048 465.932 249.0476 905.932 310.9524 934.068 510.952 494.068 449.048 465.932ZM298.86 891.712 178.85999999999999 811.712 141.14000000000001 868.288 261.14 948.288 298.86 891.712ZM191.7336 852.204 391.7336 332.2052 328.2664 307.7948 128.2664 827.796 191.7336 852.204ZM387.6668 300.238 187.66680000000002 20.23792 132.3332 59.762 332.3332 339.762 387.6668 300.238ZM256.9532 139.2056 456.952 379.2056 503.048 340.7944 303.0468 100.7944 256.9532 139.2056Z",
+    "label": "夹页手术镊",
+    "reason": "捏手势不是手术镊；保留emoji路线绘制镊子",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e05"
+  },
+  "expansion.realm.e06": {
+    "kind": "emoji",
+    "character": "🍽",
+    "fallback": "🍽",
+    "label": "护理员的托盘",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e06"
+  },
+  "expansion.realm.e07": {
+    "kind": "emoji",
+    "character": "🪡",
+    "fallback": "🪡",
+    "label": "弯口缝合针",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e07"
+  },
+  "expansion.realm.e08": {
+    "kind": "emoji",
+    "character": "🩼",
+    "fallback": "⚕",
+    "path": "M440.0 40.0V760.0H520.0V40.0H440.0ZM160.0 160.0H800.0V80.0H160.0V160.0ZM160.0 160.0H400.0V560.0H160.0V160.0ZM216.0 216.0V504.0H344.0V216.0H216.0ZM250.0 560.0V720.0H310.0V560.0H250.0ZM463.756 723.4480000000001 103.75439999999999 883.4480000000001 136.2456 956.5519999999999 496.244 796.5519999999999 463.756 723.4480000000001ZM463.756 796.5519999999999 823.7560000000001 956.5519999999999 856.2439999999999 883.4480000000001 496.244 723.4480000000001 463.756 796.5519999999999Z",
+    "label": "滴空的输液架",
+    "reason": "医疗标志不是输液架；保留emoji路线绘制架体与空瓶",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e08"
+  },
+  "expansion.realm.e09": {
+    "kind": "emoji",
+    "character": "🗂",
+    "fallback": "🗂",
+    "label": "翻到背面的索引卡",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e09"
+  },
+  "expansion.realm.e10": {
+    "kind": "emoji",
+    "character": "🛒",
+    "fallback": "🛒",
+    "label": "页边推车",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e10"
+  },
+  "expansion.realm.e11": {
+    "kind": "emoji",
+    "character": "🖊",
+    "fallback": "🖊",
+    "label": "不吸墨的校勘笔",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e11"
+  },
+  "expansion.realm.e12": {
+    "kind": "emoji",
+    "character": "🗜",
+    "fallback": "🗜",
+    "label": "一端缺齿的装订钳",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e12"
+  },
+  "expansion.realm.e13": {
+    "kind": "emoji",
+    "character": "📋",
+    "fallback": "📋",
+    "label": "双份出院夹",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e13"
+  },
+  "expansion.realm.e14": {
+    "kind": "private",
+    "key": "realm-item:expansion.realm.e14",
+    "fallback": "¶",
+    "label": "没写完的脚注架",
+    "reason": "段落符号不是脚注架；改脚注卡与支架",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e14"
+  },
+  "expansion.realm.e15": {
+    "kind": "emoji",
+    "character": "🏮",
+    "fallback": "🏮",
+    "label": "边界抄写者的灯框",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e15"
+  },
+  "expansion.realm.e16": {
+    "kind": "emoji",
+    "character": "📩",
+    "fallback": "📩",
+    "label": "返程封套",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.e16"
+  },
+  "expansion.sound.x01": {
+    "kind": "emoji",
+    "character": "📼",
+    "fallback": "📼",
+    "label": "没录完的磁带",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x01"
+  },
+  "expansion.sound.x02": {
+    "kind": "emoji",
+    "character": "✉",
+    "fallback": "✉",
+    "label": "厚毡信封",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x02"
+  },
+  "expansion.sound.x03": {
+    "kind": "emoji",
+    "character": "🎼",
+    "fallback": "🎼",
+    "path": "M80.0 360.0H880.0V880.0H80.0V360.0ZM136.0 416.0V824.0H824.0V416.0H136.0ZM105.736 371.0296 225.736 91.02959999999999 174.264 68.9704 54.264 348.9704 105.736 371.0296ZM200.0 108.0H800.0V52.0H200.0V108.0ZM773.0759999999999 87.692 853.0759999999999 367.692 906.9240000000001 352.308 826.9240000000001 72.308 773.0759999999999 87.692ZM880.0 332.0H80.0V388.0H880.0V332.0ZM600.0 600.0 595.912 631.0600000000001 583.924 660.0 564.852 684.8520000000001 540.0 703.924 511.06 715.912 480.0 720.0 448.94 715.912 420.0 703.924 395.1472 684.8520000000001 376.07680000000005 660.0 364.08880000000005 631.0600000000001 360.0 600.0 364.08880000000005 568.9399999999999 376.07680000000005 540.0 395.1472 515.148 420.0 496.07599999999996 448.94 484.08799999999997 480.0 480.0 511.06 484.08799999999997 540.0 496.07599999999996 564.852 515.148 583.924 540.0 595.912 568.9399999999999 600.0 600.0ZM545.684 582.4 538.888 566.0 528.084 551.916 514.0 541.112 497.59999999999997 534.316 480.0 532.0 462.40000000000003 534.316 446.0 541.112 431.916 551.916 421.11199999999997 566.0 414.31600000000003 582.4 412.0 600.0 414.31600000000003 617.6 421.11199999999997 634.0 431.916 648.0840000000001 446.0 658.888 462.40000000000003 665.684 480.0 668.0 497.59999999999997 665.684 514.0 658.888 528.084 648.0840000000001 538.888 634.0 545.684 617.6 548.0 600.0 545.684 582.4ZM880.0 550.0H920.0V490.0H880.0V550.0ZM890.0 520.0V720.0H950.0V520.0H890.0Z",
+    "label": "倒计时八音盒",
+    "reason": "乐谱emoji不是八音盒；改八音盒emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x03"
+  },
+  "expansion.sound.x04": {
+    "kind": "private",
+    "key": "realm-item:expansion.sound.x04",
+    "fallback": "⏣",
+    "label": "软木隔声塞",
+    "reason": "六边形不像软木塞；改塞头与孔隙",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x04"
+  },
+  "expansion.sound.x05": {
+    "kind": "emoji",
+    "character": "🔕",
+    "fallback": "🔕",
+    "label": "剧院谢幕铃",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x05"
+  },
+  "expansion.sound.x06": {
+    "kind": "emoji",
+    "character": "👏",
+    "fallback": "👏",
+    "label": "一盒尚未发生的掌声",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.sound.x06"
+  },
+  "expansion.light.x01": {
+    "kind": "emoji",
+    "character": "🗜",
+    "fallback": "🗜",
+    "label": "一次性遮光夹",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x01"
+  },
+  "expansion.light.x02": {
+    "kind": "emoji",
+    "character": "📷",
+    "fallback": "⚡",
+    "path": "M200.0 360.0H760.0V840.0H200.0V360.0ZM256.0 416.0V784.0H704.0V416.0H256.0ZM80.0 80.0H880.0V360.0H80.0V80.0ZM148.0 148.0V292.0H812.0V148.0H148.0ZM210.0 120.0V320.0H270.0V120.0H210.0ZM450.0 120.0V320.0H510.0V120.0H450.0ZM690.0 120.0V320.0H750.0V120.0H690.0ZM400.0 480.0 280.0 680.0H440.0L360.0 800.0L640.0 600.0H480.0L400.0 480.0Z",
+    "label": "遗失相机的闪灯",
+    "reason": "闪电过泛且像电弧弹；改摄影闪灯emoji",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x02"
+  },
+  "expansion.light.x03": {
+    "kind": "emoji",
+    "character": "🏮",
+    "fallback": "🏮",
+    "label": "黑纸灯套",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x03"
+  },
+  "expansion.light.x04": {
+    "kind": "emoji",
+    "character": "✴",
+    "fallback": "✴",
+    "label": "应急磷片",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x04"
+  },
+  "expansion.light.x05": {
+    "kind": "emoji",
+    "character": "🌅",
+    "fallback": "🌅",
+    "label": "借来的一束白昼",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x05"
+  },
+  "expansion.light.x06": {
+    "kind": "emoji",
+    "character": "🎞",
+    "fallback": "🎞",
+    "label": "曝光到头的底片",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.light.x06"
+  },
+  "expansion.terrain.x01": {
+    "kind": "emoji",
+    "character": "🧽",
+    "fallback": "🧽",
+    "label": "吸水纸砖",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x01"
+  },
+  "expansion.terrain.x02": {
+    "kind": "emoji",
+    "character": "🌬",
+    "fallback": "🌬",
+    "label": "泄气的折扇",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x02"
+  },
+  "expansion.terrain.x03": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.x03",
+    "fallback": "⎴",
+    "label": "快硬排水槽",
+    "reason": "上括弧不像排水槽；改有侧壁的沟槽块",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x03"
+  },
+  "expansion.terrain.x04": {
+    "kind": "private",
+    "key": "realm-item:expansion.terrain.x04",
+    "fallback": "⏢",
+    "label": "封口浮片",
+    "reason": "梯形过于抽象；改浮片与封边",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x04"
+  },
+  "expansion.terrain.x05": {
+    "kind": "emoji",
+    "character": "🌊",
+    "fallback": "🌊",
+    "label": "一截没有下游的河",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x05"
+  },
+  "expansion.terrain.x06": {
+    "kind": "emoji",
+    "character": "🗺",
+    "fallback": "🗺",
+    "label": "暴雨前的排水图",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.terrain.x06"
+  },
+  "expansion.projectile.x01": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.x01",
+    "fallback": "≡",
+    "label": "紧急压弹条",
+    "reason": "卦象/三横线与多种符号相似；改成排压弹条",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x01"
+  },
+  "expansion.projectile.x02": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.x02",
+    "fallback": "◈",
+    "label": "易碎转角镜",
+    "reason": "菱形和尖啸瓷墙同形；改折角镜和裂口",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x02"
+  },
+  "expansion.projectile.x03": {
+    "kind": "private",
+    "key": "realm-item:expansion.projectile.x03",
+    "fallback": "⊖",
+    "label": "封口空包弹",
+    "reason": "圈减号不是空包弹；改封口弹壳",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x03"
+  },
+  "expansion.projectile.x04": {
+    "kind": "emoji",
+    "character": "📌",
+    "fallback": "📌",
+    "label": "穿纸定位钉",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x04"
+  },
+  "expansion.projectile.x05": {
+    "kind": "emoji",
+    "character": "🌠",
+    "fallback": "🌠",
+    "label": "最后半匣星光",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x05"
+  },
+  "expansion.projectile.x06": {
+    "kind": "emoji",
+    "character": "📨",
+    "fallback": "📨",
+    "label": "回程签收单",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.projectile.x06"
+  },
+  "expansion.circuit.x01": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.x01",
+    "fallback": "∩",
+    "label": "一寸铜桥",
+    "reason": "拱形像栅栏/耳机；改短铜桥和双端接点",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x01"
+  },
+  "expansion.circuit.x02": {
+    "kind": "emoji",
+    "character": "🧂",
+    "fallback": "🧂",
+    "label": "干燥粉包",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x02"
+  },
+  "expansion.circuit.x03": {
+    "kind": "private",
+    "key": "realm-item:expansion.circuit.x03",
+    "fallback": "⏛",
+    "label": "备用慢熔丝",
+    "reason": "接线符号不能表达慢熔丝；改细熔丝与端帽",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x03"
+  },
+  "expansion.circuit.x04": {
+    "kind": "emoji",
+    "character": "💎",
+    "fallback": "💎",
+    "label": "结晶种",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x04"
+  },
+  "expansion.circuit.x05": {
+    "kind": "emoji",
+    "character": "🪪",
+    "fallback": "🪪",
+    "label": "一次开工许可",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x05"
+  },
+  "expansion.circuit.x06": {
+    "kind": "emoji",
+    "character": "🔖",
+    "fallback": "🔖",
+    "label": "冷炉封条",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.circuit.x06"
+  },
+  "expansion.realm.x01": {
+    "kind": "emoji",
+    "character": "🗑",
+    "fallback": "🗑",
+    "label": "一次性废料袋",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x01"
+  },
+  "expansion.realm.x02": {
+    "kind": "private",
+    "key": "realm-item:expansion.realm.x02",
+    "fallback": "⌑",
+    "label": "纸质止退片",
+    "reason": "角框不像止退片；改卡舌与纸片折口",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x02"
+  },
+  "expansion.realm.x03": {
+    "kind": "emoji",
+    "character": "🎒",
+    "fallback": "🎒",
+    "label": "封好的护理包",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x03"
+  },
+  "expansion.realm.x04": {
+    "kind": "emoji",
+    "character": "📝",
+    "fallback": "📝",
+    "label": "空白勘误贴",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x04"
+  },
+  "expansion.realm.x05": {
+    "kind": "emoji",
+    "character": "📃",
+    "fallback": "📃",
+    "label": "未寄出的出院单",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x05"
+  },
+  "expansion.realm.x06": {
+    "kind": "emoji",
+    "character": "🎟",
+    "fallback": "🎟",
+    "label": "边界的返程票根",
+    "reason": "保留emoji码位，修正字体路由",
+    "authored_icon": "",
+    "legacy_key": "expansion.realm.x06"
+  },
+  "library.bookmark": {
+    "kind": "private",
+    "key": "realm-item:library.bookmark",
+    "fallback": "▯",
+    "label": "门前书签",
+    "reason": "空长框与药箱/墙材常用字符接近；改书签缺口",
+    "authored_icon": "▯",
+    "legacy_key": "▯"
+  },
+  "library.fold": {
+    "kind": "private",
+    "key": "realm-item:library.fold",
+    "fallback": "◩",
+    "label": "隐城折页",
+    "reason": "半填角方框和裁光构想/折页家族接近；改折角纸面",
+    "authored_icon": "◩",
+    "legacy_key": "◩"
+  },
+  "library.paperweight": {
+    "kind": "private",
+    "key": "realm-item:library.paperweight",
+    "fallback": "▰",
+    "label": "留白纸镇",
+    "reason": "实心平行四边形与遮幕/低矮墙体接近；改有厚度的纸镇",
+    "authored_icon": "▰",
+    "legacy_key": "▰"
+  },
+  "library.testimony": {
+    "kind": "private",
+    "key": "realm-item:library.testimony",
+    "fallback": "◪",
+    "label": "罗生门残页",
+    "reason": "几何半填框不能表达残页；改撕裂边，但和完整书页区分",
+    "authored_icon": "◪",
+    "legacy_key": "◪"
+  }
+}

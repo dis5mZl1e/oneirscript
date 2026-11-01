@@ -22,7 +22,7 @@ COLORS = {'spark': ('#ffce80', '#b27b42'),
 BREATH_PERIOD = 12.0
 BREATH_NEIGHBORS = ((-1, -1), (0, -1), (1, -1), (-1, 0),
                     (1, 0), (-1, 1), (0, 1), (1, 1))
-BREATH_GLYPHS = ('.', '·', '*', '+')
+BREATH_GLYPHS = ('.', ',', "'", ':')
 
 
 def _move_outward(particle):
@@ -187,7 +187,10 @@ class MapParticles:
                 if wave < 0.18:
                     continue
                 band = min(len(BREATH_GLYPHS) - 1, int(wave * len(BREATH_GLYPHS)))
-                glyph = BREATH_GLYPHS[band]
-                color = ('#ffd166', '#e5c46a', '#c9a85a', '#a38b4c')[band]
-                result[(vx, vy)] = (glyph, f'bold {color}')
+                from .projectile_styles import AmbientGlyph
+                glyph = AmbientGlyph(BREATH_GLYPHS[band])
+                color = ('#7f8a94', '#929ba7', '#85949b', '#74868e')[band]
+                result[(vx, vy)] = (glyph, color)
+                if len(result) >= 12:
+                    return result
         return result

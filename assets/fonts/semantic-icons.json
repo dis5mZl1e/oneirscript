@@ -10,7 +10,7 @@
       "file": "DreamStrataInterfaceIcons.ttf",
       "family": "Dream Strata Interface Icons",
       "license": "MIT",
-      "sha256": "0f49095e6b6b68d820156bd684d43ce2178cf99346f5b73faecf1bc866ad95e8",
+      "sha256": "e54fb6b126a63bd03cb6a9f04daadf0a0f91149ffa3e45ecb5721a9735ed51fb",
       "source_file": "Phosphor-Bold.ttf",
       "source_sha256": "10a0a1cb4f8156a420f9f84cf34c4e9871e58ed2ddea1f6a8079ad07243a7fb2",
       "glyphs": 51
@@ -19,7 +19,7 @@
       "file": "DreamStrataMaterialIcons.ttf",
       "family": "Dream Strata Material Icons",
       "license": "Apache-2.0",
-      "sha256": "9fc8ddfa0b6a29a3e7c4d9e5489e1acece190d9219599b13c304f428586ae53d",
+      "sha256": "bed7c3a1c629b2e4952da8ca329bdac987b436a56317b7f6455e9d9bdd0612a8",
       "source_file": "materialdesignicons-webfont.ttf",
       "source_sha256": "61e8aba5a4e981fe22cf7c8e8bcdbea00476e75c62c37f01bf7ee33361d68428",
       "glyphs": 30
@@ -28,7 +28,7 @@
       "file": "DreamStrataDreamIcons.ttf",
       "family": "Dream Strata Dream Icons",
       "license": "CC-BY-3.0",
-      "sha256": "8487174f5a3e0151189b28456bca0e248155190576881c3fe94c69cd6b45cfba",
+      "sha256": "13bce6968006781797d4478a11ba7207207a07f38f6bbb4ad3f3c97c71b1c854",
       "source_file": "game-icons-net-20200315a.ttf",
       "source_sha256": "fa3c38d3e91a920bcf32993ac57528f8550d306a638c5d73387112bbf7a3eb39",
       "glyphs": 73

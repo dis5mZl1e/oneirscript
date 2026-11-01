@@ -1,5 +1,6 @@
 """Transient, read-only effect observations; replay never performs game actions."""
 from functools import wraps
+from operator import attrgetter
 from ..data.cast_fx import ABILITY_FX, ITEM_EFFECT_FX, CastVisual, skill_visual
 from ..data.anomaly_skills import effective_skill_def
 
@@ -7,10 +8,12 @@ from ..data.anomaly_skills import effective_skill_def
 _CELL_FIELDS = ('floor', 'solid', 'integrity', 'liquid', 'liquid_kind', 'gas',
                 'gas_kind', 'flame', 'aggregate_variant', 'wall_kind', 'elevation',
                 'plant', 'wire', 'light_on')
+_cell_effect_fields = attrgetter(*_CELL_FIELDS)
 
 
 def _effect_snapshot(state):
-    cells = {(x, y): tuple(getattr(c, name) for name in _CELL_FIELDS)
+    # The same immutable tuple, without a Python generator per map cell.
+    cells = {(x, y): _cell_effect_fields(c)
              for y, row in enumerate(state.cells) for x, c in enumerate(row)}
     actors = {}
     for actor in [state.player, *state.enemies]:

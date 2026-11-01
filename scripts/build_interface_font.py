@@ -15,6 +15,27 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / 'assets/fonts'
 
 
+def supplement_symbols(font):
+    """Keep UI symbols available even in renderers without font fallback."""
+    with TTFont(DEST / 'DreamStrataSongReading-Regular.ttf') as source:
+        present = font.getBestCmap()
+        glyphset = source.getGlyphSet()
+        order = list(font.getGlyphOrder())
+        for cp, source_name in source.getBestCmap().items():
+            if not 0x2000 <= cp < 0x3000 or cp in present:
+                continue
+            name = f'uiSymbol{cp:04X}'
+            pen = TTGlyphPen(None)
+            lsb = draw_scaled(glyphset, source_name, target_advance(cp), pen)
+            font['glyf'][name] = pen.glyph()
+            font['hmtx'].metrics[name] = (target_advance(cp), lsb)
+            order.append(name)
+            for table in font['cmap'].tables:
+                if table.isUnicode():
+                    table.cmap[cp] = name
+        font.setGlyphOrder(order)
+
+
 def build(source: Path):
     font = TTFont(source)
     if 'fvar' in font:
@@ -34,6 +55,7 @@ def build(source: Path):
     for name, (glyph, metrics) in converted.items():
         font['glyf'][name] = glyph
         font['hmtx'].metrics[name] = metrics
+    supplement_symbols(font)
     for table in ('hhea', 'OS/2'):
         obj = font[table]
         if table == 'hhea':
@@ -53,12 +75,15 @@ def build(source: Path):
         font['name'].removeNames(nameID=identifier)
         font['name'].setName(value, identifier, 3, 1, 0x409)
     output = DEST / 'DreamStrataInterfaceSans-Regular.ttf'
+    from liquid_tile_outlines import install_liquid_outlines
+    install_liquid_outlines(font)
     font.save(output)
     (DEST / 'interface-sans.json').write_text(json.dumps({
         'family': family, 'file': output.name,
         'sha256': hashlib.sha256(output.read_bytes()).hexdigest(),
-        'source': 'Noto Sans SC', 'license': 'OFL-1.1',
-        'modifications': '450 weight; 500/1000 cell advances; shared reading baseline; renamed family',
+        'source': 'Noto Sans SC; UI symbols from Dream Strata Song Reading (see LICENSES.md)', 'license': 'OFL-1.1',
+        'modifications': '450 weight; 500/1000 cell advances; shared reading baseline; renamed family; missing U+2000-2FFF symbols supplemented',
+        'liquid_tile_glyphs': 'Original OFL-1.1 wave ribbons; 1/2/3 lines; shared low baseline; two-column reserved-space ink',
     }, indent=2), encoding='utf-8')
     print(output)
 

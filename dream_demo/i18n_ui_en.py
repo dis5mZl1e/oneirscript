@@ -13,6 +13,37 @@
 from __future__ import annotations
 
 EN_UI: dict[str, str] = {
+    '所属类型': 'Type', '类型效果': 'Type effects', '构想效果': 'Ability effects',
+    '直接打击': 'Direct strike', '行动控制': 'Control', '空间位移': 'Movement',
+    '感知记录': 'Perception', '声音干预': 'Sound', '光照干预': 'Light',
+    '材料转化': 'Materials', '地形塑造': 'Terrain', '回路信号': 'Circuit',
+    '自身支援': 'Support', '构想维护': 'Residue care',
+    '以近战、弹体或范围冲击造成创伤；命中、穿透与敌我影响由具体构想决定。':
+        'Deals trauma through melee, projectiles or area impacts. Each ability defines hits, penetration and friendly fire.',
+    '改变异象的移动、感知或警戒，制造行动窗口；不保证阻止出手。':
+        'Changes movement, perception or alertness to create an opening. It does not always prevent attacks.',
+    '改变自身位置或建立短途通路；落点、墙体与任务边界仍需合法。':
+        'Moves you or opens a short passage. Destinations, walls and protected boundaries still apply.',
+    '扩大感知或记录地形、声源与路径；只提供该构想授权的信息，不自动揭示未知对象。':
+        'Extends perception or records terrain, sound sources and routes. Reveals only the information allowed by the ability.',
+    '制造、延迟或衰减真实声音，影响调查与追踪；传播仍受介质和环境约束。':
+        'Creates, delays or dampens real sound to affect investigation and tracking. Sound follows actual propagation rules.',
+    '改变光源、遮光与照明范围，影响双方视线；不直接阻挡气体或弹体。':
+        'Changes light sources, occlusion and lighting to affect both sides. Does not directly block gas or projectiles.',
+    '生成、转移、相变或激发真实材料；存量、容量、反应与敌我风险按具体构想结算。':
+        'Creates, moves, transforms or activates real material. Each ability defines quantities, capacity, reactions and risks.',
+    '改变墙体、地面或地势，重塑通路与流向；保护设施和占用检查仍然有效。':
+        'Changes walls, floors or elevation to reshape routes and flow. Protected facilities and occupancy checks remain in force.',
+    '触发、连接或延迟真实端口信号；不绕过机关保护、次数与接收条件。':
+        'Triggers, connects or delays real port signals. Device protections, use limits and receiving conditions still apply.',
+    '恢复资源、清除负面状态或强化防护与携带效果；代价、期限和适用目标各自独立。':
+        'Restores resources, removes negative states or improves protection and carried effects. Costs, durations and targets vary.',
+    '撤销、暂停、移动或延长已有构想残留；不返还已消耗材料，也不无限刷新期限。':
+        'Cancels, pauses, moves or extends existing residues. Does not refund spent material or refresh durations indefinitely.',
+    '格子': 'Grid',
+    '竖排': 'List',
+    '上一个 / 下一个子标签；选中右侧行囊时切换格子 / 竖排':
+        'Previous / next subtab; switch Grid / List when the right inventory pane is selected',
     '这件显化物尚未到可获得的梦层。': 'This manifestation is not available at this dream depth.',
     '这件显化物只能从指定挑战获得。': 'This manifestation can only be earned from its designated challenge.',
     '本局已经获得过这件限定显化物。': 'This run has already received this limited manifestation.',
@@ -68,6 +99,10 @@ EN_UI: dict[str, str] = {
     '无原生终端输出': 'No native terminal output',
     '图像地图输出失败；请按 F2 选择字符地图后继续。': 'Image output stopped. Press F2 and choose Character to continue.',
     '点击': 'Click',
+    '字符风格': 'Character style',
+    '常用字符': 'Common characters',
+    'PUA字符': 'PUA characters',
+    '常用字符或专用PUA字形；独立于图像/字符显示模式，缺字时回退常用字符。': 'Common or dedicated PUA glyphs, independent of map display mode; missing glyphs fall back to common characters.',
     '地图显示': 'Map display',
     '地图显示 F2': 'Map mode F2',
     '默认观察层': 'Initial inspection layer',
@@ -266,6 +301,7 @@ EN_UI: dict[str, str] = {
     "观测详情": "Anomaly Details",
     "未选择意象。": "No anomaly selected.",
     "物品": "Item",
+    "介绍": "Notes",
     "物品已不在行囊中。": "The item is no longer in your bag.",
     "该意象此刻不在视野中。": "That anomaly is no longer in sight.",
     "状态": "State",
@@ -477,6 +513,69 @@ EN_MESSAGES: dict[str, str] = {
     "回应异常地点：{event}。{insight}{reward}":
         "Responded to the anomaly site: {event}. {insight}{reward}",
     # ---- 携带意象 ----
+    # 联想盘使用说明悬浮窗：桌面 ℹ 按钮与网页说明卡共用一张表。
+    "ℹ 使用说明": "ℹ Manual",
+    "联想盘使用说明": "Association Board Manual",
+    "基本操作": "Basic controls",
+    "摆放和成句": "Placement and sentences",
+    "功能词通用规则": "Function word rules",
+    "功能词逐词用法": "Each function word",
+    "检查和生效": "Checking and activation",
+    "方向键移动光标，a 拿起或放下装备，r 旋转，x 拆除。右侧行囊用 , / . 选择，空格拿起；z 切换功能词。":
+        "Use the arrow keys to move the cursor, A to pick up or place gear, R to rotate, and X to remove. In the inventory on the right, select with , / . and press Space to pick up; Z cycles through function words.",
+    "拿起、移动和旋转只改草稿，不消耗回合。按 Enter 确认整理后才正式生效，并消耗一次行动；Esc 可放回手中物或取消本次整理。":
+        "Picking up, moving and rotating only change the draft and cost no turns. Press Enter to commit the layout, which activates it and costs one action. Esc returns the held piece or cancels the edit.",
+    "盘面共有 6 行，每行单独组成一句话。需要配合的装备必须放在同一行，跨行不会拼成同一句。":
+        "The board has 6 rows, each forming its own sentence. Gear that needs to work together must share a row; separate rows never combine into one sentence.",
+    "中文盘面的八列依次是条件、载体、修饰、修饰、行为、对象、补语、补语。列头上的条、载、饰、行、对、补对应这些位置。":
+        "On the English board the eight columns are condition, carrier, modifier, action, object, modifier, complement, complement. The column headings mark these positions.",
+    "行为列决定这一行做什么。斩击、发射和喷射需要主动使用，披覆和维持提供常驻效果。没有行为，整行不会生效。":
+        "The action column determines what the row does. Strike, fire and spray are used actively, while cover and maintain provide ongoing effects. Without an action, the row does nothing.",
+    "装备按实际占格逐格读取。削尖的钢笔横放在修饰、行为和对象列时，会同时提供锋利、斩击和刀痕，一件就能组成攻击。":
+        "Gear is read from every cell it occupies. A sharp pen laid horizontally across modifier, action and object columns supplies sharpness, strike and a cutting mark, enough to form an attack by itself.",
+    "同一件装备在同一行占多格，不会重复计算伤害，也不会给自己叠加修饰。竖放跨行时，每行分别判断，未成行不会影响其他行。":
+        "Multiple cells from the same item in one row do not multiply its damage or let it modify itself. When placed vertically across rows, each row is checked separately; an incomplete row does not disable the others.",
+    "把斩击类武器和余温类装备放进同一行，并让余温提供对象，命中后就能追加点燃。类似组合会直接写进盘面旁的预览。":
+        "Put a striking weapon and a lingering-heat item in the same row, with the heat supplying the object, and hits can add ignition. Combinations like this appear in the preview beside the board.",
+    "第 1 列的条件和「如果」都能限制触发时机，「否则」接上条件不成立时使用的另一支。条件未满足时不会触发。":
+        "A condition in the first column, or IF, limits when the row triggers. ELSE supplies the branch used when the condition fails. An unmet condition does not trigger the effect.",
+    "功能词本身不占语法角色，放在同行两件装备之间即可，落在哪一列都不改变左右关系。把、从、只、再要求左侧留空，如果、否则按分句位置摆放。":
+        "The function word itself has no grammatical role. It only looks at what is on its left and right in the same row, so its own column does not matter. WITH, FROM, ONLY and AGAIN need an empty left side; IF and ELSE follow their clauses.",
+    "用「的、地、把、和、或者、被」连接两件装备时，这一行不要混入第三件无关装备，否则关系会有歧义。功能词也不能塞进同一件装备自身形状的孔洞里。":
+        "When OF, BY, WITH, AND, OR or ON links two items, keep unrelated third items out of that row or the link becomes ambiguous. A function word also cannot sit inside a hole in the same item's shape.",
+    "配对不上时整行停止生效并给出原因，不会退回没放功能词的读法。":
+        "If the pair does not fit, the whole row stops working and states why; it never falls back to the reading without the word.",
+    "「的」夹在来源装备和行为装备之间，同一行只留这两件。左边要能给出刀痕、余温、静电或轻快节拍，右边必须是斩击或发射。左边不再单独出手，它的属性并入这次行动，例如节拍器让钢笔攻击带上轻快。":
+        "OF goes between the source item and the acting item, with only those two in the row. The left side must supply a cutting mark, lingering heat, static or a light rhythm, and the right side must strike or fire. The left item stops acting on its own; its property joins the action, so a metronome lends its light rhythm to a pen strike.",
+    "「地」位置同「的」，左边提供方式，右边执行行为。两边必须属于相容的用法，聚气喷嘴只能增强喷射，轻快节拍适合近战和发射，修缮强化只接修缮。方式只改这一行的行动，不另成一句。":
+        "BY uses the same placement as OF. The left item supplies a manner and the right item performs the action. The two uses must be compatible; an air concentrator only boosts a spray, a light rhythm suits melee and fire, and repair enhancement only fits repair. The manner changes this row's action and does not form its own sentence.",
+    "「把」放在行首，后面先放被处置的对象，再放行为，同行只有这两件。它只认两类组合，刀痕类对象交给能留下刀痕的行为，或容器中的液体、气体交给同介质的喷射装备。对象类型不符时整行失效。":
+        "WITH goes at the start of the row, followed by the object being handled and then the action, with only those two items in the row. It accepts two combinations; a cutting-mark object can be handed to an action that leaves a mark, or liquid or gas from a container can be handed to a spray using the same medium. An incompatible object fails the row.",
+    "「从」放在行首，后面先放容器，再放喷射装备，左侧不能有其他装备。容器必须装有液体或气体，介质还要与喷射行为一致。效果是取用现成材料再喷出，空容器不会凭空生成。":
+        "FROM goes at the start of the row, followed by a container and then a spray tool, with nothing to its left. The container must hold liquid or gas, and its medium must match the spray. It uses the existing material and sprays it; an empty container creates nothing.",
+    "「被」夹在承受者和作用来源之间，同行只留这两件。左边必须有能转为被动的行为，右边必须给出刀痕或留白。右边给刀痕时监听清醒创伤，给留白时监听心智创伤；完成结算后，左边按斩击、静电、点燃或护持回应。没有真实受击不会触发。":
+        "ON goes between the receiver and the source of the effect, with only those two in the row. The left side must have a behaviour that can become a reaction, and the right side must supply a cutting mark or a blank. A cutting mark listens for lucidity damage and a blank listens for mind damage. After that damage is settled, the left side responds with strike, shock, ignition or cover; without a real hit nothing triggers.",
+    "「向」右侧只能是调焦环、追味的皮绳或半页空稿，分别指定瞄准点、带征兆的失控意识和留白格。常见插法是行为、向、目标；也可以从行首按向、目标、行为摆放，或把向和目标放到上一行行为的下一行。同一行不能再放别的功能词，原射程和视线仍然有效。":
+        "TO accepts only the Focus Ring, Scent-Tracking Lanyard or Half a Blank Page on its right, naming an aimed point, a hostile with portents, or an empty cell. The usual order is action, TO, target. You can also start the row with TO, target, action, or put TO and the target on the row below the action. No other function word may share the row, and range and line of sight still apply.",
+    "「只」放在行首。单独使用时，后面只接一个明确的主动行为。它把行动收成该装备的默认用法，近战武器只保留近战，发射武器只保留发射；同行的修饰、追加反馈和常驻契约都不参与。它也能和「的」「地」同排，但另一词提供的属性或方式会被排除，只留下选定的主动行为。":
+        "ONLY goes at the start of the row. Used alone, it is followed by one clear active action. It reduces the action to that item's default mode; a melee weapon keeps only melee, a firing weapon only fire. Modifiers, added feedback and ongoing contracts in the row do not participate. It can share a row with OF or BY, but the property or manner from the other word is excluded and only the chosen active behaviour remains.",
+    "「和」夹在两件装备之间，同行只留这两件。两边都必须有合法行为，行为类型也要相容，主动模式没有交集时不成句。效果是合成一次行动，消耗只付一次。":
+        "AND goes between two items, with only those two in the row. Both must have a valid behaviour, and the behaviour types must be compatible; if their active modes share nothing, the row fails. The effect is one combined action that pays its cost once.",
+    "「或者」夹在两个候选之间，同行只留这两件，两边都要有可执行的主动行为。每次使用只能选一侧，另一侧不生效，适合准备两套攻击手段。":
+        "OR goes between two candidates, with only those two in the row. Both must have an active behaviour. Each use picks one side and the other does not take effect, which suits carrying two alternative attacks.",
+    "「如果」放在行首，后面先放能提供条件的装备，再放要执行的内容；条件单独一行时，下一行可以整行作为正文。条件装备可以给出点燃、可燃、潮湿、带征兆或想象力不足等状态。满足条件才执行，事件类条件会把主动行为改成反应；「如果」本身不提供条件。":
+        "IF goes at the start of the row, followed by an item that supplies a condition and then what should run. If the condition sits alone on its row, the next row can serve as the body. A condition item can supply lit, flammable, wet, marked or low-imagination states. The action runs only when the condition holds, and an event condition turns an active action into a reaction. IF itself supplies no condition.",
+    "「否则」紧接在「如果」分句之后，可以同排或下一排，前面不能插无关装备。它执行条件不成立的那一支；资源不足不等于条件不成立，不会自动转入这里。":
+        "ELSE follows the IF clause, either in the same row or the next one, with no unrelated item before it. It runs the branch used when the condition is false. A lack of resources does not make the condition false and does not fall through to this branch.",
+    "「再」放在追加行为之前，左侧留空。只接近战、发射、液体喷射和气体喷射。前一次确实造成创伤后才追加一次，追加前重新检查资源，两次共用本次行动的额度。":
+        "AGAIN goes before the action it repeats, with an empty left side. It accepts melee, fire, liquid spray and gas spray. One extra attempt is added only after the first actually dealt damage; resources are checked again and both attempts share the action's budget.",
+    "「只、被、从、向、再」会绑定整件装备，使它不能在别行另起一句。「的、地、把、和、或者」只改当前行；「如果、否则」只约束对应的条件分句。":
+        "ONLY, ON, FROM, TO and AGAIN bind the whole item, so it cannot start another sentence on a different row. OF, BY, WITH, AND and OR change only the current row; IF and ELSE constrain only their condition clause.",
+    "盘面旁的预览会按行列出当前读法。未成句、条件未满足和待触发会分别标明；词块占着格子但预览未成行时，不会暗中产生效果。":
+        "The preview beside the board lists the current reading row by row. Unformed, condition unmet and pending are labelled separately. If the preview is unformed, occupied cells produce no hidden effects.",
+    "多件相同的常驻效果会递减合并，多把武器共同行动也不是简单相加。摆完后先看预览，再按 Enter 确认，避免为用不上的摆法消耗行动。":
+        "Repeated passive effects diminish when merged, and weapons acting together do not simply add their damage. Check the preview before pressing Enter so you do not spend an action on a layout that does nothing.",
+    "点框外或按任意键关闭": "Click outside or press any key to close",
     "无念黑渊吞掉了记忆，你想不起怎么穿戴它。":
         "The Abyss of No-Thought swallowed your memory — you can't recall how to put it on.",
     "无念黑渊吞掉了记忆，你想不起怎么脱下它。":
@@ -2690,4 +2789,160 @@ EN_UI.update({
     "中间没再翻过——旧页当不了同一段走廊的凭据。":
         "The page has not turned: ({x}, {y}) was last written {age} turn(s) ago and has not been "
         "turned since — a stale page is no evidence of the same corridor.",
+})
+
+# 2026-10-31：构想面板小节标题
+EN_UI.update({
+    "━━ 主动构想 ━━": "━━ Active Conceptions ━━",
+    "━━ 使用预览 ━━": "━━ Usage Preview ━━",
+    "冷却 {n}T": "Cooldown {n}T",
+    "地形预览": "Terrain Preview",
+    "━━ 详细信息 ━━": "━━ Details ━━",
+    "选中构想显示详细信息": "Select a conception to see its details.",
+})
+
+# ---- 2026-10-31：完整键位表补齐（行囊网格、盘面编辑器、篡改面板、F2/Y·N） ----
+# 表里的键位与说明走的是 ``tr(变量)``，AST 覆盖测试看不见，只有真把
+# ControlsReference 在英文下渲染一遍才会露出来。
+EN_UI.update({
+    "地图缩放（旧 Ctrl+↑/↓ 仍可用）": "Zoom the map (legacy Ctrl+Up/Down still works)",
+    "行囊网格按整行（5 格）移动；到最上排再按 ↑ 把焦点交给「格子 / 竖排」控件": "The pack grid moves a whole row (5 cells) at a time; press Up again at the top row to hand focus to the Grid/List control",
+    "焦点在「格子 / 竖排」控件时切换排布；行囊内任意时刻按 - / = 也直接切换": "Switch the layout while the Grid/List control has focus; - / = also switches it from anywhere in the pack",
+    "↑↓←→ / 小键盘 2·4·6·8": "Arrows / numpad 2·4·6·8",
+    "盘内移动光标；编辑器里 WASD 不当方向键（a 是拿放）": "Move the cursor on the board; WASD is not used as directions inside the editor (a picks up or places)",
+    ", / . 或 PgUp / PgDn": ", / . or PgUp / PgDn",
+    "在右侧「行囊中的携带意象」列表里换项": "Change the entry in the Carried images list on the right",
+    "空格": "Space",
+    "拿起或放下列表里选中的这一件": "Pick up or put down the entry selected in the list",
+    "在当前格拿放 · 自动安置选中的这一件": "Take or place on this cell · auto-arrange the selected piece",
+    "旋转手中的装备 / 拆除当前格的装备": "Rotate the held gear / remove the gear on this cell",
+    "循环功能词 / 切换放置策略": "Cycle function words / switch the placement policy",
+    "切换视图（不离开编辑器）": "Switch the view without leaving the editor",
+    "选字词；焦点在条件区时选条件": "Choose a word; choose a condition while the condition area has focus",
+    "换目标槽": "Switch the target slot",
+    "字词焦点 ↔ 条件焦点": "Word focus ↔ condition focus",
+    "勾选或取消当前条件": "Tick or untick the current condition",
+    "[ ] 或 , .": "[ ] or , .",
+    "换条件组合": "Change the condition combination",
+    "换程度（通常 / 轻轻 / 用力）": "Change the degree (usual / gently / forcefully)",
+    "切换范围（这一处 / 全视野）": "Switch the range (this spot / full view)",
+    "展开或收起效果详情": "Expand or fold the effect details",
+    "查看地图上的落点": "View the landing point on the map",
+    "翻字词列表（整五行）": "Page the word list (five rows at a time)",
+    "进确认 / 执行": "Enter the preview / commit",
+    "逐级退出：确认 → 字词 → 右栏 → 取消": "Step back: preview → words → sidebar → cancel",
+    "打开地图显示页：当前渲染方式与不可用原因": "Open the map display page: the current renderer and why it is unavailable",
+    "洞察替换的二次确认：确定放弃 / 先不换（Enter 同 Y，Q/Esc 回列表）": "Insight swap second confirm: Y discards it / N keeps it (Enter acts as Y, Q/Esc returns to the list)",
+    "篡改面板（编辑器内）": "Tamper panel (in the editor)",
+})
+
+# ---- 2026-10-31：键位表第二批（( ) 缩放、' 详情、主页与存档一节） ----
+EN_UI.update({
+    "地图缩放（Alt+↑/↓ 仍可用）": "Zoom the map (Alt+Up/Down still works)",
+    "行囊／装备页打开左侧物品菜单；图鉴页打开条目详情；观察中打开光标格详情": "Open the item menu on the left from the pack or the loadout, entry details from the codex, or the cursor cell details while observing",
+    "主页与存档": "Home and Saves",
+    "直选存档槽；主菜单上按数字直达该槽": "Pick a save slot directly; on the main menu a digit jumps to that slot",
+    "↑↓ / 小键盘 2·8 / ←→ / 小键盘 4·6": "Arrows or numpad 2·8 / 4·6",
+    "在存档槽与图鉴 / 设置 / 退出之间移动光标": "Move the cursor between the save slots and Codex / Settings / Quit",
+    "从主页打开完整图鉴": "Open the full codex from the home screen",
+    "从主页打开设置": "Open settings from the home screen",
+    "删除光标所在的存档槽（两段确认）": "Delete the save slot under the cursor (two-step confirm)",
+    "激活光标项：载入 / 新建存档、进图鉴、设置或退出": "Activate the cursor entry: load or start a slot, open the codex or settings, or quit",
+})
+
+# ---- 2026-10-31：地图缩放指示条（跟随 / 全图，点击切回适合屏幕） ----
+EN_UI.update({
+    "跟随": "Follow",
+    "全图": "Whole Map",
+})
+
+# Firing source card fields.
+EN_UI.update({
+    '加伤': 'Bonus damage',
+    '射程': 'Range',
+    '追加穿透': 'Extra penetration',
+    '耗时': 'Action time',
+})
+
+# ---- 2026-10-31：设置页取值域（label/description 走 tr(变量)，AST 扫不到） ----
+EN_UI.update({
+    "自动优先图像（适配终端时），否则字符；图像初始化失败会回退字符并给出原因。": "Prefer the image renderer automatically when the terminal supports it, otherwise use glyphs; if the image renderer fails to initialise, the game falls back to glyphs and says why.",
+    "异象开始怀疑、调查、逃离、蓄力、被打断或进入恢复时，在该格短暂亮起小角标；追踪状态不再显示最高频的「!」。关闭不影响技能危险区域与观察文字。": "Flash a small corner marker on the cell when an anomaly starts to suspect, investigate, flee, charge, get interrupted, or enter recovery; the tracked state no longer shows the noisy '!'. Turning this off does not affect skill danger areas or observation text.",
+    "上一个子标签": "Previous sub-tab",
+    "下一个子标签": "Next sub-tab",
+})
+
+# ---- 2026-10-31：教程分类按钮（compose 期取词，换语言重贴要靠这张表） ----
+# tutorial_categories.CATEGORIES 自带第三列英文，但 compose 出来的按钮文案
+# 是一次性文本；实时换语言时按 EN 反查原文重贴，所以键必须在表里。
+EN_UI.update({
+    "基础操作": "Basics",
+    "界面与信息": "Interface",
+    "环境交互": "Environment Interaction",
+    "战斗与射击": "Combat and Shooting",
+})
+
+# ---- 2026-10-31：主页「测试模式」按钮（compose 期带符号前缀的合成文案） ----
+EN_UI.update({
+    "⚙ 测试模式": "⚙ Test Mode",
+})
+
+EN_UI.update({
+    "确认自动装填 · R手动装填 · Esc取消": "Confirm to reload · R reload · Esc cancel",
+    "没有可用的发射源。": "No firing source available.",
+})
+
+
+EN_UI.update({
+    "行囊边框风格": "Inventory borders",
+    "行囊图标风格": "Inventory icons",
+    "规整细框": "Straight rules",
+    "折痕装裱": "Creased frames",
+    "大字形": "Large outlines",
+    "原生字符": "Terminal glyphs",
+    "选择行囊格子的装裱边框；切换不改变格子大小与物品位置。": "Choose inventory frames without changing slot sizes or item positions.",
+    "大字形按目标尺寸绘制字体轮廓；原生字符使用终端字号。字符内容跟随字符风格。": "Large outlines are typeset at their final size; terminal glyphs use the terminal font size. Both follow Character style.",
+    "[释放]": "[Cast]",
+    "[确认篡改]": "[Confirm edit]",
+    "回到记忆页": "Memory home",
+    "ℹ 篡改玩法说明": "i Tampering guide",
+    "篡改 · 玩法说明": "Tampering guide",
+    "改写眼前的一句": "Rewrite what you see",
+    "目标、字词与条件": "Targets, words and conditions",
+    "范围与落点": "Scope and destination",
+    "确认与代价": "Confirmation and costs",
+    "混乱与风险": "Chaos and risk",
+    "返回与取消": "Back and cancel",
+    "说明窗口": "Reading this guide",
+    "篡改把可见环境或对话写成一句话。先选择目标，再选择允许的字词，比较原句与改后句。字词只能作用于符合规则的目标；灰色选项会说明不能使用的原因。": "Tampering describes visible surroundings or dialogue as a sentence. Choose a target and an available word, then compare the original with the rewritten result. Words only affect valid targets; disabled choices explain why they cannot be used.",
+    "目标决定改写哪一处，字词决定如何改变。程度与条件会改变效果、想象力代价和混乱增量；互斥条件不能同时选择。切换目标或字词后，请重新检查预览。": "The target selects what changes; the word selects how. Degree and conditions alter effects, imagination costs and added chaos. Conflicting conditions cannot be combined. Check the preview again after changing targets or words.",
+    "右栏可以完成单处篡改。需要全视野范围、聚流落点或完整细节时，使用“在地图里改”。V 查看地图并移动观察位置，返回编辑后检查最终落点。": "Use the sidebar for a single target. Choose Edit on map for a visible-area operation, a flow destination or full details. V opens the map observer; move its cursor, then return to editing and check the destination.",
+    "编辑、选择和查看预览不消耗回合。第一次确认进入确认阶段，再次确认才提交；成功提交会花费显示的想象力、增加混乱并推进游戏。失败原因以当前提示为准，不会绕过规则强行生效。": "Editing, selecting and previewing cost no turns. Confirm once to enter confirmation, then again to submit. A successful submission spends the shown imagination, adds chaos and advances play. Rejected edits explain the current reason and do not bypass the rules.",
+    "混乱越高，篡改风险越高。提交前阅读代价、提交后的混乱档位与风险提示；范围扩大或条件变化后，重新核对报价。": "Higher chaos increases tampering risk. Before submitting, check the costs, resulting chaos tier and risk warnings. Recheck the quote after changing scope or conditions.",
+    "Esc 按层返回：从地图观察回编辑，从确认阶段回选词；从由右栏打开的地图编辑先回右栏。取消会放弃本次未提交的修改，已成功提交的世界变化不会撤销。": "Esc steps back: from map observation to editing, from confirmation to word selection, and from map editing back to the sidebar when opened there. Cancel discards unsubmitted edits; it does not undo changes already submitted.",
+    "在说明框内可滚动阅读，点击框外或按任意键关闭。关闭说明只返回编辑，不会确认篡改、消耗回合或清空当前选择。": "Scroll inside this card. Click outside or press any key to close it. Closing returns to editing without submitting, spending a turn or clearing your selection.",
+    "Enter/释放按钮 进入零消耗瞄准，确认时才支付。": "Enter or Cast starts free aiming; costs are paid on confirmation.",
+    "Enter/释放按钮 立即施放。": "Enter or Cast releases immediately.",
+    '入梦介绍': 'Entering the Dream',
+    '点击查看': 'View',
+    '图像：预警与电场保留边缘标记；气体、火焰与危险见状态栏。': 'Image mode: warnings and electric fields keep edge markers; see the status bar for gas, flames and hazards.',
+    '欢迎入梦': 'Welcome to the Dream',
+    '移动与界面': 'Movement and panels',
+    '向梦境深处': 'Deeper into the dream',
+    '用语句装备自己': 'Equip yourself with sentences',
+    '篡改与代价': 'Tampering and its costs',
+    '选择战斗方式': 'Choose how to fight',
+    '欢迎来到《梦层》。这是一款以梦境探索、语句构筑与环境互动为核心的回合制 Roguelike。按自己的节奏观察、尝试，找到属于你的生存方式。': 'Welcome to Oneirscript, a turn-based roguelike built around dream exploration, sentence crafting and interactions with the environment. Observe and experiment at your own pace to find your way to survive.',
+    '使用方向键或数字键盘移动。WASD 用于控制界面，而不是移动角色。按 / 可以切换当前控制的界面区域。': 'Move with the arrow keys or numeric keypad. WASD controls interface panels rather than your character. Press / to switch the interface region you control.',
+    '这里没有楼梯。按 N 下潜，按 B 上浮。下潜前需要让崩解度达到 100；留意界面中的崩解度读数。': 'There are no stairs. Press N to descend and B to ascend. Dissolution must reach 100 before you can descend; keep an eye on its readout.',
+    '游戏没有常规的装备体系。打开联想盘，将词语组装成语句，让语句发挥装备的功能。你的搭配决定能力与效果。': 'There is no conventional equipment system. Open the association board and assemble words into sentences that act as equipment. Your combinations determine their abilities and effects.',
+    '篡改可以消耗想象力，改写环境或人物事件。它也会增加混乱度，可能带来风险；确认前留意预览、代价与风险提示。': 'Tampering spends imagination to rewrite the environment or character events. It also increases chaos and may bring risks. Check the preview, costs and risk warnings before confirming.',
+    '你可以近战、发射、投掷或使用构想，直接与异象战斗，也可以利用环境创造机会。先观察，再决定如何行动。': 'Fight anomalies with melee attacks, firing, throwing or constructs, or use the environment to create an opening. Observe first, then decide how to act.',
+    '之后可在「设置 → 数据 → 入梦介绍」重新查看。': 'Reopen this introduction from Settings → Data → Entering the Dream.',
+    '[上一步]': '[Previous]',
+    '[下一步]': '[Next]',
+    '[开始探索]': '[Start exploring]',
+    '[关闭]': '[Close]',
+    '← → 翻页 · Enter 继续 · Esc 关闭': '← → Pages · Enter Continue · Esc Close',
+    '重新查看移动、下潜、联想盘、篡改与战斗的简短介绍。': 'Review a short introduction to movement, descending, the association board, tampering and combat.',
 })

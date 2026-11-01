@@ -317,6 +317,27 @@ CATALOG_NPC_EN = {
     "关系": "Bond",
     "创伤": "Trauma",
     "与其交谈过。": "Spoke with them.",
+    "校准师": "Calibrator",
+    "守着合辙枢的校准师，负责检查压板与立方体的咬合。":
+        "A calibrator who guards the interlocking hub and checks the plates and cubes.",
+    "缺一只眼的布偶熊": "One-Eyed Toy Bear",
+    "缺一只眼的布偶熊，守着三盏灯与最后的合辙枢。":
+        "A one-eyed toy bear guarding three lamps and the final interlocking hub.",
+    "上弦的士兵": "Wind-Up Soldier",
+    "上弦的士兵，守着两只需要调相的摆轮。":
+        "A wind-up soldier guarding two pendulums that must be synchronized.",
+    "提线木偶": "Marionette",
+    "提线木偶，把童谣的音序缝进压板机关。":
+        "A marionette that stitches a nursery-rhyme sequence into a plate mechanism.",
+    "分诊铃": "Triage Bell",
+    "至白疗所的分诊设施，提供基础液体与气体容器。":
+        "The White Sanatorium's triage facility, providing basic liquid and gas containers.",
+    "无手药柜": "Handless Dispenser",
+    "至白疗所的配药设施，可用材料换取药剂。":
+        "The White Sanatorium's dispensary, trading materials for medicines.",
+    "净衣护理车": "Clean-Linen Care Cart",
+    "至白疗所的护理设施，负责恢复灯段并提供守护。":
+        "The White Sanatorium's care cart, restoring lamp sections and offering protection.",
 }
 
 # ---- 派系与声望（§4.2/§4.3，2026-10-11）----

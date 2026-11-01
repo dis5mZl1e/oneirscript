@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.cells import cell_len
 from textual.events import MouseDown, MouseMove
 from textual.widgets import Static
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 
 from ..equipment.board import (
     DESTINATION_LABELS,
@@ -84,6 +84,64 @@ STYLE_CURSOR = "reverse"
 STYLE_LEGAL = "on #1d3a24"
 STYLE_ILLEGAL = "on #4a1d1d"
 STYLE_FOCUS_EDGE = "bold " + CARRIED_IMAGE_STYLE
+
+# 使用说明（盘面左上角的 ℹ 悬浮窗）。标题和正文都是词条键，由 tr()
+# 按当前语言查表。这里写实际操作和具体例子，不暴露编译层名词。
+INFO_LABEL = 'ℹ 使用说明'
+INFO_TITLE = '联想盘使用说明'
+INFO_SECTIONS = (
+    ('基本操作', (
+        '方向键移动光标，a 拿起或放下装备，r 旋转，x 拆除。右侧行囊用 , / . 选择，空格拿起；z 切换功能词。',
+        '拿起、移动和旋转只改草稿，不消耗回合。按 Enter 确认整理后才正式生效，并消耗一次行动；Esc 可放回手中物或取消本次整理。',
+    )),
+    ('摆放和成句', (
+        '盘面共有 6 行，每行单独组成一句话。需要配合的装备必须放在同一行，跨行不会拼成同一句。',
+        '中文盘面的八列依次是条件、载体、修饰、修饰、行为、对象、补语、补语。列头上的条、载、饰、行、对、补对应这些位置。',
+        '行为列决定这一行做什么。斩击、发射和喷射需要主动使用，披覆和维持提供常驻效果。没有行为，整行不会生效。',
+        '装备按实际占格逐格读取。削尖的钢笔横放在修饰、行为和对象列时，会同时提供锋利、斩击和刀痕，一件就能组成攻击。',
+        '同一件装备在同一行占多格，不会重复计算伤害，也不会给自己叠加修饰。竖放跨行时，每行分别判断，未成行不会影响其他行。',
+        '把斩击类武器和余温类装备放进同一行，并让余温提供对象，命中后就能追加点燃。类似组合会直接写进盘面旁的预览。',
+        '第 1 列的条件和「如果」都能限制触发时机，「否则」接上条件不成立时使用的另一支。条件未满足时不会触发。',
+    )),
+    ('功能词通用规则', (
+        '功能词本身不占语法角色，放在同行两件装备之间即可，落在哪一列都不改变左右关系。把、从、只、再要求左侧留空，如果、否则按分句位置摆放。',
+        '用「的、地、把、和、或者、被」连接两件装备时，这一行不要混入第三件无关装备，否则关系会有歧义。功能词也不能塞进同一件装备自身形状的孔洞里。',
+        '配对不上时整行停止生效并给出原因，不会退回没放功能词的读法。',
+    )),
+    ('功能词逐词用法', (
+        '「的」夹在来源装备和行为装备之间，同一行只留这两件。左边要能给出刀痕、余温、静电或轻快节拍，右边必须是斩击或发射。左边不再单独出手，它的属性并入这次行动，例如节拍器让钢笔攻击带上轻快。',
+        '「地」位置同「的」，左边提供方式，右边执行行为。两边必须属于相容的用法，聚气喷嘴只能增强喷射，轻快节拍适合近战和发射，修缮强化只接修缮。方式只改这一行的行动，不另成一句。',
+        '「把」放在行首，后面先放被处置的对象，再放行为，同行只有这两件。它只认两类组合，刀痕类对象交给能留下刀痕的行为，或容器中的液体、气体交给同介质的喷射装备。对象类型不符时整行失效。',
+        '「从」放在行首，后面先放容器，再放喷射装备，左侧不能有其他装备。容器必须装有液体或气体，介质还要与喷射行为一致。效果是取用现成材料再喷出，空容器不会凭空生成。',
+        '「被」夹在承受者和作用来源之间，同行只留这两件。左边必须有能转为被动的行为，右边必须给出刀痕或留白。右边给刀痕时监听清醒创伤，给留白时监听心智创伤；完成结算后，左边按斩击、静电、点燃或护持回应。没有真实受击不会触发。',
+        '「向」右侧只能是调焦环、追味的皮绳或半页空稿，分别指定瞄准点、带征兆的失控意识和留白格。常见插法是行为、向、目标；也可以从行首按向、目标、行为摆放，或把向和目标放到上一行行为的下一行。同一行不能再放别的功能词，原射程和视线仍然有效。',
+        '「只」放在行首。单独使用时，后面只接一个明确的主动行为。它把行动收成该装备的默认用法，近战武器只保留近战，发射武器只保留发射；同行的修饰、追加反馈和常驻契约都不参与。它也能和「的」「地」同排，但另一词提供的属性或方式会被排除，只留下选定的主动行为。',
+        '「和」夹在两件装备之间，同行只留这两件。两边都必须有合法行为，行为类型也要相容，主动模式没有交集时不成句。效果是合成一次行动，消耗只付一次。',
+        '「或者」夹在两个候选之间，同行只留这两件，两边都要有可执行的主动行为。每次使用只能选一侧，另一侧不生效，适合准备两套攻击手段。',
+        '「如果」放在行首，后面先放能提供条件的装备，再放要执行的内容；条件单独一行时，下一行可以整行作为正文。条件装备可以给出点燃、可燃、潮湿、带征兆或想象力不足等状态。满足条件才执行，事件类条件会把主动行为改成反应；「如果」本身不提供条件。',
+        '「否则」紧接在「如果」分句之后，可以同排或下一排，前面不能插无关装备。它执行条件不成立的那一支；资源不足不等于条件不成立，不会自动转入这里。',
+        '「再」放在追加行为之前，左侧留空。只接近战、发射、液体喷射和气体喷射。前一次确实造成创伤后才追加一次，追加前重新检查资源，两次共用本次行动的额度。',
+        '「只、被、从、向、再」会绑定整件装备，使它不能在别行另起一句。「的、地、把、和、或者」只改当前行；「如果、否则」只约束对应的条件分句。',
+    )),
+    ('检查和生效', (
+        '盘面旁的预览会按行列出当前读法。未成句、条件未满足和待触发会分别标明；词块占着格子但预览未成行时，不会暗中产生效果。',
+        '多件相同的常驻效果会递减合并，多把武器共同行动也不是简单相加。摆完后先看预览，再按 Enter 确认，避免为用不上的摆法消耗行动。',
+    )),
+)
+INFO_LINES = tuple(line for _, lines in INFO_SECTIONS for line in lines)
+INFO_FOOT = '点框外或按任意键关闭'
+
+
+def board_info_text() -> Text:
+    """悬浮窗正文按小节排版，容器负责折行，较长正文可以滚动。"""
+    text = Text()
+    text.append(tr(INFO_TITLE) + '\n', style='bold #c9a0ff')
+    for heading, lines in INFO_SECTIONS:
+        text.append('\n' + tr(heading) + '\n', style='bold #ffd166')
+        for line in lines:
+            text.append(tr(line) + '\n\n', style='#e6e1d3')
+    text.append(tr(INFO_FOOT), style='grey62')
+    return text
 
 # 第十九节 §6／§10.1：盘外六字段色继续独立，但取色一律走面板字段注册表。
 from .panel_fields import FIELD_COLORS as _PANEL_FIELDS
@@ -836,7 +894,8 @@ class BoardEditorController:
         legal = self.preview_legal()
         text = Text(no_wrap=True)
         from ..i18n import get_language
-        headings = tuple(short + ' ' for short in column_shorts(getattr(board, 'syntax', 'zh'), get_language()))
+        headings = tuple(short + ' ' * max(0, CELL_COLUMNS - cell_len(short))
+                         for short in column_shorts(getattr(board, 'syntax', 'zh'), get_language()))
         text.append("    " + "".join(headings) + "\n", style="#a7c4c8")
         text.append("   ┌" + "─" * (board.width * CELL_COLUMNS) + "┐\n", style="grey62")
         from ..equipment.positional import compile_formation
@@ -1210,4 +1269,49 @@ class BoardToolButton(Static):
         if event.button != 1:
             return
         self.app.board_editor_action(self.board_action)
+        event.stop()
+
+
+class BoardInfoButton(Static):
+    """盘面左上角的 ℹ 按钮：点一下打开玩法要点悬浮窗。"""
+
+    can_focus = False
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        if event.button != 1:
+            return
+        self.app.toggle_board_info()
+        event.stop()
+
+
+class BoardInfoCard(VerticalScroll):
+    """悬浮窗本体：点在框里不关闭（鼠标事件就此停住，不上浮到遮罩）。
+
+    用可滚动容器而不是普通 Static：英文正文比中文长，窄屏放不下时能滚，
+    不会被裁掉半句。
+    """
+
+    can_focus = False
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        if event.button == 1 and getattr(self.app, '_info_context', '') == 'intro':
+            action = event.style.meta.get('game_intro')
+            if action in ('previous', 'next', 'close'):
+                self.app.game_intro_action(action)
+        event.stop()
+
+
+class BoardInfoPane(Vertical):
+    """说明窗的遮罩层：点框外任何位置都关闭；键盘由编辑器路由统一关闭。
+
+    整屏铺满并置顶，所以窗口开着时点到的是遮罩而不是盘面——不会顺手挪了
+    光标或拿起装备。
+    """
+
+    can_focus = False
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        if event.button != 1:
+            return
+        self.app.close_board_info()
         event.stop()

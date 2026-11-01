@@ -561,6 +561,7 @@ EN: dict[str, str] = {
     "雨夜的机械声": "Machinery of a Rainy Night",
     "未完成的批注": "Unfinished Annotation",
     "模型盒里多出的螺丝": "Extra Screw from the Model Box",
+    "模型余螺丝": "Model-kit Spare Screw",
     "没有日期的车票": "Dateless Ticket",
     "没有标签的镇静剂": "Unlabeled Sedative",
     "一小片清醒玻璃": "A Shard of Clear Glass",

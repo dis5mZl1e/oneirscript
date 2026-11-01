@@ -203,6 +203,11 @@ class SidebarManagementMixin:
         layer = state.layer_key()
         locked = self.panel_locked
         snapshot = self._sidebar_snapshot() if locked and self.sidebar_workspace else None
+        reload_in_firing = (command == 'reload_weapon_step' and self.panel_mode == 'actions'
+                            and self._panel_subpage_id() == 'fire')
+        # Direct use and the item menu's primary action both belong to the bag.
+        use_in_inventory = (self.panel_mode == 'inventory'
+                            and command in ('use', 'toggle_equip'))
         result = super()._apply(command, *args, **flags)
         # Modal conversations, aiming and layer transitions keep their original
         # controllers. Only a completed world action changes the ordinary sidebar.
@@ -229,7 +234,8 @@ class SidebarManagementMixin:
             # 未锁定：成功世界行动回跳到「默认页」。2026-10-26 起默认页由
             # _default_panel_mode() 决定——左侧事件记录开启时回到行囊，否则
             # 保持原来的事件记录（world）。锁定态不回跳（玩家要求右栏固定）。
-            elif self.panel_mode != self._default_panel_mode():
+            elif (self.panel_mode != self._default_panel_mode()
+                  and not reload_in_firing and not use_in_inventory):
                 self._sidebar_transition(self._default_panel_mode(),
                                          refresh=False, manual=False)
             if locked:
@@ -276,16 +282,18 @@ class SidebarManagementMixin:
         return sorted(visible, key=lambda n: ids[n] not in pins)
 
     def _construct_actions_lines(self, state):
-        """构想页左右分块（2026-10-24 玩家定稿）：左列表 / 右选中一发的使用信息。
+        r"""构想页左右分块（2026-10-24 玩家定稿）：左列表 / 右选中一发的使用信息。
 
         - 左列 = 目标操作 + 构想列表 + 身份能力 + 装备语句（ZONE_CAST_LIST 纸色）；
         - 右列 = 选中构想的使用预览（形态/射程/目标/流程/地形预览，ZONE_CAST_PREVIEW）；
         - 两块底色用 two_zone_row 分到左右两侧，中间一条细竖线，与「环境」页
           左右分区同构。
         - 简介默认折叠：\ 键全局展开，Shift+左键单条展开；
-          普通左键走正常激活/施放路径。
+          普通左键只选择；显式释放按钮执行施放。
         """
         from .panels import two_zone_row
+        from ..data.ability_categories import ability_category
+        from rich.style import Style
 
         ids = [key for key in state.abilities if key in ABILITY_DEFINITIONS]
         context_actions = list(self._actions_for(self.context_menu_target)) if self.context_menu_target else []
@@ -303,6 +311,7 @@ class SidebarManagementMixin:
         left_lines: list[Text] = []
         left_rows: list[int] = []
         right_lines: list[Text] = []
+        card_backgrounds = {}
 
         def add_left(text, row=-1):
             for part in text.wrap(_CONSOLE, left_w, overflow='fold'):
@@ -329,6 +338,8 @@ class SidebarManagementMixin:
             definition = ABILITY_DEFINITIONS[key]
             row = context + ordinal
             focused = self.panel_selection == row
+            category = ability_category(key)
+            card_start = len(left_lines)
             line = Text(('▶ ' if focused else '  ') + ('★ ' if key in pins else ''))
             line.append_text(icon_label('ability.' + key, tr(definition['name']),
                                        C['word'] + (' bold underline' if focused else '')))
@@ -338,9 +349,18 @@ class SidebarManagementMixin:
             if cooldown:
                 line.append(f' · CD {cooldown} T' if compact else ' · ' + tr('冷却 {n} 回合', n=cooldown), style=C['cooldown'])
             add_left(line, row)
+            add_left(Text('  ' + tr(category.name), style=category.ink), row)
             # 默认折叠；只有 \ 全局展开或单条点开时才显示完整简介。
             if self._entry_expanded('ability:' + key):
                 add_left(Text('  ' + tr(definition['description']), style=C['muted']), row)
+            for card_row in range(card_start, len(left_lines)):
+                card_backgrounds[card_row] = category.background
+            release = Text('  ')
+            release.append(tr('[释放]'), style=Style(color=C['word'], bold=True,
+                           meta={'construct_release': row}))
+            add_left(release, row)
+            card_backgrounds[len(left_lines)-1] = category.background
+            add_left(Text(''))
         if not visible:
             add_left(Text(tr('没有匹配的构想；可清除搜索或切换全部。'), style=C['muted']))
 
@@ -357,6 +377,8 @@ class SidebarManagementMixin:
             if cooldown:
                 line.append(f' · CD {cooldown} T' if compact else ' · ' + tr('冷却 {n} 回合', n=cooldown), style=C['cooldown'])
             add_left(line, index)
+            add_left(Text(tr('[释放]'), style=Style(color=C['identity'], bold=True,
+                           meta={'construct_release': index})), index)
 
         if sentence_options:
             add_left(Text('—— GEAR ——' if compact else tr('—— 装备语句 ——'), style='bold ' + C['identity']))
@@ -373,6 +395,8 @@ class SidebarManagementMixin:
             add_left(Text(('▶ ' if selected else '  ') + option.text,
                           style=C['identity'] + (' bold underline' if selected else '')), index)
             add_left(Text('    ' + status, style=C['muted']), index)
+            add_left(Text(tr('[释放]'), style=Style(color=C['identity'], bold=True,
+                           meta={'construct_release': index})), index)
 
         # ---- 右列：选中一发的使用预览 ----
         add_right(Text('—— PREVIEW ——' if compact else tr('—— 使用预览 ——'), style='bold ' + C['word']))
@@ -389,6 +413,13 @@ class SidebarManagementMixin:
             if cooldown:
                 head.append(f' · CD {cooldown} T' if compact else ' · ' + tr('冷却 {n} 回合', n=cooldown), style=C['cooldown'])
             add_right(head)
+            category = ability_category(chosen)
+            add_right(Text(tr('所属类型') + ' · ' + tr(category.name), style='bold ' + category.ink))
+            add_right(Text(tr('类型效果'), style=category.ink))
+            add_right(Text(tr(category.effect), style=C['text']))
+            add_right(Text(''))
+            add_right(Text(tr('构想效果'), style=category.ink))
+            add_right(Text(tr(definition['description']), style=C['text']))
             combat = definition.get('combat') or {}
             if combat:
                 forms = {'melee': tr('近战'), 'launch': tr('弹道'), 'throw': tr('投掷'),
@@ -405,12 +436,9 @@ class SidebarManagementMixin:
             # 施放流程按真实分支写：战斗/选点类先零消耗瞄准、确认才支付。
             from ..core.combat_constructs import is_combat
             from ..core.ability_targeting import is_targeted
-            flow = (tr('Enter/左键 进入零消耗瞄准，确认时才支付。')
-                    if is_combat(chosen) or is_targeted(chosen) else tr('Enter/左键 立即施放。'))
+            flow = (tr('Enter/释放按钮 进入零消耗瞄准，确认时才支付。')
+                    if is_combat(chosen) or is_targeted(chosen) else tr('Enter/释放按钮 立即施放。'))
             add_right(Text(flow, style=C['windup']))
-            # 完整描述只在展开态显示（\ 或点击单条）。
-            if self._entry_expanded('ability:' + chosen):
-                add_right(Text(tr(definition['description']), style=C['muted']))
             if focused_ordinals and preview is not None:
                 for index, text in enumerate(preview.lines):
                     add_right(Text(text, style=('bold ' + C['word']) if index == 0 else C['muted']))
@@ -421,7 +449,10 @@ class SidebarManagementMixin:
         for index in range(max(len(left_lines), len(right_lines), self.query_one('#panel').content_size.height - 1)):
             left = left_lines[index] if index < len(left_lines) else Text()
             right = right_lines[index] if index < len(right_lines) else Text()
-            lines.append(two_zone_row(left, right, ZONE_CAST_LIST, ZONE_CAST_PREVIEW, left_w, right_w))
+            combined = two_zone_row(left, right, ZONE_CAST_LIST, ZONE_CAST_PREVIEW, left_w, right_w)
+            if index in card_backgrounds:
+                combined.stylize(Style(bgcolor=card_backgrounds[index]), 0, len(combined.plain.split('│', 1)[0]))
+            lines.append(combined)
             rows.append(left_rows[index] if index < len(left_rows) else -1)
 
         self._sidebar_ability_visible_rows = list(dict.fromkeys(row for row in rows if row >= 0))
@@ -575,6 +606,7 @@ class SidebarManagementMixin:
             key = repr((command, *args))
             actions.append(dict(key=key, command=command, args=args))
             body.append((Text(label, style=C['condition']), len(actions)-1))
+        action(tr('回到记忆页'), 'memory_home')
         action(tr('返回原条目'), 'back')
         add(tr('详情与操作'), 'heading')
         if kind == 'item':
@@ -683,6 +715,10 @@ class SidebarManagementMixin:
     def _management_activate(self, action):
         command, args = action['command'], action['args']
         if command == 'back': self._sidebar_back()
+        elif command == 'memory_home':
+            self._sidebar_back_stack = []
+            self._sidebar_detail_ref = {}
+            self.open_sidebar_route('equipment-memory')
         elif command == 'link': self.open_sidebar_detail(*args)
         elif command == 'sources': self.open_sidebar_detail('sources', '', 'portents')
         elif command == 'item': self._sidebar_execute_item(*args)

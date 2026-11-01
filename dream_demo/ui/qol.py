@@ -280,6 +280,8 @@ class QoLUIMixin:
             self.refresh_view()
 
     def _toggle_current_note(self):
+        if self.panel_mode == 'inventory':
+            self.inventory_intro_open = not self.inventory_intro_open
         index = self.panel_selection
         if self.panel_mode == 'equipment':
             indices = [i for i, item in enumerate(self.session.state.inventory) if item.slot]
@@ -332,6 +334,8 @@ class QoLUIMixin:
             values = ('全部', '携带意象', '摄入物', '易逝物', '交互道具', '惯用物')
             self.set_panel_subpage(values[(values.index(self.inventory_filter)+1) % len(values)], refresh=False)
         elif button_id == 'qol-notes':
+            if self.panel_mode == 'inventory':
+                self.inventory_intro_open = not self.inventory_intro_open
             self.details_expanded = not self.details_expanded
             self.expanded_key = None
         elif button_id == 'qol-expand':
@@ -424,6 +428,7 @@ class QoLUIMixin:
     def _move_panel_selection(self, delta):
         if self.panel_mode == 'inventory':
             indices = self._inventory_visible_indices()
+            self.inventory_layout_focused = False
             self.panel_selection = indices[((indices.index(self.panel_selection) if self.panel_selection in indices else -1)+delta) % len(indices)] if indices else -1
             self._panel_enter_mode = 'inventory'
             self._follow_list_selection()
@@ -450,6 +455,8 @@ class QoLUIMixin:
         return super()._panel_entry_key(index)
 
     def _activate_panel_selection(self, *args, **kwargs):
+        if self.panel_mode == 'inventory' and self.inventory_layout_focused:
+            return super()._activate_panel_selection(*args, **kwargs)
         if self.panel_mode == 'inventory' and self.panel_selection not in self._inventory_visible_indices():
             self.show_toast(tr('当前筛选没有可使用的物品。'), 3)
             return

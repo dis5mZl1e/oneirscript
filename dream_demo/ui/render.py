@@ -244,7 +244,10 @@ def render_map(
     effective_mode = symbol_mode if unicode_supported else "ascii"
     # 2026-10-18（docs/261018方案合集.md §7）：两列常规/放大档使用地图专用大轮廓；
     # 单列紧凑档继续用原生小字形，否则大字面压进一列会侵入相邻格（§7.6.4）。
-    tile_symbol = map_symbol if cell_w > 1 else symbol
+    # Fog/memory terrain uses this resolver directly, bypassing _tile_glyph's
+    # memo below. Share a frame-local cache across both paths; presentation and
+    # environment settings may change again on the next render.
+    tile_symbol = lru_cache(maxsize=None)(map_symbol if cell_w > 1 else symbol)
     # 梦中梦格级地表底色带：旧档/主梦空表零开销。
     realm_zones = (
         tuple(display_zones(state))

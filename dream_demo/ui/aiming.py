@@ -294,14 +294,44 @@ class AimingMixin:
         if not self.aiming or getattr(self, 'equipment_choice', None) is not None:
             return False
         status = self._aim_ammo_status()
-        if status == 'ready':
+        if status == 'ready' or key == 'r':
             return False
-        if status == 'reload' and key == 'r':
-            self.action_reload_weapon()
+        if status == 'reload':
+            # 方向键、取消键只负责调整/退出瞄准；只有确认动作才会
+            # 自动支付一次换弹步骤。
+            if key not in ('enter', 'return', 'space'):
+                return False
+            # 弹匣武器打空后，下一次瞄准输入自动支付一次换弹步骤；
+            # 不再要求玩家记住 R，R 仍由全局动作入口处理其它换弹场景。
+            self._perform_reload_for_aim()
         else:
             self.cancel_aim()
             self.refresh_view()
         return True
+
+    def _perform_reload_for_aim(self):
+        """Reload the currently selected magazine source without leaving aim."""
+        choice = self.aim_action_choice if isinstance(self.aim_action_choice, dict) else None
+        if choice is None:
+            self.cancel_aim()
+            self.refresh_view()
+            return
+        from ..core.firing_sources import LEGACY_BASIC_ID, equipment_emitters
+        state = self.session.state
+        if choice.get('key') == LEGACY_BASIC_ID:
+            return self._perform_reload(LEGACY_BASIC_ID)
+        if choice.get('kind') != 'fire':
+            self.cancel_aim()
+            self.refresh_view()
+            return
+        weapons = equipment_emitters(state, 'fire', choice.get('key'))
+        weapon = next((item for item in weapons if getattr(item, 'magazine', None) is not None
+                       and item.magazine < item.magazine_capacity), None)
+        if weapon is None:
+            self.cancel_aim()
+            self.refresh_view()
+            return
+        return self._perform_reload(weapon.instance_id)
 
     def _aim_range(self):
         if getattr(self, 'construct_aim_id', None):
@@ -856,6 +886,9 @@ class AimingMixin:
             return ActionResult(False, "")
         if getattr(self, 'item_aim_index', None) is not None:
             return self._confirm_item_deploy_aim(target, direction)
+        # 鼠标落点确认不经过 aim_key；在共享确认入口补上自动换弹。
+        if self._aim_ammo_status() == 'reload':
+            return self._perform_reload_for_aim()
         state = self.session.state
         if getattr(self, 'construct_aim_id', None):
             return self._confirm_construct_aim(target, direction)
@@ -889,6 +922,10 @@ class AimingMixin:
                 self._aim_assist_pos = self._aim_assist_identity = None
                 self.assist_path = []
         choice_before = self.aim_action_choice if isinstance(self.aim_action_choice, dict) else None
+        consumable_order = ([option['source_key'] for option in self._firing_source_options()
+                             if option.get('kind') == 'item']
+                            if self.fire_once_index is not None else [])
+        consumable_key = self._current_source_key() if consumable_order else None
         if reason:
             result = ActionResult(False, tr(reason))
         else:
@@ -921,9 +958,14 @@ class AimingMixin:
         if keep_aim:
             # 普通武器成功开火后留在瞄准：下一发仍只由一次确认触发。
             self._stay_in_equipment_aim(choice_before)
-        elif result.changed and self.fire_once_index is not None and self._aim_ammo_status() == 'exhausted':
-            # Keep a terminal supply state so the next click may become pathfinding.
-            self._aim_failed = False
+        elif result.changed and self.fire_once_index is not None:
+            # 一次性发射物按来源顺序自动衔接；当前堆耗尽时跳到下一枚，
+            # 没有其它来源才结束瞄准。
+            next_option = self._next_consumable_source(consumable_key, consumable_order)
+            if next_option is not None:
+                self._begin_equipment_aim(next_option, preserve_aim=True)
+            else:
+                self.cancel_aim()
         elif result.changed:
             self.cancel_aim()
         elif choice_before is not None and self._aim_ammo_status() != 'ready':
@@ -935,6 +977,30 @@ class AimingMixin:
         self.show_toast(result.message, 4)
         self.refresh_view()
         return result
+
+    def _next_consumable_source(self, current, order):
+        """Return the next live item source after a consumed projectile."""
+        state = self.session.state
+        options = []
+        for option in self._firing_source_options():
+            if option.get('kind') != 'item':
+                continue
+            source_key = str(option.get('source_key', ''))
+            instance_id = source_key[5:] if source_key.startswith('item:') else ''
+            item = next((candidate for candidate in state.inventory
+                          if str(getattr(candidate, 'instance_id', '')) == instance_id), None)
+            if item is not None and int(getattr(item, 'quantity', 0) or 0) > 0:
+                options.append(option)
+        if not options:
+            return None
+        live = {option['source_key']: option for option in options}
+        if current in live:
+            return live[current]
+        index = order.index(current) if current in order else -1
+        for key in order[index + 1:] + order[:index + 1]:
+            if key in live:
+                return live[key]
+        return options[0]
 
     def _stay_in_equipment_aim(self, choice):
         """Keep the aim transaction alive after a real shot from an ordinary weapon."""

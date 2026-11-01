@@ -13,11 +13,11 @@ class ObservationMark:
 MARKS = {
     'telegraph': ObservationMark('telegraph', '#ed8aa7', '技能预警', 'top'),
     'electric': ObservationMark('electric', '#91e7ef', '电场', 'right'),
-    'flame': ObservationMark('flame', '#ff9c45', '火焰', 'bottom'),
-    'gas': ObservationMark('gas', '#dfbd6b', '危险气体', 'left'),
-    'danger': ObservationMark('danger', '#dfbd6b', '危险', 'left'),
+    'flame': ObservationMark('flame', '#ff9c45', '火焰', 'status'),
+    'gas': ObservationMark('gas', '#dfbd6b', '危险气体', 'status'),
+    'danger': ObservationMark('danger', '#dfbd6b', '危险', 'status'),
 }
-EDGE_LABELS = {'top': '上边', 'right': '右边', 'bottom': '下边', 'left': '左边'}
+EDGE_LABELS = {'top': '上边', 'right': '右边', 'status': '状态栏'}
 
 
 def marks_for(cell):
@@ -38,6 +38,10 @@ def draw_marks(draw, cell, rect):
     inset = 1 if min(w, h) >= 4 else 0
     x, y, w, h = x+inset, y+inset, w-2*inset, h-2*inset
     for mark in marks_for(cell):
+        # Materials have their own glyphs; duplicate left/bottom lines would
+        # look like another liquid layer. Their labels remain in the status UI.
+        if mark.edge == 'status':
+            continue
         lines = {
             'top': (x, y, x+w-1, y),
             'right': (x+w-1, y, x+w-1, y+h-1),

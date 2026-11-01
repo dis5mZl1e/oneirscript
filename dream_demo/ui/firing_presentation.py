@@ -572,7 +572,7 @@ def aim_hud(app, width):
     result.append('\n')
     status = app._aim_ammo_status() if getattr(app, 'aiming', False) else 'ready'
     if status != 'ready':
-        message = tr('R换弹 · 其他键退出') if status == 'reload' else tr('弹药耗尽 · 任意键退出')
+        message = tr('确认自动装填 · R手动装填 · Esc取消') if status == 'reload' else tr('弹药耗尽 · 任意键退出')
         line = Text(message, style=COLOR_BLOCKED)
         line.truncate(width, overflow='ellipsis')
         zones = [(0, min(width, cell_len(message.split(' · ')[0])), 'reload')] if status == 'reload' else []

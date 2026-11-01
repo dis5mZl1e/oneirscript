@@ -97,7 +97,7 @@ class _NativeImagePlaneRenderer:
         if self.error:
             raise RuntimeError(self.error)
 
-    def present(self, image, client_box, rectangles, *, scene=None):
+    def present(self, image, client_box, rectangles, *, scene=None, owned=False):
         """提交物理客户区框与相对可见矩形；被新帧替换的旧帧不会排队播放。"""
         if self.error or self._stop.is_set():
             return False
@@ -114,8 +114,9 @@ class _NativeImagePlaneRenderer:
         if image.size != size:
             if scene is None:
                 image = image.resize(size, Image.Resampling.BILINEAR)
-        # 输入图像可能随后被场景缓存复用；跨线程传独立不可变 BGRA 数据。
-        payload = image.copy() if scene is None else None
+        # Ordinary callers may reuse the input. Only the decoding worker may
+        # transfer its independently owned image instead of copying it again.
+        payload = (image if owned else image.copy()) if scene is None else None
         if scene is not None:
             scene = {**scene, 'viewport_size': image.size}
         with self._lock:

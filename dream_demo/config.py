@@ -204,6 +204,20 @@ SETTING_REGISTRY: tuple[SettingDef, ...] = (
     # ——「c」本来没人占用，而把它登记进去会让这一项拒绝自己的默认值。
     SettingDef("key_tamper", "篡改键", SettingType.KEY_BIND, "c",
                description="对话与地图中打开篡改面板的按键。"),
+    SettingDef(
+        "character_style", "字符风格", SettingType.ENUM, "pua",
+        choices=("common", "pua"),
+        description="常用字符或专用PUA字形；独立于图像/字符显示模式，缺字时回退常用字符。",
+        formatter=lambda value: "PUA字符" if value == "pua" else "常用字符",
+    ),
+    SettingDef("inventory_border_style", "行囊边框风格", SettingType.ENUM, "creased",
+               choices=("creased", "straight"),
+               formatter=lambda value: "规整细框" if value == "straight" else "折痕装裱",
+               description="选择行囊格子的装裱边框；切换不改变格子大小与物品位置。"),
+    SettingDef("inventory_icon_style", "行囊图标风格", SettingType.ENUM, "outline",
+               choices=("outline", "native"),
+               formatter=lambda value: "原生字符" if value == "native" else "大字形",
+               description="大字形按目标尺寸绘制字体轮廓；原生字符使用终端字号。字符内容跟随字符风格。"),
     # 地图显示模式（docs §13.2）：WezTerm 主图像，其他终端兼容字符。
     SettingDef(
         "map_display",
@@ -359,6 +373,11 @@ SETTING_REGISTRY += (
     ),
 )
 
+
+SETTING_REGISTRY += (
+    SettingDef('game_intro', '入梦介绍', SettingType.ACTION, '',
+               description='重新查看移动、下潜、联想盘、篡改与战斗的简短介绍。'),
+)
 
 # 外部配置文件（game_config.ini）里「只在游戏内没有设置记录时生效」的键。
 # 语言是这一类：初次开启按配置文件走，玩家在游戏内选过语言后永远按那次选择走

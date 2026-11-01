@@ -35,7 +35,9 @@ Thumbs.db
 *.xlsx
 !assets/data/anomaly-skills.xlsx
 /tests/
-/docs/
+/docs/*
+!/docs/web-0.1.1-changelog.zh-CN.md
+!/docs/web-0.1.1-changelog.en.md
 /sim/
 /tools/
 /audio_production/

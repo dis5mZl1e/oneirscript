@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cell_size import set_cell_size
+from . import plant_glyphs, realm_glyphs
 from .data.icon_glyphs import game_icon, map_icon, ICONS, icon_text
 from .env_compat import LEGACY_PREFIX, NEW_PREFIX, flag as _env_flag
 
@@ -36,6 +37,8 @@ def themed_icons_enabled() -> bool:
     真值集合相同。取不到 os.environ._data（非 CPython / 私有字段消失）时
     回退到 env_compat.flag，行为不变。
     """
+    if realm_glyphs.character_style() == "common":
+        return False
     data = _ENV_DATA if _ENV_DATA_IS_TEXT else None
     if data is None:
         return _env_flag("ICONS")
@@ -53,6 +56,8 @@ def themed_icon(key: str) -> str | None:
     仅替换开关读取这一笔固定开销；key 是否存在、图标字形如何解析都与
     game_icon 完全一致（等价性由 tests/test_hotpath_micro_261027.py 逐键断言）。
     """
+    if realm_glyphs.character_style() == "common":
+        return None
     if not _ENV_DATA_IS_TEXT:
         return game_icon(key)
     if key not in ICONS or not themed_icons_enabled():
@@ -62,6 +67,8 @@ def themed_icon(key: str) -> str | None:
 
 def themed_map_icon(key: str) -> str | None:
     """icon_glyphs.map_icon(key) 的等价热路径版（键前缀 map:）。"""
+    if realm_glyphs.character_style() == "common":
+        return None
     if not _ENV_DATA_IS_TEXT:
         return map_icon(key)
     slot = "map:" + key
@@ -468,7 +475,7 @@ SYMBOLS: dict[str, SymbolDef] = {
     "section.portents": SymbolDef("◇ ", "PT"),
     "section.stats": SymbolDef("∑ ", "ST"),
     "section.audit": SymbolDef("⊙ ", "AU"),
-    "section.nearby": SymbolDef("◎ ", "NB"),
+    "section.nearby": SymbolDef("⌖ ", "EN"),
     "section.records": SymbolDef("▤ ", "RC"),
     "section.quests": SymbolDef("✓ ", "QS"),
     # 面板内部小页签（行囊分类等）：少字模式只显示这些符号。
@@ -530,6 +537,21 @@ def symbol(key: str, mode: str, unicode_supported: bool = True) -> str:
     if definition is None:
         return "??"
     if mode == "themed" and unicode_supported:
+        private = realm_glyphs.private_glyph(key)
+        if private is not None:
+            return private
+        private = plant_glyphs.private_glyph(key)
+        if private is not None:
+            return private
+        # 主角的心形是固定形象：即使切到“常用字符”也保留图标字体里的像素心形，
+        # 不退回阅读字体的文字 ❤（2026-10-31 用户要求换回之前的图标）。
+        if key == 'player':
+            private = game_icon(key)
+            if private is not None:
+                return private
+        # Verified catalogs fall back to literals if their dedicated font fails.
+        if (key in realm_glyphs.GLYPHS or key in plant_glyphs.GLYPHS) and realm_glyphs.character_style() is not None:
+            return spaced_icon(definition.themed)
         # Restore the original narrow door bars in the reserved two-cell slot.
         if key == 'wall.door':
             return spaced_icon(definition.themed)
@@ -551,6 +573,14 @@ def map_symbol(key: str, mode: str, unicode_supported: bool = True) -> str:
     symbol 的小字形，避免放大版图标挤坏正文排版（§7.5.B 分隔路由）。
     """
     if mode == "themed" and unicode_supported:
+        private = realm_glyphs.private_glyph(key)
+        if private is not None:
+            return private
+        private = plant_glyphs.private_glyph(key)
+        if private is not None:
+            return private
+        if (key in realm_glyphs.GLYPHS or key in plant_glyphs.GLYPHS) and realm_glyphs.character_style() is not None:
+            return symbol(key, mode, unicode_supported)
         private = themed_map_icon(key)
         if private is not None:
             return private
@@ -589,6 +619,12 @@ def glyph_for(icon: str, fallback: str, mode: str, unicode_supported: bool = Tru
     ASCII 档位或不支持 Unicode 的终端直接回退，避免字体回退把整行搞错位。
     """
     icon = str(icon or "").replace('\ufe0e', '').replace('\ufe0f', '')
+    icon = realm_glyphs.emoji_for_key(icon)
+    if icon in realm_glyphs.GLYPHS:
+        entry = realm_glyphs.GLYPHS[icon]
+        if mode == 'themed' and unicode_supported:
+            return realm_glyphs.private_glyph(icon) or set_cell_size(entry['fallback'], 2)
+        return symbol(fallback, 'ascii', False)
     if (icon.startswith(('item.', 'expansion.')) and icon in ICONS):
         definition = ICONS[icon]
         if mode == 'themed' and unicode_supported:
@@ -596,7 +632,7 @@ def glyph_for(icon: str, fallback: str, mode: str, unicode_supported: bool = Tru
         if definition.get('ascii_fallback'):
             return definition['ascii_fallback']
         return symbol(fallback, 'ascii', False)
-    if mode == 'themed' and unicode_supported and icon.strip() in ('🖋', '👕', '🎖', '🔧', '✎', '♖', '⚜', '⚒'):
+    if mode == 'themed' and unicode_supported and icon.strip() not in realm_glyphs.EMOJI_CHARACTERS and icon.strip() in ('🖋', '👕', '🎖', '🔧', '✎', '♖', '⚜', '⚒'):
         private = themed_icon(fallback)
         if private is not None and fallback.startswith('carried_'):
             return private
@@ -683,3 +719,6 @@ for _catalog in CHAOS_ANOMALY_IDS:
 for _catalog, _definition in {**LIBRARY_ANOMALIES, **HOSPITAL_ANOMALIES}.items():
     # Preserve the literal script identity in both presentation modes.
     SYMBOLS[_catalog] = SymbolDef(set_cell_size(_definition['glyph'], 2), 'Q:' if _catalog == 'library.reader' else set_cell_size(_definition['glyph'], 2))
+
+# Toy-box walls inherit all physical properties and colour from the old fallback.
+SYMBOLS['wall.toy_box'] = SymbolDef('▭▭', '##')

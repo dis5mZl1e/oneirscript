@@ -45,35 +45,64 @@ def adjacent_choices(left, right, width, *, split_from=44):
     split = width >= split_from
     left_width = (width - 3) // 2 if split else width
     right_width = width - left_width - 3 if split else width
-    def wrap(entries, available):
+
+    # 定义左右区域的底色（使用纸感分区的同族色）
+    from .paper_zones import ZONE_CAST_LIST, ZONE_CAST_PREVIEW
+    LEFT_BG = ZONE_CAST_LIST      # 字词区：灰青纸
+    RIGHT_BG = ZONE_CAST_PREVIEW  # 条件区：灰紫纸
+    DIVIDER_STYLE = '#5f5f5f'     # 分隔线颜色
+
+    def wrap(entries, available, background):
         from .panels import paper_pad
         from .paper_zones import ZONE_STRIP
         out = []
         for text, entry, key in entries:
-            heading = entry == -1 and text.plain.startswith(('──', '——'))
+            heading = entry == -1 and text.plain.startswith(('──', '——', '━━'))
             for line in folded_lines(text, available):
                 if heading:
                     line.stylize('bold underline')
                     line = paper_pad(line, ZONE_STRIP, available)
+                else:
+                    # 为非标题行添加背景色
+                    line = paper_pad(line, background, available)
                 out.append((line, entry, key))
         return out
-    left = wrap(left, left_width); right = wrap(right, right_width)
+
+    left = wrap(left, left_width, LEFT_BG)
+    right = wrap(right, right_width, RIGHT_BG)
     lines, rows, hits = [], [], []
+
     if not split:
         for text, entry, key in left + right:
             if key:
                 hits.append(ChoiceHit(len(lines), 0, cell_len(text.plain), key))
-            lines.append(text); rows.append(entry)
+            lines.append(text)
+            rows.append(entry)
         return lines, rows, hits
+
+    # 分栏模式：左右两块用不同底色，中间用竖线分隔
     for row in range(max(len(left), len(right))):
-        line = Text(); entry = -1
+        line = Text()
+        entry = -1
+
+        # 左侧字词区
         if row < len(left):
             text, entry, key = left[row]
             line.append(text)
             if key:
                 hits.append(ChoiceHit(row, 0, cell_len(text.plain), key))
+        else:
+            # 左侧空行也需要背景色
+            from .panels import paper_pad
+            line.append(paper_pad(Text(''), LEFT_BG, left_width))
+
+        # 确保左侧宽度
         line.pad_right(left_width - cell_len(line.plain))
-        line.append(' │ ', style=MUTED)
+
+        # 添加分隔线（带颜色）
+        line.append(' │ ', style=f'bold {DIVIDER_STYLE}')
+
+        # 右侧条件区
         if row < len(right):
             text, right_entry, key = right[row]
             line.append(text)
@@ -81,7 +110,14 @@ def adjacent_choices(left, right, width, *, split_from=44):
                 entry = right_entry
             if key:
                 hits.append(ChoiceHit(row, left_width + 3, left_width + 3 + cell_len(text.plain), key))
-        lines.append(line); rows.append(entry)
+        else:
+            # 右侧空行也需要背景色
+            from .panels import paper_pad
+            line.append(paper_pad(Text(''), RIGHT_BG, right_width))
+
+        lines.append(line)
+        rows.append(entry)
+
     return lines, rows, hits
 
 

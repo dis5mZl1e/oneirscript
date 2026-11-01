@@ -103,10 +103,10 @@ python run_demo.py --smoke --fx-smoke --save-dir save-fx-smoke
 
 ## 源码与发行包对应关系
 
-`DESKTOP-SOURCE.json` 记录了从开发提交 `fcc3349` 导入的 v0.1.0 桌面源码。
-`desktop-source-v0.1.0` 标签保留原始基线；Release 提供独立的对应源码 ZIP，压缩包路径为 ASCII，
-并附原开发路径还原脚本。当前分支额外加入 Python 安装态资源定位和可写数据目录的命令入口。
-现有桌面二进制保持原样，校验值随 Release 提供。
+`DESKTOP-SOURCE.json` 记录当前 v0.1.1 桌面源码基线，来自开发提交 `d553842a`。
+`desktop-source-v0.1.1` 标签保存该基线；Release 同时提供对应源码 ZIP、桌面包与校验值。
+当前分支在桌面源码之上加入 Python 安装态资源定位（`dream_demo/resource_paths.py`）和可写数据目录入口（`dream_demo/cli.py`），两者不改变桌面运行逻辑。
+本地桌面二进制如需重建，按下方命令从本仓库源码构建；已发布的 0.1.1 桌面包由同一开发快照构建。
 
 重新构建桌面包时，安装运行依赖和 `requirements-build.txt`，执行
 `python scripts/prepare_portable_terminal.py` 准备对应平台终端，再运行 `python build.py` 与

@@ -3,8 +3,8 @@
 内置终端字体 `DreamStrataSerifMono-Regular.ttf` 由以下 SIL Open Font
 License 1.1 上游合成（构建脚本：`scripts/build_serif_mono_font.py`）。
 按 OFL 要求，本字体已放弃各上游"保留字体名"，以新名
-**Dream Strata Serif Mono** 分发；仅作度量归一（等宽化/缩放）与按需取字，
-未做其他衍生创作。
+**Dream Strata Serif Mono** 分发；包含度量归一（等宽化/缩放）、按需取字，
+以及下述液体瓦片原创轮廓。
 
 | 用途 | 上游 | 授权 | 来源 |
 |---|---|---|---|
@@ -21,11 +21,21 @@ License 1.1 上游合成（构建脚本：`scripts/build_serif_mono_font.py`）�
 
 ## 宋体阅读版（当前默认）
 
+界面无衬线字体 `DreamStrataInterfaceSans-Regular.ttf` 从宋体阅读版补入缺失的
+U+2000–U+2FFF 通用标点、箭头、数学与界面符号，沿用上表的 OFL-1.1 来源。
+补字保留原有半格/全格度量，避免展开箭头与复选框依赖系统字体回退。
+构建入口为 `scripts/build_interface_font.py`，产物哈希见 `interface-sans.json`。
+
 `DreamStrataSongReading-Regular.ttf`（Dream Strata Song Reading）由同一 OFL-1.1
 混合构建流程生成，中文底衬换为 Noto Serif SC Medium（500），ASCII 使用底衬的
 衬线字形并统一到半格，其他符号来源沿用上表。构建入口为
 `scripts/build_song_reading_font.py`，上游和产物哈希见 `song-reading.json`。
 原版 `DreamStrataSerifMono-Regular.ttf` 保留，便于对照与恢复。
+
+2026-10-31 液体瓦片：U+223F ∿、U+2248 ≈、U+224B ≋ 改为本项目原创的
+一、二、三条平缓波纹，轮廓源码为 `scripts/liquid_tile_outlines.py`，按 OFL-1.1
+随字体分发。阅读版、等宽衬线版与界面无衬线版使用同一轮廓，统一候选字体从
+阅读版继承；保留 500 前进宽，墨迹覆盖游戏已预留的两列，底边与行底留白一致。
 
 2026-10-22 补字：阅读版额外从 [Google Fonts Noto Emoji](https://github.com/google/fonts/tree/main/ofl/notoemoji)
 （Noto Emoji v3.002 可变字体，默认 400 字重，单色轮廓，OFL-1.1，全文
@@ -135,3 +145,20 @@ See InterfaceSans-OFL.txt for the upstream notice and full license.
 Changes: upright weight 450, fixed 500/1000 terminal advances, shared baseline,
 renamed family. Game icons and map glyphs retain the existing dedicated faces.
 Source: https://github.com/google/fonts/tree/main/ofl/notosanssc
+
+## 物体 emoji 轮廓补字（2026-10-31）
+
+`DreamStrataObjectEmoji.ttf` 为本地 Noto Emoji 的单色子集，继续使用原 Unicode emoji 码位；
+119 个码位中有 14 个原创手工轮廓调整。衍生字体及这 14 个轮廓以 OFL-1.1 分发，
+上游版权及授权见 `NotoEmoji-OFL.txt`，输入/输出哈希及修改清单见 `object-emoji.json`。
+该字体不包含 PUA，不替换既有 Millennium 彩色 emoji；字形前景色由原物体着色控制。
+
+`DreamStrataLongDream.ttf` 本轮扩展为 220 个项目原创轮廓；仍保留旧码位与字体家族名，
+不包含从 Noto 拷贝的图形，遵循项目 GPL-3.0-only；编码及路径见 `long-dream-glyphs.json`。
+
+## 植物字形（2026-10-31）
+
+`DreamStrataPlantIcons.ttf` 2.0 包含 43 个植物与 19 个耗尽态的项目原创像素轮廓，
+按 GPL-3.0-only 分发。绘图源为 `scripts/design_plant_glyphs.py`，
+可编辑配方为 `assets/fonts/source/plants.recipe.json`，码位、路径与哈希见
+`plant-glyphs.json`。tile-font-studio 仅作为原创轮廓的编辑/导出工具，未引入第三方图形。

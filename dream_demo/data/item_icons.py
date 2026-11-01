@@ -186,5 +186,12 @@ ITEM_ICON_KEYS.update({
 
 def item_icon(definition_id, definition):
     """Literal authored glyphs retain their original font fallback path."""
+    from ..realm_glyphs import item_key, object_route
+    replacement = object_route(definition_id, definition)
+    if replacement:
+        return replacement
+    reviewed = item_key(definition_id, definition)
+    if reviewed:
+        return reviewed
     return str(definition.get('icon') or ITEM_ICON_KEYS.get(definition_id)
                or EXPANSION_ITEM_ICON_KEYS.get(definition_id, ''))

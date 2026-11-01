@@ -83,6 +83,11 @@ def main() -> bool | None:
         from dream_demo.terminal_launch import fallback_reason
         app.terminal_compatibility_notice = fallback_reason() or app.terminal_compatibility_notice
     app.run()
+    # Textual catches timer/event exceptions and returns from run() after
+    # closing the UI. Forward its recorded exception to launch_game so a
+    # delayed gameplay crash receives the same persistent report as startup.
+    if app._exception is not None:
+        raise app._exception
 
 
 if __name__ == "__main__":

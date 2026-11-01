@@ -279,10 +279,16 @@ class ContextActionsMixin:
 
     def _perform_reload(self, instance_id):
         """Shared reload entry for R, the picker and the HUD button."""
+        pending = self.equipment_choice
         self.path.clear()
         self.observe_walk_path.clear()
         self._clear_held()
         result = self._apply('reload_weapon_step', str(instance_id))
+        if pending is not None and pending.get('command') == 'aim_equipment':
+            pending['options'] = self._firing_source_options()
+            pending['context'] = self._equipment_choice_context()
+            pending['cursor'] = min(pending['cursor'], max(0, len(pending['options']) - 1))
+            self.equipment_choice = pending
         if self.aiming:
             self._aim_failed = False
             self._aim_equipment_identity = self.session.state.equipment.formation().semantic_signature
@@ -394,6 +400,9 @@ class ContextActionsMixin:
         self.aiming = True
         self._revalidate_aim_lock()
         self.panel_mode = 'actions'
+        if not preserve_aim and self._aim_ammo_status() == 'reload':
+            self._perform_reload_for_aim()
+            return
         self.refresh_view()
 
     def _begin_targeted_equipment_aim(self, option, source_index=None, preserve_aim=False):
@@ -821,6 +830,8 @@ class ContextActionsMixin:
         self._slide_replans = 0
 
     def _follow_path(self) -> None:
+        if getattr(self, '_board_info_open', False):
+            return
         if self._inspection_active():
             return
         # Textual marks the app stopped before unmounting widgets; queued timer

@@ -110,21 +110,21 @@ HOSPITAL_GATE_HINT = ('要往更深处去，得先办齐这层的手续：读一
 
 HOSPITAL_NPCS = {
     'hospital.triage_bell': {
-        'name':'分诊铃','glyph':'♧','integrity':20,'relation':'稳定意识','vault_only':True,
+        'name':'分诊铃','description':'至白疗所的分诊设施，提供基础液体与气体容器。','glyph':'♧','integrity':20,'relation':'稳定意识','vault_only':True,
         'spawn_realms':('white_sanatorium',),
         'dialogue':['「分诊吗？」铃舌晃了一下，没有等到回音。「这里没人挂号。要容器的话，自己拿一只。」',
                     HOSPITAL_GATE_HINT],
         'options':({'label':'领取一次基础液/气容器','hospital_scene':{'operation':'borrow','rewards':('hospital.sealed_ampoule','hospital.clean_air_bottle')},'always':True},
                    {'label':'离开','leave':True,'always':True})},
     'hospital.dispenser': {
-        'name':'无手药柜','glyph':'▣','integrity':20,'relation':'稳定意识','vault_only':True,
+        'name':'无手药柜','description':'至白疗所的配药设施，可用材料换取药剂。','glyph':'▣','integrity':20,'relation':'稳定意识','vault_only':True,
         'spawn_realms':('white_sanatorium',),'dialogue':['「只剩最后一份药材。」抽屉自己开出一条缝。「处方带来了吗？」',
                     HOSPITAL_GATE_HINT],
         'options':({'label':'配制洗忆泡腾片（洗兆液2，心智1/清醒1/想象2）','hospital_scene':{'operation':'service','reward':'hospital.memory_fizz','material':'洗兆液'},'always':True},
                    {'label':'配制淋巴胶囊（淋巴液2，心智1/清醒1/想象2）','hospital_scene':{'operation':'service','reward':'hospital.lymph_capsule','material':'淋巴液'},'always':True},
                    {'label':'离开','leave':True,'always':True})},
     'hospital.linen_cart': {
-        'name':'净衣护理车','glyph':'♧','integrity':20,'relation':'稳定意识','vault_only':True,
+        'name':'净衣护理车','description':'至白疗所的护理设施，负责恢复灯段并提供守护。','glyph':'♧','integrity':20,'relation':'稳定意识','vault_only':True,
         'spawn_realms':('white_sanatorium',),'dialogue':['「先帮我把回风口清干净。」它停稳了，白布抖平一角。「之后我替你守一会儿这儿。」',
                     HOSPITAL_GATE_HINT],
         'options':({'label':'恢复附近已关闭的灯段（耗材一次）','hospital_scene':{'operation':'restore_light'},'always':True},

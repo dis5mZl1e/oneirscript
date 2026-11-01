@@ -58,7 +58,7 @@ SECTION_ORDER: tuple[tuple[str, str, str], ...] = (
 
 SECTION_KEYS: dict[str, tuple[str, ...]] = {
     "general": ("language",),
-    "display": ("symbol_mode", "fx_quality", "fx_scanlines", "fx_hitstop_ms",
+    "display": ("character_style", "symbol_mode", "fx_quality", "fx_scanlines", "fx_hitstop_ms",
                 "fx_reduce_motion", "smooth_movement", "floor_transition", "fx_light_walls",
                 "map_display", "map_observe", "left_event_log", "terse_mode"),
     "audio": ("sfx_enabled", "sfx_volume", "music_enabled", "music_volume"),

@@ -73,6 +73,10 @@ class MouseRoutingMixin:
             self.panel_mode = self._default_panel_mode()
         state = self.session.state
         if self.aiming:
+            if self._aim_ammo_status() == 'reload':
+                # 鼠标确认与 Enter 共用自动换弹规则。
+                self._perform_reload_for_aim()
+                return
             if self._aim_ammo_status() != 'ready':
                 self.cancel_aim()
                 self._begin_path_click(target)
@@ -338,7 +342,7 @@ class MouseRoutingMixin:
             return len(rows) - 1 if y == len(rows) else -1
         return y
 
-    def _panel_row_at(self, offset_y: int, widget=None) -> int:
+    def _panel_row_at(self, offset_y: int, widget=None, offset_x: int | None = None) -> int:
         """面板点击 → 条目序号（-1 = 装饰行/命中空白）。
 
         判定规则刻意放宽，解决「行囊里有些物体左右键点不中」：
@@ -367,6 +371,15 @@ class MouseRoutingMixin:
             if y == len(rows) and rows:
                 return rows[-1]
             return -1
+        layout_hit = getattr(self, '_inventory_layout_hit', None)
+        if self.panel_mode == 'inventory' and layout_hit and offset_x is not None:
+            hit_y, x0, x1 = layout_hit
+            if y == hit_y and x0 <= offset_x < x1:
+                return -6
+        if self.panel_mode == 'inventory' and offset_x is not None:
+            cells = getattr(self, '_panel_cell_rows', [])
+            if y < len(cells) and cells[y]:
+                return next((index for x0, x1, index in cells[y] if x0 <= offset_x < x1), -1)
         return rows[y]
 
     def handle_panel_right_click(self, event: MouseDown) -> None:
@@ -394,7 +407,7 @@ class MouseRoutingMixin:
                 self.refresh_view()
             return
         # 与左键一致：offset 是可视行，叠加面板滚动量才对应真实行（判定见 _panel_row_at）。
-        index = self._panel_row_at(event.offset.y)
+        index = self._panel_row_at(event.offset.y, offset_x=event.offset.x)
         if index < 0:
             return
         if self.panel_mode in ("inventory", "equipment"):
@@ -836,10 +849,24 @@ class MouseRoutingMixin:
                 self.refresh_view()
             event.stop()
             return
+        if (widget_id == 'panel' and self.panel_mode == 'actions'
+                and self._panel_subpage_id() == 'fire'):
+            source_key = event.style.meta.get('fire_reload')
+            if source_key:
+                options = self._firing_source_options()
+                selected = next((i for i, option in enumerate(options)
+                                 if option['source_key'] == source_key), None)
+                if selected is not None and self._sidebar_navigation_allowed():
+                    self.panel_selection = selected
+                    self._last_firing_source_key = source_key
+                    self.action_reload_weapon()
+                event.stop()
+                return
         rows = self._panel_rows
         if not rows:
             return
-        index = self._panel_row_at(event.offset.y, widget=widget if widget_id == "map-overlay" else None)
+        index = self._panel_row_at(event.offset.y, widget=widget if widget_id == "map-overlay" else None,
+                                   offset_x=event.offset.x)
         # 2026-10-24 玩家定稿：点「构筑·装备」页的联想盘示意图直接进入编辑器；
         # -4 是盘面图形与「[ 编辑联想盘」提示行的专用行标记。
         if index == -4:
@@ -848,7 +875,29 @@ class MouseRoutingMixin:
                 self.open_board_editor()
                 event.stop()
             return
+        if index == -6 and self.panel_mode == 'inventory':
+            self.inventory_layout_focused = True
+            self._toggle_inventory_layout()
+            event.stop()
+            return
+        if index == -5 and self.panel_mode == 'inventory':
+            self.inventory_intro_open = not self.inventory_intro_open
+            self._refresh_panel_selection()
+            event.stop()
+            return
         if index < 0:
+            return
+        if self.panel_mode == 'inventory':
+            self.inventory_layout_focused = False
+            self.panel_selection = index
+            self._panel_enter_mode = 'inventory'
+            if self._bracket_armed or bool(getattr(event, 'shift', False)):
+                self._bracket_armed = False
+                self.inventory_intro_open = not self.inventory_intro_open
+                self._refresh_panel_selection()
+            else:
+                self._activate_panel_selection(key_hint=self._panel_entry_key(index))
+            event.stop()
             return
         # 条目键走**渲染时的快照**（_panel_row_keys 与 _panel_rows 逐行对齐）：
         # 重算会在「目标操作」条数变化时被算成 None，左键就静默失效了。
@@ -876,6 +925,15 @@ class MouseRoutingMixin:
             self.details_expanded = False  # 进入单条模式，覆盖全局展开
             self.refresh_view()
             return
+        if (self.panel_mode == 'actions' and self._panel_subpage_id() == 'constructs'
+                and (not key or not key.startswith('action:'))):
+            # Right preview and card bodies only select. Only the explicit
+            # release token carries this metadata through wrapping/scrolling.
+            release = event.style.meta.get('construct_release')
+            if release != index:
+                self._refresh_panel_selection()
+                event.stop()
+                return
         # 行囊/操作页：左键使用/穿戴/激活（等价 Enter）；观测/征兆/洞察：左键即展开。
         operable = self.panel_mode in ("inventory", "equipment", "actions", "tasks", "world", "build_overview", "self_overview", "nearby", "sidebar_detail")
         if bool(getattr(event, "shift", False)) or not operable:
@@ -918,7 +976,7 @@ class MouseRoutingMixin:
                             editor.condition_cursor = index
                             self.refresh_view()
                 return
-            self._update_panel_hover(event.offset.y)
+            self._update_panel_hover(event.offset.y, event.offset.x)
             return
         if getattr(self, 'controls_help_open', False):
             return
@@ -993,7 +1051,7 @@ class MouseRoutingMixin:
                             self.event_dialog_cursor = option
                             self.refresh_view()
             elif widget_id != 'map-overlay':
-                self._update_panel_hover(event.offset.y)
+                self._update_panel_hover(event.offset.y, event.offset.x)
             return
         if self.hover_cell is not None:
             # 鼠标移出地图（右侧面板/边框/空白处）：清除残留悬停，
@@ -1018,13 +1076,22 @@ class MouseRoutingMixin:
         except Exception:
             return
 
-    def _update_panel_hover(self, offset_y: int) -> None:
+    def _update_panel_hover(self, offset_y: int, offset_x: int | None = None) -> None:
         """右侧面板：光标悬停到条目行时把选中移过去（与键盘 ↑↓ 等效）。"""
         if self.home_mode or self.panel_mode == "world":
             return
-        index = self._panel_row_at(offset_y)
+        index = self._panel_row_at(offset_y, offset_x=offset_x)
+        if self.panel_mode == 'inventory' and index == -6:
+            self._panel_enter_mode = 'inventory'
+            if not self.inventory_layout_focused:
+                self.inventory_layout_focused = True
+                self._refresh_panel_selection()
+            return
         if index < 0 or self._panel_entry_key(index) is None:
             return
+        focus_changed = self.panel_mode == 'inventory' and self.inventory_layout_focused
+        if self.panel_mode == 'inventory':
+            self.inventory_layout_focused = False
         if self.panel_mode == "equipment":
             equipment_indices = [i for i, item in enumerate(self.session.state.inventory) if item.slot]
             if index not in equipment_indices:
@@ -1032,7 +1099,7 @@ class MouseRoutingMixin:
             selection = equipment_indices.index(index)
         else:
             selection = index
-        if selection != self.panel_selection:
+        if selection != self.panel_selection or focus_changed:
             self.panel_selection = selection
             if self.panel_mode in {'inventory', 'equipment', 'insights', 'portents', 'catalog'}:
                 self._refresh_panel_selection()

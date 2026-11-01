@@ -97,7 +97,7 @@ from ..board_editor import (
 class NavigationMixin:
     """导航动作族：action_*、楼层过渡、主页/存档/新游戏/暂停菜单、按钮分发。"""
 
-    def _modal_menu_open(self, *, allow_inspection: bool = False) -> bool:
+    def _modal_menu_open(self, *, allow_inspection: bool = False, allow_firing_choice: bool = False) -> bool:
         """全屏模态覆盖层是否正在遮挡世界。
 
         涵盖：暂停菜单（或它打开的设置页/图鉴覆盖层/旧梦回忆覆盖层）、联想盘
@@ -115,7 +115,9 @@ class NavigationMixin:
                        and self._panel_subpage_id() == 'tamper')
         return (self._inspection_active() and not allow_inspection) or ((self._active_tamper_editor() is not None and not side_tamper
                     and not (allow_inspection and getattr(self, "world_tamper_editor", None) is not None))
-                    or bool(getattr(self, 'equipment_choice', None))) or (not self.home_mode and self.panel_mode in (
+                    or (bool(getattr(self, 'equipment_choice', None))
+                        and not (allow_firing_choice and self.equipment_choice.get('command') in
+                                 ('aim_equipment', 'reload_weapon_pick')))) or (not self.home_mode and self.panel_mode in (
             "pause", "pause_settings", "pause_codex", "board_editor", "home_history",
         ))
 
@@ -1172,8 +1174,15 @@ class NavigationMixin:
         if entered_seed:
             state.messages.append(tr("记忆编号 {seed} 已作为本局种子。", seed=state.seed))
         self.newgame_slot = None
+        # Persist the one-time marker with the initial save. Loading this slot
+        # never opens the introduction, including if it was closed midway.
+        show_intro = not self.newgame_saves_test
+        if show_intro:
+            state.tutorial['intro_shown'] = True
         self._adopt_slot_session(state, manager, slot, test_mode=self.newgame_saves_test)
         self.newgame_saves_test = False
+        if show_intro:
+            self.open_game_intro()
 
     def _load_test_mode(self) -> None:
         """进入测试模式：先打开测试存档栏（槽位/删除/调律开局），不再直接开局。

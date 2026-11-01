@@ -453,6 +453,8 @@ class CatalogDiagnostic:
 
 
 def _plain(value: Any) -> str:
+    if value is None:
+        return tr("无")
     if isinstance(value, bool):
         return tr("是") if value else tr("否")
     return tr(str(value))
@@ -470,6 +472,15 @@ TREASURE_SOURCE_LABELS = {
 def _grant_source(value: Any) -> str:
     """把 enemy:/npc:/event: 来源 id 还原为玩家可读名称。"""
     text = str(value or "")
+    if not text:
+        return tr("无")
+    if text.startswith("expansion.event."):
+        from .data.expansion.sources import EVENT_FAMILIES
+        event_ids = EVENT_FAMILIES.get(text.removeprefix("expansion.event."), ())
+        names = [tr(event["name"]) for event in EVENT_DEFINITIONS
+                 if event.get("catalog_id") in event_ids]
+        if names:
+            return " / ".join(names)
     kind, _, key = text.partition(":")
     if kind == "enemy":
         return tr(ANOMALY_DEFINITIONS.get(key, {}).get("name", key))
@@ -500,6 +511,8 @@ def _time(value: Any) -> str:
 
 
 def _item_name(value: Any) -> str:
+    if value is None:
+        return tr("无")
     definition = ITEM_DEFINITIONS.get(str(value))
     return tr(definition["name"]) if definition else str(value)
 
@@ -755,7 +768,7 @@ def build_catalog_definitions() -> dict[str, CatalogDefinition]:
             source["name"],
             # 用异象自己的符号（与地图渲染同一把），不再用通用的圆环。
             catalog_id,
-            source.get("description", ""),
+            source.get("description") or source.get("passive", ""),
             stats,
         )
     for definition_id, source in ITEM_DEFINITIONS.items():
@@ -785,7 +798,7 @@ def build_catalog_definitions() -> dict[str, CatalogDefinition]:
             category,
             source["name"],
             carried_slot_key(source.get("slot")) if equippable else "manifestation",
-            source.get("description", ""),
+            source.get("description") or source.get("name", "未知意识"),
             stats,
             entry_color,
             # 物品自带的图标（有则取代上面那把通用字形），与地图/行囊同一来源。
@@ -798,7 +811,7 @@ def build_catalog_definitions() -> dict[str, CatalogDefinition]:
             CatalogCategory.SITE,
             source["name"],
             catalog_id,
-            source.get("description", ""),
+            source.get("description") or source.get("effect_description") or " ".join(source.get("dialogue", ())) or source.get("passive", ""),
             source,
             CatalogCategory.SITE.icon_color,
         )
@@ -811,7 +824,7 @@ def build_catalog_definitions() -> dict[str, CatalogDefinition]:
             CatalogCategory.NPC,
             source["name"],
             "npc",
-            source.get("description", ""),
+            source.get("description") or " ".join(source.get("dialogue", ())) or source.get("name", "未知意识"),
             source,
             CatalogCategory.NPC.icon_color,
             # 图标用 NPC 自己的地图字形（⌁/☰/✍…），glyph_for 会补齐两列。

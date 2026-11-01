@@ -103,9 +103,13 @@ from ..widgets import (
 from ..tampering import TamperUIMixin
 from ..board_editor import (
     FIELD_COLORS,
+    INFO_LABEL,
     BoardEditorController,
     BoardEditorView,
     BoardGridView,
+    BoardInfoButton,
+    BoardInfoCard,
+    BoardInfoPane,
     BoardSideView,
     BoardToolButton,
 )
@@ -299,6 +303,7 @@ class SessionMixin:
         self.settings_page.delete_callback = self._delete_history_stats
         # 「一键解锁全部图鉴」：立即执行（只补标记，不清记录）。
         self.settings_page.unlock_catalog_callback = self._unlock_all_catalog
+        self.settings_page.game_intro_callback = self.open_game_intro
         self.facing = (1, 0)
         # 右侧默认页：左侧事件记录开启时是行囊，否则保持事件记录（world）。
         self.panel_mode = self._default_panel_mode()
@@ -356,6 +361,17 @@ class SessionMixin:
         # 就少一条），渲染与点击之间一旦对不上，构想行就解析不出键 → 左键点了
         # 没反应（2026-09-20 修）。None = 装饰行。
         self._panel_row_keys: list[str | None] = []
+        # 行囊格子的逐行命中表：每行是 (x0, x1, 真实行囊下标) 的元组列表。
+        # 与 _panel_rows 平行，但一行可含 5 个格子，所以不能只靠行号定位。
+        self._panel_cell_rows: list[tuple[tuple[int, int, int], ...]] = []
+        self._inventory_cell_rows: list[tuple[tuple[int, int, int], ...] | None] = []
+        # 行囊格子的几何快照（首行、格高、列数、可见物品数），供键盘跟随/滚动吸附。
+        self._inventory_grid: tuple[int, int, int, int] | None = None
+        # 行囊介绍默认展开；玩家按 \ 后保留其选择。
+        self.inventory_intro_open = True
+        self.inventory_layout = 'grid'
+        self.inventory_layout_focused = False
+        self._inventory_layout_hit = None
         # 单条展开：一次只展开一个条目（键 = 面板内唯一标识；None = 全收）。
         # details_expanded 仍是 \ 键的全局开/关；左键点击某条时覆盖为单条模式。
         self.expanded_key: str | None = None
@@ -545,6 +561,78 @@ class SessionMixin:
         # 时取词（import 时刻语言未定，BINDINGS 里固化的永远是中文原文）。
         if previous != get_language() and self.is_running:
             self.refresh_bindings()
+            self._relabel_language_chrome()
+
+    def _relabel_language_chrome(self) -> None:
+        """换语言后重贴 compose 期取词的静态文案（标题、按钮、输入框占位）。
+
+        面板／悬停／详情每帧重取词，不受影响；留在旧语言的是只在 compose 时取过
+        一次词的那批控件。这些文案本身就是 EN 表的键，按译文反查回原文再取词；
+        反表是确定的，因为 ``test_english_copy_audit`` 禁止一条英文服务两条中文。
+        带符号前缀的合成文案（「▶ 入梦」「⚙ 测试模式」）反查不到原文，交给各自的
+        刷新路径，这里不硬拼；「存档槽 1」这类尾数合成按前缀取词再把数字贴回去。
+        """
+        from ...i18n import EN
+        sources = {value: key for key, value in EN.items()}
+
+        def plain_of(value):
+            """取控件文案的纯文本；带装饰的 Text 一律不碰（重贴会抹掉样式）。"""
+            if isinstance(value, str):
+                return value
+            if isinstance(value, Text):
+                return None if (value.spans or value.style) else value.plain
+            plain = getattr(value, "plain", None)  # Textual 的 Content 也长这样
+            return plain if isinstance(plain, str) else None
+
+        def tail_number(text):
+            """「存档槽 1」→ ('存档槽', '1')；尾段不是纯数字就返回 (None, 全文)。"""
+            head, separator, tail = text.rpartition(' ')
+            if separator and tail.isdigit() and head:
+                return head, tail
+            return None, text
+
+        def source_of(text):
+            if not text:
+                return None
+            if text in EN:
+                return text
+            head, bare = tail_number(text)
+            if head in EN:
+                return head
+            if head in sources:
+                return sources[head]
+            if bare in sources:
+                return sources[bare]
+            return None
+
+        def translated(key, text):
+            wanted = tr(key)
+            head, tail = tail_number(text)
+            if head is not None and not wanted.endswith(tail):
+                wanted = wanted + " " + tail
+            return wanted
+
+        for widget in self.query(Static):
+            text = plain_of(getattr(widget, "_content", None))
+            key = source_of(text)
+            if key is None:
+                continue
+            wanted = translated(key, text)
+            if wanted != text:
+                widget.update(wanted)
+        for widget in self.query(Button):
+            text = plain_of(widget.label)
+            key = source_of(text)
+            if key is None:
+                continue
+            wanted = translated(key, text)
+            if wanted != text:
+                widget.label = wanted
+        for widget in self.query(Input):
+            text = widget.placeholder
+            key = source_of(text)
+            if key is not None:
+                widget.placeholder = translated(key, text)
 
     def _sync_equipment_syntax(self) -> None:
         """把「装备句法」设置同步成新盘面的默认语序（docs §14.13 第 5 项）。
@@ -724,6 +812,7 @@ class SessionMixin:
             yield Static(id="board-editor-title")
             with Horizontal(id="board-editor-body"):
                 with Vertical(id='board-editor-map'):
+                    yield BoardInfoButton(tr(INFO_LABEL), id='board-editor-info')
                     yield BoardGridView(id="board-editor-grid")
                     yield Static(id='board-editor-inspect')
                 with Vertical(id='board-editor-main'):
@@ -739,6 +828,11 @@ class SessionMixin:
                         for action in group:
                             yield BoardToolButton(action, id=f"board-tool-{action}", classes="board-tool")
             yield Static(id="board-editor-help")
+            # 玩法要点悬浮窗（2026-10-31）：整屏遮罩 + 居中说明卡。遮罩自己收
+            # 点击（点框外=关闭），卡片把鼠标事件吃掉（点框内不关闭）。
+        with BoardInfoPane(id="board-editor-info-pane"):
+            with BoardInfoCard(id='board-editor-info-card'):
+                yield Static(id='board-editor-info-body')
         with OrnamentPane(id="qol-confirm-dialog"):
             yield Static(id="qol-confirm-text")
             yield Input(id="qol-search-input", placeholder=tr("输入物品名称；Enter 确定，Esc 取消"))
@@ -1278,6 +1372,8 @@ class SessionMixin:
         return False
 
     def on_unmount(self) -> None:
+        from ...realm_glyphs import set_character_style
+        set_character_style(None)
         painter = getattr(self, "_world_painter", None)
         if painter is not None:
             painter.close()

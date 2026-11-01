@@ -233,5 +233,5 @@ HOME_PANEL_MODES = ("home", "home_saves", "home_catalog", "home_settings", "home
 # zoom>1 放大（可见格数变少、格与符号同步“变大”），zoom<1 缩小
 # （可见格数变多；最小 0.5 为紧凑概览档，
 #  每格一列但仍使用主题 Unicode 字形；受地图实际尺寸钳制）。
-MAP_ZOOM_LEVELS = (0.5, 1.0, 2.0, 3.0, 4.0)
+MAP_ZOOM_LEVELS = (0.5, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 MAP_DEFAULT_ZOOM = 1.0

@@ -83,10 +83,17 @@ def _build_variant_cache() -> dict[str, str]:
     """按图标家族给每个物品分配最终显示色，组内保证颜色不再完全相同。"""
     from .core.content import ITEM_DEFINITIONS
     from .data.item_icons import item_icon
+    import json
+    from pathlib import Path
+    # Permanent pre-replacement colour membership: silhouette changes must not
+    # reorder or remove members from the established palette.
+    families = json.loads((Path(__file__).with_name("data") / "item_color_families.json").read_text(encoding="utf-8"))
 
     groups: dict[str, list[str]] = {}
     for definition_id, definition in ITEM_DEFINITIONS.items():
-        icon = item_icon(definition_id, definition)
+        icon = families.get(definition_id)
+        if icon is None:
+            icon = item_icon(definition_id, definition)
         if not icon.startswith('item.'):
             # 原有显式图标保留既定颜色，不为它们重新分配配色。
             continue

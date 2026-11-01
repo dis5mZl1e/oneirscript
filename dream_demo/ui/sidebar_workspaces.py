@@ -465,8 +465,8 @@ class SidebarWorkspacesMixin:
         return True
 
 
-    def _update_panel_hover(self, offset_y):
-        return super()._update_panel_hover(offset_y)
+    def _update_panel_hover(self, offset_y, offset_x=None):
+        return super()._update_panel_hover(offset_y, offset_x)
 
     def _fire_actions_lines(self, state):
         # The shared renderer owns source rows and details; do not append a

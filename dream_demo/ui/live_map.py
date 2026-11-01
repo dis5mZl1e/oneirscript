@@ -563,13 +563,24 @@ class LiveMapMixin:
         地图内部内容变化（也就是最常见的移动）不会让它失效。
         """
         signature = self._map_clip_signature(view, region, columns, rows)
+        # 原生图像层高于终端文字：提示气泡出现/换角时，不能仅依赖
+        # 合成器的上一拍逐点命中顺序。按气泡本体（非透明宿主）另留孔洞，
+        # 同时把几何放进缓存键，移动、折行和收起都即时更新裁切。
+        bubbles = tuple(box.intersection(clip)
+                        for widget, (box, clip) in self.screen._compositor.visible_widgets.items()
+                        if getattr(widget, 'id', None) in ('toast', 'map-mode-hint')
+                        and widget.visible and widget.display)
+        if signature is not None:
+            signature = (*signature, ('bubble-regions', bubbles))
         self._map_clip_state = signature
         if signature is not None:
             cached = getattr(self, "_map_clip_cache", None)
             if cached is not None and cached[0] == signature:
                 self._map_clip_hits = getattr(self, "_map_clip_hits", 0) + 1
                 return cached[1]
-        rectangles = visible_rectangles((region.x, region.y, columns, rows), uncovered)
+        def map_uncovered(x, y):
+            return not any(box.contains(x, y) for box in bubbles) and uncovered(x, y)
+        rectangles = visible_rectangles((region.x, region.y, columns, rows), map_uncovered)
         if signature is not None:
             self._map_clip_cache = (signature, rectangles)
             self._map_clip_misses = getattr(self, "_map_clip_misses", 0) + 1
@@ -600,6 +611,8 @@ class LiveMapMixin:
         scene = view.shared_scene
         full_columns = scene.viewport[2] * view.cell_w
         full_rows = scene.viewport[3] * view.cell_h
+        if getattr(view, 'fractional_image_zoom', False):
+            full_columns, full_rows = view.image_extent()
         key = (log.region, region, image.size, full_columns, full_rows,
                content.plain, tuple(content.spans))
         cached = getattr(self, '_event_log_raster_cache', None)
@@ -744,6 +757,7 @@ class LiveMapMixin:
         except Exception:
             overlay = None
         return (
+            str(self.config.get('character_style') or 'common'),
             id(layer), bool(getattr(self, 'observe_mode', False)),
             bool(getattr(self, 'aiming', False)),
             id(getattr(self, 'sentence_aim', None)),
@@ -1053,8 +1067,12 @@ class LiveMapMixin:
         2026 同步块包住；任何 guard（文字签名、裁切、相机、网格）不满足就
         返回 False，让调用方回到 refresh() 的常规整帧路径。
         """
+        if getattr(self, '_map_overview_zoom', None) is not None:
+            return False  # Overview scaling invalidates cell-sized raw patches.
         if getattr(self, '_native_image_plane', None) is not None:
             return bool(self._write_live_map())
+        if getattr(view, 'fractional_image_zoom', False):
+            return False  # Terminal-cell patches cannot represent fractional tiles.
         try:
             if self.query_one('#left-event-log').display:
                 return False  # raw dirty patches do not contain the transparent text layer
@@ -1125,6 +1143,8 @@ class LiveMapMixin:
         与这里不会交错。判定不确定（None）返回 False，调用方回退整帧。
         ``ONEIRSCRIPT_IMAGE_SMOOTH_MINI=1`` 才启用（默认关闭，见开关函数说明）。
         """
+        if getattr(view, 'fractional_image_zoom', False):
+            return False
         if not _image_smooth_mini_enabled():
             return False
         try:
@@ -1319,7 +1339,8 @@ class LiveMapMixin:
         if key == getattr(self, '_native_map_key', None):
             return True
         from ._native_map_scene import _build_native_packet
-        packet = _build_native_packet(view, image)
+        packet = (None if getattr(self, '_map_overview_zoom', None) is not None
+                  else _build_native_packet(view, image))
         if packet is not None and text_layer is not None:
             packet['text_overlay'] = text_layer
         presented = self._map_with_event_log(image, text_layer) if packet is None else image
@@ -1369,6 +1390,9 @@ class LiveMapMixin:
         scene = view.shared_scene
         region = view.content_region
         columns, rows = scene.viewport[2]*view.cell_w, scene.viewport[3]*view.cell_h
+        fractional_zoom = getattr(view, 'fractional_image_zoom', False)
+        if fractional_zoom:
+            columns, rows = view.image_extent()
         columns, rows = min(columns,region.width), min(rows,region.height)
         if not columns or not rows:
             self._native_plane_hide()
@@ -1377,7 +1401,8 @@ class LiveMapMixin:
                         and self._map_smooth_motion_active(view))
         # 2026-10-25 晚实测：把入口放宽到「补丁路由开启就进 C13b」没有收益
         # （见验收文档「普通移动步进补丁」一节），因此入口仍限定在平滑采样窗口。
-        dirty_allowed = smooth_dirty or _image_dirty_enabled()
+        overview = getattr(self, '_map_overview_zoom', None) is not None
+        dirty_allowed = not (overview or fractional_zoom) and (smooth_dirty or _image_dirty_enabled())
         compositor = self.screen._compositor
         def uncovered(x, y):
             return self._map_image_uncovered(view, x, y)
@@ -1400,10 +1425,13 @@ class LiveMapMixin:
         # 增量补丁以原始地图图像为参照，不包含播报字形；显示播报时走完整帧。
         if text_layer is not None:
             dirty_allowed = False
-        sx, sy = image.width/(scene.viewport[2]*view.cell_w), image.height/(scene.viewport[3]*view.cell_h)
+        if getattr(self, '_map_overview_zoom', None) is not None or fractional_zoom:
+            sx, sy = image.width/columns, image.height/rows
+        else:
+            sx, sy = image.width/(scene.viewport[2]*view.cell_w), image.height/(scene.viewport[3]*view.cell_h)
         geometry = (region.x,region.y,columns,rows,tuple(rectangles))
         key = (id(image), geometry)
-        patches_enabled = image_patches_enabled() and text_layer is None
+        patches_enabled = image_patches_enabled() and text_layer is None and not (overview or fractional_zoom)
         dirty_packets = None
         if dirty_allowed and not patches_enabled:
             try:

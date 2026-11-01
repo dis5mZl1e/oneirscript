@@ -41,6 +41,9 @@ def font_role(widget) -> str:
 
 @lru_cache(maxsize=8192)
 def _font_style(style: Style | None, sans: bool) -> Style:
+    explicit = (style.meta if style else {}).get('font_role')
+    if explicit in ('serif', 'sans'):
+        sans = explicit == 'sans'
     return (style or Style()) + Style(italic=sans)
 
 

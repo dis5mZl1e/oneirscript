@@ -14,6 +14,7 @@ import re
 from typing import Iterable, Mapping
 
 from rich.text import Text
+from rich.style import Style
 
 SETTING_KEY = "terse_mode"
 
@@ -175,16 +176,18 @@ def field_abbrev(label: str) -> str:
     return abbrev(label)
 
 
-def _effective_style(text: Text, start: int, end: int) -> str:
-    """Return the span style that covers [start,end); base style otherwise."""
-    style = text.style
+def _effective_style(text: Text, start: int, end: int) -> Style:
+    """Compose covering spans without losing graphics or interaction metadata."""
+    style = Style.parse(text.style) if isinstance(text.style, str) else text.style
+    style = style or Style()
     for span in text.spans:
         if span.start <= start and end <= span.end:
-            style = span.style
-    return style if isinstance(style, str) else str(style or "")
+            overlay = Style.parse(span.style) if isinstance(span.style, str) else span.style
+            style = style + overlay
+    return style
 
 
-def _segments(text: Text) -> Iterable[tuple[int, int, str]]:
+def _segments(text: Text) -> Iterable[tuple[int, int, Style]]:
     plain = text.plain
     length = len(plain)
     if not length:
@@ -572,7 +575,7 @@ def route_symbol(route_key: str, mode: str = "themed") -> str:
         "portents": ("section.portents", "◇ "),
         "self-stats": ("section.stats", "∑ "),
         "self-audit": ("section.audit", "⊙ "),
-        "nearby": ("section.nearby", "◎ "),
+        "nearby": ("section.nearby", "⌖ "),
         "records": ("section.records", "☷ "),
         "quests": ("section.quests", "✓ "),
     }

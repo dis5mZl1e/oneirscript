@@ -366,6 +366,8 @@ def build(src_paths: dict[str, Path], out_path: Path, *, reading: bool = False) 
         dest['hhea'].lineGap = dest['OS/2'].sTypoLineGap = 0
         dest['OS/2'].fsSelection |= 1 << 7  # USE_TYPO_METRICS
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    from liquid_tile_outlines import install_liquid_outlines
+    install_liquid_outlines(dest)
     dest.save(out_path)
     print(f"saved {out_path} ({out_path.stat().st_size / 1e6:.1f} MB) "
           f"replaced={replaced} added={added} cmap={len(cmap)}")

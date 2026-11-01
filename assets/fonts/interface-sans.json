@@ -1,8 +1,9 @@
 {
   "family": "Dream Strata Interface Sans",
   "file": "DreamStrataInterfaceSans-Regular.ttf",
-  "sha256": "55962b75dbebc04e44990f539d6471811e9e986a81cf9a0f8a9d5d4337a36716",
-  "source": "Noto Sans SC",
+  "sha256": "ef627e173428988f7c2cae9a72cb8d558e3cf9e9879f532318d34ebef5ab0051",
+  "source": "Noto Sans SC; UI symbols from Dream Strata Song Reading (see LICENSES.md)",
   "license": "OFL-1.1",
-  "modifications": "450 weight; 500/1000 cell advances; shared reading baseline; renamed family"
+  "modifications": "450 weight; 500/1000 cell advances; shared reading baseline; renamed family; missing U+2000-2FFF symbols supplemented",
+  "liquid_tile_glyphs": "Original OFL-1.1 wave ribbons; 1/2/3 lines; shared low baseline; two-column reserved-space ink"
 }

@@ -17,8 +17,8 @@ from types import MappingProxyType
 from typing import Any
 
 from .constants import Material
-from .vision.knowledge import cell_knowledge
-from ..materials import CONTAINER_KINDS, DEFAULT_WALL, plant_def_for
+from .vision.knowledge import cell_knowledge, always_visible_category
+from ..materials import CONTAINER_KINDS, DEFAULT_WALL, plant_def_for, plant_spent
 
 SCENE_VERSION = 1
 
@@ -280,6 +280,8 @@ def observe_scene(scene: SceneSnapshot, layer: str) -> SceneSnapshot:
             liquid=cell.liquid if (layer == "liquid" and (live or cell.status == "always_visible")) else None,
             gas=cell.gas if (layer == "gas" and live) else None,
             plant=cell.plant if layer == "terrain" and live else 0,
+            occupants=tuple(o for o in cell.occupants if o.kind == 'plant')
+                      if layer == 'terrain' and live else (),
             flame=0, actors=tuple(a for a in cell.actors if a.always_visible), items=(), events=(),
             site=cell.site, danger=cell.danger if live else False,
             telegraph=cell.telegraph if live else '',
@@ -289,9 +291,20 @@ def observe_scene(scene: SceneSnapshot, layer: str) -> SceneSnapshot:
                    visuals=MappingProxyType({}), observe_layer=layer)
 
 
+class SceneBuildCache:
+    """View-owned cache of immutable hidden cells; never persisted in game state."""
+
+    def __init__(self):
+        self.context = None
+        self.cells = {}
+        self.owner = None
+        self.grid = None
+
+
 def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None,
                 cell_w: int = 2, cell_h: int = 1, legacy_terrain: bool = False,
-                visible: set[tuple[int, int]] | None = None) -> SceneSnapshot:
+                visible: set[tuple[int, int]] | None = None,
+                cache: SceneBuildCache | None = None) -> SceneSnapshot:
     """Build the shared permission-filtered map scene (read-only).
 
     2026-10-22 批次3 微优化：输出与优化前逐字段等价
@@ -374,12 +387,32 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
     has_electric = bool(electric_cells)
     has_sensed = bool(sensed)
     gas_hazard_kinds = _GAS_HAZARD_KINDS
+    previous = {}
+    reusable = (cache is not None and not legacy_terrain and knowledge_visible is not None
+                and not state.terrain_known and state.realm_id != 'toy_memories')
+    if cache is not None:
+        context = (state.layer_key(), state.depth, state.realm_id, state.width, state.height)
+        if (cache.owner is state and cache.grid is state.cells
+                and cache.context == context and reusable):
+            previous = cache.cells
+        cache.context = context
+        cache.owner, cache.grid = state, state.cells
+    next_cached = {}
     for y in range(top, top + height):
         for x in range(left, left + width):
             pos = (x, y)
+            cell = state.cell(x, y)
+            hidden = (reusable and pos not in visible and pos not in developed_cells
+                      and pos not in sensed and not always_visible_category(cell))
+            if hidden:
+                memory = memory_layer.get(pos)
+                entry = previous.get(pos)
+                if entry is not None and entry[0] is memory:
+                    cells[pos] = entry[1]
+                    next_cached[pos] = entry
+                    continue
             knowledge = knowledge_of(state, x, y, knowledge_visible,
                                      memory_layer, developed_cells)
-            cell = state.cell(x, y)
             knowledge_status = knowledge.status
             live_content = knowledge_status in ("visible", "developed")
             if legacy_terrain and not live_content and knowledge_status != 'always_visible':
@@ -441,8 +474,9 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
             if live_content:
                 if plant:
                     definition = plant_def_for(plant)
+                    plant_key = definition.key + ('.spent' if plant_spent(plant, cell.plant_state) else '')
                     occupants = [SceneOccupant(
-                        'plant', definition.name, definition.key, definition.color,
+                        'plant', definition.name, plant_key, definition.color,
                         ('low', 'middle', 'high')[:definition.height])]
                 if item_entries:
                     if occupants is None:
@@ -471,7 +505,7 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
                         'actor', actor.display_name, actor.icon_key,
                         '#e8e2d0' if actor.relation == 'player' else '#e59b9b',
                         ('low',), actor.identity, (actor.alert,) if actor.alert else ()))
-            gas_kind_hazard = cell.gas_kind in gas_hazard_kinds
+            gas_kind_hazard = bool(cell.gas > 0 and cell.gas_kind in gas_hazard_kinds)
             hazards: tuple[str, ...] = ()
             telegraph = ''
             danger = False
@@ -497,6 +531,10 @@ def build_scene(state: Any, *, viewport: tuple[int, int, int, int] | None = None
                 x, y, status, terrain, liquid, gas, plant, flame, actors, items,
                 events, str(knowledge.site or ""), danger, telegraph, elevation,
                 sources, tuple(occupants) if occupants else (), hazards)
+            if hidden:
+                next_cached[pos] = (memory, cells[pos])
+    if cache is not None:
+        cache.cells = next_cached
     revision = (
         int(getattr(state, "time", 0) or 0), str(state.layer_key()),
         int(getattr(state, "depth", 0) or 0), str(getattr(state, "realm_id", "") or ""),

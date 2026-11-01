@@ -179,6 +179,7 @@ class SettingsPageState:
     # 由 DreamApp 注入的回调（需要访问存档管理器/图鉴定义）。
     delete_callback: Callable[[], SettingChange] | None = None
     unlock_catalog_callback: Callable[[], SettingChange] | None = None
+    game_intro_callback: Callable[[], SettingChange] | None = None
 
     CATEGORIES = (('general', '常规'), ('display', '画面'), ('audio', '声音'),
                   ('keys', '按键'), ('data', '数据'))
@@ -194,8 +195,8 @@ class SettingsPageState:
             return 'data'
         if key.startswith(('sfx_', 'music_')):
             return 'audio'
-        if key.startswith(('fx_', 'map_', 'intent_')) or key in (
-                'symbol_mode', 'floor_transition', 'left_event_log', 'terse_mode'):
+        if key.startswith(('fx_', 'map_', 'intent_', 'inventory_')) or key in (
+                'character_style', 'symbol_mode', 'floor_transition', 'left_event_log', 'terse_mode'):
             return 'display'
         return 'general'
 
@@ -234,6 +235,8 @@ class SettingsPageState:
     ) -> SettingChange:
         definition = registry[self.selected]
         if definition.setting_type is SettingType.ACTION:
+            if definition.key == 'game_intro':
+                return self.game_intro_callback() if self.game_intro_callback else SettingChange(False, '')
             if definition.key == "unlock_catalog":
                 # 一键解锁全部图鉴：立即执行，无需两段确认（不销毁任何记录）。
                 if self.unlock_catalog_callback is not None:
@@ -439,7 +442,9 @@ def render_setting_row(
     if definition.description:
         label.append("\n" + tr(definition.description), style=INK['muted'])
     if definition.setting_type is SettingType.ACTION:
-        if definition.key == "unlock_catalog":
+        if definition.key == 'game_intro':
+            value = tr('点击查看')
+        elif definition.key == "unlock_catalog":
             value = tr("点击解锁")
         else:
             value = tr("再次点击确认删除") if state.confirm_delete else tr("点击删除")

@@ -945,6 +945,8 @@ class PanelViewMixin:
 
 
             configured = str(config.get("symbol_mode"))
+            from ..realm_glyphs import set_character_style
+            set_character_style(config.get("character_style") or "common", refresh=False)
 
 
         if configured != "themed":
@@ -1158,13 +1160,13 @@ class PanelViewMixin:
                 viewport = max(1, viewport - len(strip_lines))
 
 
-            if self.panel_mode == "tasks":
-
-
-                # 未完成任务钉底行（与 _scrolled_panel_text 的扣减对齐）。
-
-
-                viewport = max(1, viewport - 1)
+            footer = self._panel_footer(self.session.state)
+            footer_rows = (footer.plain.count("\n") + 1) if footer is not None else 0
+            if footer_rows:
+                # 钉底行（任务统计 / 行囊介绍）也要从视窗扣掉，与渲染同一口径。
+                viewport = max(1, viewport - footer_rows)
+                if self.panel_mode == 'inventory':
+                    viewport = max(1, viewport - 1)
 
 
             return max(0, len(lines) - viewport)
@@ -2375,6 +2377,15 @@ class PanelViewMixin:
         self._panel_row_keys = []
 
 
+        self._panel_cell_rows = []
+
+
+        self._inventory_cell_rows = []
+
+
+        self._inventory_grid = None
+
+
         # 切换面板页时把滚动归零（2026-09-21）：右键开操作菜单、瞄准等入口
 
 
@@ -2771,6 +2782,234 @@ class PanelViewMixin:
             return self._tamper_actions_lines(state)
         return self._construct_actions_lines(state)
 
+    def _render_ability_cards(self, state, abilities, context_count, width, add_func, preview):
+        """渲染构想卡片列表和详细信息面板（卡片式布局）"""
+        from .paper_zones import ZONE_CAST_LIST, ZONE_CAST_PREVIEW
+        from ..data.semantic_icons import semantic_icon, icon_color
+        from ..data.ability_categories import ability_category
+
+        # 卡片列表标题
+        add_func(zone_strip(tr("━━ 主动构想 ━━"), width + 4, color='bold ' + FC['word']))
+
+        if not abilities:
+            add_func(paper_pad(Text(tr("尚未习得任何构想（书卷与残页中藏着它们）"), PANEL_MUTED),
+                              ZONE_CAST_LIST, width + 4))
+            return
+
+        # 计算每个卡片的宽度
+        card_width = min(width + 4, 44)
+
+        # 渲染每个构想卡片
+        for offset, ability_id in enumerate(abilities):
+            definition = ABILITY_DEFINITIONS[ability_id]
+            selected = (context_count + offset) == self.panel_selection
+            cooldown = state.ability_cooldowns.get(ability_id, 0)
+            cost = state._scaled_ability_cost(int(definition['cost']))
+            combat = definition.get('combat') or {}
+
+            # 卡片底色：选中时使用不同底色
+            category = ability_category(ability_id)
+            card_bg = category.background
+            border_style = ('bold ' if selected else '') + category.ink
+
+            # 获取图标
+            icon = semantic_icon('ability.' + ability_id)
+
+            # 第1行：顶部边框 ╭─────╮
+            top_border = Text('╭', style=border_style)
+            top_border.append('─' * (card_width - 2), style=border_style)
+            top_border.append('╮', style=border_style)
+            add_func(paper_pad(top_border, card_bg, card_width), context_count + offset)
+
+            # 第2行：图标 + 名称 + ▶按钮
+            header = Text('│ ', style=border_style)
+            if icon:
+                header.append(icon, style=icon_color('ability.' + ability_id))
+                header.append(' ')
+
+            # 构想名称（使用全称）
+            name_text = tr(definition['name'])
+            name_width = card_width - 6 - (2 if icon else 0) - 3  # 预留▶空间
+            if len(name_text) > name_width:
+                name_text = name_text[:name_width-1] + '…'
+            header.append(name_text, style=f'bold {FC["word"]}' if selected else FC['word'])
+
+            # 右对齐 ▶ 按钮
+            header_width = 2 + (2 if icon else 0) + 1 + len(name_text)
+            padding = card_width - header_width - 3
+            if padding > 0:
+                header.append(' ' * padding)
+            header.append('▶', style=f'bold {FC["effect"]}' if selected else FC['effect'])
+            header.append(' │', style=border_style)
+            add_func(paper_pad(header, card_bg, card_width), context_count + offset)
+            type_line = Text('│ ' + tr(category.name), style=category.ink)
+            add_func(paper_pad(type_line, card_bg, card_width), context_count + offset)
+
+            # 第3行：分隔线
+            divider = Text('├', style=border_style)
+            divider.append('─' * (card_width - 2), style=border_style)
+            divider.append('┤', style=border_style)
+            add_func(paper_pad(divider, card_bg, card_width), context_count + offset)
+
+            # 第4行：属性信息（使用英文缩写）
+            info_line = Text('│ ', style=border_style)
+            # IMA=想象力
+            info_line.append('IMA:', style=FC['cost'])
+            info_line.append(str(cost), style=f'bold {FC["cost"]}' if selected else FC['cost'])
+
+            # CD=冷却
+            if cooldown > 0:
+                info_line.append(' CD:', style=FC['cooldown'])
+                info_line.append(str(cooldown), style=f'bold {FC["cooldown"]}' if selected else FC['cooldown'])
+
+            # RNG=射程
+            if combat.get('range') is not None:
+                info_line.append(' RNG:', style=FC['range'])
+                info_line.append(str(combat['range']), style=FC['range'])
+
+            # FORM=形态
+            if combat.get('form'):
+                form_abbr = {
+                    'melee': 'MEL', 'launch': 'PRJ', 'throw': 'THW',
+                    'area': 'AOE', 'blink': 'BLK'
+                }.get(str(combat['form']), str(combat['form'])[:3].upper())
+                info_line.append(' ', style='')
+                info_line.append(form_abbr, style=FC['grammar'])
+
+            # DMG=伤害
+            if combat.get('trauma'):
+                info_line.append(' DMG:', style=FC['damage'])
+                info_line.append(str(combat['trauma']), style=FC['damage'])
+
+            # 右对齐
+            info_width = len(info_line.plain)
+            padding = card_width - info_width - 2
+            if padding > 0:
+                info_line.append(' ' * padding)
+            info_line.append('│', style=border_style)
+            add_func(paper_pad(info_line, card_bg, card_width), context_count + offset)
+
+            # 第5行：底部边框 ╰─────╯
+            bottom_border = Text('╰', style=border_style)
+            bottom_border.append('─' * (card_width - 2), style=border_style)
+            bottom_border.append('╯', style=border_style)
+            add_func(paper_pad(bottom_border, card_bg, card_width), context_count + offset)
+
+            # 卡片之间的间距
+            if offset < len(abilities) - 1:
+                add_func(Text(''))
+
+        # 详细信息面板
+        self._render_ability_detail_panel(state, abilities, context_count, width, add_func, preview)
+
+    def _render_ability_detail_panel(self, state, abilities, context_count, width, add_func, preview):
+        """渲染选中构想的详细信息面板"""
+        from .paper_zones import ZONE_CAST_PREVIEW
+        from ..core.combat_constructs import is_combat
+        from ..core.ability_targeting import is_targeted
+
+        add_func(zone_strip(tr("━━ 详细信息 ━━"), width + 4, color='bold ' + FC['word']))
+
+        selected_ability = None
+        if abilities:
+            sel = self.panel_selection - context_count
+            selected_ability = abilities[sel] if 0 <= sel < len(abilities) else abilities[0]
+
+        if selected_ability is None:
+            add_func(paper_pad(Text(tr("选中构想显示详细信息"), PANEL_MUTED),
+                              ZONE_CAST_PREVIEW, width + 4))
+            return
+
+        definition = ABILITY_DEFINITIONS[selected_ability]
+        from ..data.ability_categories import ability_category
+        category = ability_category(selected_ability)
+        for value in (tr('所属类型') + ' · ' + tr(category.name),
+                      tr('类型效果') + ' · ' + tr(category.effect)):
+            for part in Text(value, style=category.ink).wrap(_WRAP_CONSOLE, max(4, width)):
+                add_func(paper_pad(part, ZONE_CAST_PREVIEW, width + 4))
+        cooldown = state.ability_cooldowns.get(selected_ability, 0)
+        cost = state._scaled_ability_cost(int(definition['cost']))
+        combat = definition.get('combat') or {}
+
+        # 详细信息框顶部
+        detail_top = Text('╭─ ', style='bold ' + FC['word'])
+        detail_top.append(tr(definition['name']), style='bold ' + FC['word'])
+        detail_top.append(' ', style='bold ' + FC['word'])
+        remaining = width + 4 - len(detail_top.plain) - 1
+        if remaining > 0:
+            detail_top.append('─' * remaining, style='bold ' + FC['word'])
+        detail_top.append('╮', style='bold ' + FC['word'])
+        add_func(paper_pad(detail_top, ZONE_CAST_PREVIEW, width + 4))
+
+        # 资源消耗（全称）
+        resource = Text('│ ', style=FC['word'])
+        resource.append('想象力: ', style=FC['cost'])
+        resource.append(str(cost), style='bold ' + FC['cost'])
+        if cooldown > 0:
+            resource.append('  冷却: ', style=FC['cooldown'])
+            resource.append(f'{cooldown} 回合', style='bold ' + FC['cooldown'])
+        add_func(paper_pad(resource, ZONE_CAST_PREVIEW, width + 4))
+
+        # 战斗参数（全称）
+        if combat:
+            params = Text('│ ', style=FC['word'])
+            forms = {'melee': '近战', 'launch': '弹道', 'throw': '投掷',
+                    'area': '范围', 'blink': '位移'}
+
+            if combat.get('form'):
+                params.append('形态: ', style=FC['grammar'])
+                params.append(forms.get(str(combat['form']), str(combat['form'])),
+                            style='bold ' + FC['grammar'])
+
+            if combat.get('range') is not None:
+                params.append('  射程: ', style=FC['range'])
+                params.append(str(combat['range']), style='bold ' + FC['range'])
+
+            if combat.get('trauma'):
+                params.append('  创伤: ', style=FC['damage'])
+                params.append(str(combat['trauma']), style='bold ' + FC['damage'])
+
+            if combat.get('targeting'):
+                params.append('  目标: ', style=FC['category'])
+                params.append(tr(str(combat['targeting'])), style=FC['category'])
+
+            add_func(paper_pad(params, ZONE_CAST_PREVIEW, width + 4))
+
+        # 施放流程
+        flow = Text('│ ', style=FC['word'])
+        if is_combat(selected_ability) or is_targeted(selected_ability):
+            flow.append('▶ ', style='bold ' + FC['windup'])
+            flow.append('点击卡片内选中，点▶或Enter进入瞄准', style=FC['windup'])
+        else:
+            flow.append('▶ ', style='bold ' + FC['windup'])
+            flow.append('点击卡片内选中，点▶或Enter立即施放', style=FC['windup'])
+        add_func(paper_pad(flow, ZONE_CAST_PREVIEW, width + 4))
+
+        # 描述
+        desc_text = tr(definition['description'])
+        desc_width = width + 4 - 4
+        for line in desc_text.split():
+            desc_line = Text('│ ', style=FC['word'])
+            desc_line.append(line + ' ', style=PANEL_MUTED)
+            add_func(paper_pad(desc_line, ZONE_CAST_PREVIEW, width + 4))
+
+        # 地形预览
+        if preview is not None:
+            preview_header = Text('├─ ', style=FC['word'])
+            preview_header.append('地形预览', style=FC['word'])
+            preview_header.append(' ─', style=FC['word'])
+            add_func(paper_pad(preview_header, ZONE_CAST_PREVIEW, width + 4))
+            for line_text in preview.lines:
+                preview_line = Text('│ ', style=FC['word'])
+                preview_line.append(line_text, style=PANEL_MUTED)
+                add_func(paper_pad(preview_line, ZONE_CAST_PREVIEW, width + 4))
+
+        # 底部边框
+        detail_bottom = Text('╰', style=FC['word'])
+        detail_bottom.append('─' * (width + 4 - 2), style=FC['word'])
+        detail_bottom.append('╯', style=FC['word'])
+        add_func(paper_pad(detail_bottom, ZONE_CAST_PREVIEW, width + 4))
+
 
     def _construct_actions_lines(self, state: GameState) -> tuple[list[Text], list[int]]:
 
@@ -2861,86 +3100,8 @@ class PanelViewMixin:
 
         preview = self._terrain_preview_for(state)
 
-        # —— 构想列表块（2026-10-24 重构：列表 + 简介常显，同族纸 ZONE_CAST_LIST）——
-        # 主动构想：随操作面板一同展示，Enter 激活。
-        add(zone_strip(tr("—— 主动构想 ——"), width + 4, color=FC['word']))
-        if not abilities:
-            add(paper_pad(Text(tr("尚未习得任何构想（书卷与残页中藏着它们）"), PANEL_MUTED),
-                          ZONE_CAST_LIST, width + 4))
-        for offset, ability_id in enumerate(abilities):
-            definition = ABILITY_DEFINITIONS[ability_id]
-            selected = (context_count + offset) == self.panel_selection
-            cooldown = state.ability_cooldowns.get(ability_id, 0)
-            # 消耗想象**始终**在第一位；冷却只是在它后面追加一段，不替代它——
-            # 玩家反馈「冷却时看不到消耗」（要判断还差多久能用、值不值得等，
-            # 两件事都要看见）。
-            marker = "▶ " if selected else "  "
-            head = Text.assemble(
-                (marker, FC['word']),
-                icon_label(
-                    'ability.' + ability_id, tr(definition['name']),
-                    FC['word'] + (' bold underline' if selected else '')),
-                ('  ' + str(state._scaled_ability_cost(int(definition['cost']))) + ' ' + tr('想象力'), FC['cost']),
-                ('　·　' + tr('冷却 {n} 回合', n=cooldown), FC['cooldown']) if cooldown else '')
-            add(paper_pad(head, ZONE_CAST_LIST, width + 4), context_count + offset)
-            # 简介默认折叠（2026-10-24 玩家定稿，撤回同日"常显"）：\ 全局展开
-            # （details_expanded）；实际右栏由 sidebar_management 的左右分区版
-            # 接管：普通点击单条展开，Shift+点击保持激活/施放。
-            if self._details_visible():
-                for wrapped in Text(f"    {tr(definition['description'])}", style=PANEL_MUTED).wrap(
-                        _WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                    add(paper_pad(wrapped, ZONE_CAST_LIST, width + 4), context_count + offset)
-
-        # —— 使用预览块（2026-10-24 重构：选中构想的具体施放说明，ZONE_CAST_PREVIEW）——
-        # 取代旧的「地形预览钉在选中行下面」：预览集中成第二块，写清这一发
-        # 怎么放、形态射程、花多少；地形预览（§15.6）并入块尾。
-        add(zone_strip(tr("—— 使用预览 ——"), width + 4, color=FC['word']))
-        selected_ability = None
-        if abilities:
-            sel = self.panel_selection - context_count
-            selected_ability = abilities[sel] if 0 <= sel < len(abilities) else abilities[0]
-        if selected_ability is None:
-            add(paper_pad(Text(tr("习得构想后，这里显示选中一发的形态与施放流程。"), PANEL_MUTED),
-                          ZONE_CAST_PREVIEW, width + 4))
-        else:
-            definition = ABILITY_DEFINITIONS[selected_ability]
-            cooldown = state.ability_cooldowns.get(selected_ability, 0)
-            from ..core.combat_constructs import is_combat
-            from ..core.ability_targeting import is_targeted
-            head = Text.assemble(
-                (tr(definition['name']), 'bold ' + FC['word']),
-                ('  ' + str(state._scaled_ability_cost(int(definition['cost']))) + ' ' + tr('想象力'), FC['cost']),
-                ('　·　' + tr('冷却 {n} 回合', n=cooldown), FC['cooldown']) if cooldown else '')
-            for wrapped in head.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
-            combat = definition.get('combat') or {}
-            if combat:
-                forms = {'melee': tr('近战'), 'launch': tr('弹道'), 'throw': tr('投掷'),
-                         'area': tr('范围'), 'blink': tr('位移')}
-                detail = Text(tr('形态') + ' ' + forms.get(str(combat.get('form')), str(combat.get('form'))),
-                              style=FC['grammar'])
-                if combat.get('range') is not None:
-                    detail.append(' · ' + tr('射程') + ' ' + str(combat['range']), style=FC['range'])
-                if combat.get('targeting'):
-                    detail.append(' · ' + tr('目标') + ' ' + tr(str(combat['targeting'])), style=FC['category'])
-                if combat.get('sound'):
-                    detail.append(' · ' + tr('声响') + ' ' + str(combat['sound']), style=FC['noise'])
-                for wrapped in detail.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                    add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
-            # 施放流程按真实分支写（_activate_panel_selection 的口径）：战斗/选点
-            # 类先零消耗瞄准、确认才支付；其余立即施放。
-            flow = (tr('Enter/左键 进入零消耗瞄准，确认时才支付。')
-                    if is_combat(selected_ability) or is_targeted(selected_ability)
-                    else tr('Enter/左键 立即施放。'))
-            add(paper_pad(Text(flow, style=FC['windup']), ZONE_CAST_PREVIEW, width + 4))
-            for wrapped in Text(tr(definition['description']), PANEL_MUTED).wrap(
-                    _WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
-            if preview is not None:
-                for line_offset, line in enumerate(preview.lines):
-                    body = Text(line, style=f"bold {FC['word']}" if line_offset == 0 else PANEL_MUTED)
-                    for wrapped in body.wrap(_WRAP_CONSOLE, width + 4, overflow="fold", no_wrap=False):
-                        add(paper_pad(wrapped, ZONE_CAST_PREVIEW, width + 4))
+        # —— 构想卡片列表（全新卡片式布局）——
+        self._render_ability_cards(state, abilities, context_count, width, add, preview)
 
 
         identity_abilities = state.identity_abilities()
@@ -3115,6 +3276,9 @@ class PanelViewMixin:
 
 
     def _fire_actions_lines(self, state: GameState) -> tuple[list[Text], list[int]]:
+        if self.query_one('#panel').content_size.height >= 14:
+            from .firing_cards import render_fire_cards
+            return render_fire_cards(self, state)
         """Selectable sources, one current supply block, then contextual controls."""
         from ..core.content import ITEM_DEFINITIONS
         from ..core.firing_sources import collect_firing_sources, equipment_emitters, legacy_basic_view
@@ -3161,7 +3325,14 @@ class PanelViewMixin:
             add(tr('当前发射源'), style=f"bold {FC['word']}")
             add(name(source), style=FC['word'])
         if source.kind in ('equipment', 'legacy'):
-            add(equipment_resource_text(state, dict(kind=source.action_kind, key=source.choice_key)))
+            resource = equipment_resource_text(state, dict(kind=source.action_kind, key=source.choice_key))
+            from .firing_cards import reload_entry
+            from ..core.firing_sources import magazine_spec
+            if source.kind == 'legacy' or any(magazine_spec(key) for key in source.definition_ids):
+                resource.append_text(reload_entry(source.key))
+            # Wrap rather than truncate: the reload target must remain clickable.
+            for resource_line in resource.wrap(_WRAP_CONSOLE, width, overflow='fold'):
+                add(resource_line, selected)
             weapons = ([legacy_basic_view(state)] if source.kind == 'legacy' else
                        equipment_emitters(state, source.action_kind, source.choice_key))
             for item in weapons:
@@ -3268,6 +3439,12 @@ class PanelViewMixin:
                 return 'details:toggle'
 
 
+            if index == 904:
+                return 'editor:confirm'
+            if index == 905:
+                return 'editor:cancel'
+            if index == 906:
+                return 'editor:info'
             if index == 903:
 
 
@@ -3474,7 +3651,7 @@ class PanelViewMixin:
         elif item.slot:
 
 
-            wear_label = "卸下" if item.instance_id in state.equipped.values() else "携带"
+            wear_label = "卸下" if (state.board.placement(item.instance_id) is not None or item.instance_id in state.equipped.values()) else "携带"
 
 
             primary = ("U", wear_label, "toggle_equip")
@@ -3806,7 +3983,7 @@ class PanelViewMixin:
             logical.append((Text(tr("物品已不在行囊中。"), PANEL_MUTED), -1))
             return self._render_menu_lines(logical, width)
 
-        equipped = " *" if item.instance_id in state.equipped.values() else ""
+        equipped = " *" if (state.board.placement(item.instance_id) is not None or item.instance_id in state.equipped.values()) else ""
         name_line = f"{tr(item.name)} ×{item.quantity}{equipped}"
         name_padding = max(0, (width - cell_len(name_line)) // 2)
         name_text = Text(" " * name_padding)
@@ -3817,7 +3994,8 @@ class PanelViewMixin:
         logical.append((name_text, -1))
 
         for chunk in self._split_by_width(_item_description(item, state), max(4, width - 4)):
-            logical.append((Text("    " + chunk, style=PANEL_MUTED), -1))
+            logical.append((Text("    " + chunk, style=Style(
+                color=FC['text'], italic=False, meta={'font_role': 'serif'})), -1))
         # 真实发声物品（汽笛／蜂鸣诱饵／带 pulse 的装备）才写发声点与半径。
         for line in _item_sound_lines(state, item):
             for chunk in self._split_by_width(line, max(4, width - 4)):
@@ -9170,38 +9348,68 @@ class PanelViewMixin:
         """
         lines, row_indices, header = self._panel_lines(state)
         footer = self._panel_footer(state)
+        footer_rows = (footer.plain.count("\n") + 1) if footer is not None else 0
         viewport = self._portent_viewport_rows()
         strip_lines = self._panel_subtabs_lines()
         if strip_lines:
             viewport = max(1, viewport - len(strip_lines))
-        if footer is not None:
-            viewport = max(1, viewport - 1)
+        if footer_rows:
+            viewport = max(1, viewport - footer_rows)
+            if self.panel_mode == 'inventory':
+                viewport = max(1, viewport - 1)
         max_scroll = max(0, len(lines) - viewport)
         self.panel_scroll = min(self.panel_scroll, max_scroll)
         start = self.panel_scroll
         text = Text()
         rows: list[int] = []
+        cell_rows: list[tuple[tuple[int, int, int], ...]] = []
         for strip_line in strip_lines:
             text.append_text(strip_line)
             text.append("\n")
             rows.append(-3)
+            cell_rows.append(())
         header.stylize("bold underline")
         text.append_text(paper_pad(header, ZONE_STRIP, self._portent_panel_width()))
+        self._inventory_layout_hit = None
+        if self.panel_mode == 'inventory':
+            label = tr('格子') if self.inventory_layout == 'grid' else tr('竖排')
+            label = '[' + label + ']'
+            self._inventory_layout_hit = (len(rows), self._portent_panel_width()-cell_len(label),
+                                          self._portent_panel_width())
         rows.append(-1)
+        cell_rows.append(())
+        def append_detail():
+            text.append("\n")
+            text.append_text(footer)
+            detail_start = len(rows)
+            rows.extend([-1] * footer_rows)
+            if self.panel_mode == 'inventory':
+                for offset, line in enumerate(footer.plain.splitlines()):
+                    if '[\\]' in line:
+                        rows[detail_start + offset] = -5
+            cell_rows.extend([()] * footer_rows)
+
+        if footer is not None and self.panel_mode == 'inventory':
+            append_detail()
+            text.append('\n')
+            rows.append(-1)
+            cell_rows.append(())
         for offset in range(start, min(len(lines), start + viewport)):
             text.append("\n")
             text.append_text(lines[offset])
             rows.append(row_indices[offset])
+            hits = self._inventory_cell_rows[offset] if offset < len(self._inventory_cell_rows) else None
+            cell_rows.append(hits or ())
         if len(lines) > viewport:
             last = min(len(lines), start + viewport)
             text.append(self._panel_scroll_hint(start + 1, last, len(lines)),
                         style=SCROLL_HINT_STYLE)
             rows.append(-1)
-        if footer is not None:
-            text.append("\n")
-            text.append_text(footer)
-            rows.append(-1)
+            cell_rows.append(())
+        if footer is not None and self.panel_mode != 'inventory':
+            append_detail()
         self._panel_rows = rows
+        self._panel_cell_rows = cell_rows
         return text
 
 
@@ -9222,6 +9430,49 @@ class PanelViewMixin:
 
         """
 
+
+        if self.panel_mode == "inventory":
+            visible = self._inventory_visible_indices()
+            if self.panel_selection not in visible:
+                return None
+            item = state.inventory[self.panel_selection]
+            width = self._portent_panel_width()
+            detail = Text()
+            name = '？？？' if 'oblivion_strong' in state.portents else tr(item.name)
+            quantity = f'×{item.quantity}'
+            title = Text.assemble(
+                (name, 'bold ' + item_name_color(item)),
+                (' ' * max(2, width-cell_len(name)-cell_len(quantity)), FC['muted']),
+                (quantity, FC['count']),
+            )
+            for line in title.wrap(_WRAP_CONSOLE, width, overflow="fold"):
+                if detail:
+                    detail.append("\n")
+                detail.append_text(line)
+            opened = getattr(self, 'inventory_intro_open', True)
+            detail.append('\n')
+            detail.append(tr(item.category), style=FC['muted'])
+            detail.append('  ·  ', style=FC['muted'])
+            detail.append(tr(item.rarity), style=item_name_color(item))
+            detail.append(('    ▾' if opened else '    ▸') + '  [\\]', style=FC['muted'])
+            if opened:
+                description = (tr('无念黑渊吞掉了记忆，你想不起这些东西的用法。')
+                               if 'oblivion_strong' in state.portents else _item_description(item, state))
+                prose_style = Style(color=FC['text'], italic=False, meta={'font_role': 'serif'})
+                prose_width = max(4, min(64, width-4))
+                desc_lines = list(Text(description, style=prose_style).wrap(
+                    _WRAP_CONSOLE, prose_width, overflow="fold"))
+                # 钉底介绍最多占面板一半高度，长介绍留一行省略号，别把格子挤出视窗。
+                budget = max(1, min(10, self._portent_viewport_rows() // 2) - 3)
+                if len(desc_lines) > budget:
+                    desc_lines = desc_lines[:budget]
+                    desc_lines[-1].truncate(max(1, width - 1))
+                    desc_lines[-1].append("…")
+                detail.append('\n')
+                for line in desc_lines:
+                    detail.append("\n  ")
+                    detail.append_text(line)
+            return detail
 
         if self.panel_mode == "tasks":
 
@@ -9621,6 +9872,12 @@ class PanelViewMixin:
         row_indices: list[int] = []
 
 
+        cell_rows: list[tuple[tuple[int, int, int], ...] | None] = []
+
+
+        self._inventory_cell_rows = []
+
+
         amnesia = "oblivion_strong" in state.portents
 
 
@@ -9642,6 +9899,9 @@ class PanelViewMixin:
                 row_indices.append(row_index)
 
 
+                cell_rows.append(None)
+
+
 
 
 
@@ -9658,6 +9918,10 @@ class PanelViewMixin:
 
 
             )
+            layout_label = '[' + (tr('格子') if self.inventory_layout == 'grid' else tr('竖排')) + ']'
+            header.append(' ' * max(1, self._portent_panel_width()-header.cell_len-cell_len(layout_label)))
+            header.append(layout_label, style=Style(color=FC['count'],
+                          reverse=self.inventory_layout_focused, bold=True))
 
 
             visible = self._inventory_visible_indices() if hasattr(self, '_inventory_visible_indices') else range(len(state.inventory))
@@ -9683,79 +9947,50 @@ class PanelViewMixin:
             if not visible:
                 add(Text(tr('没有匹配物品；按 Alt+F 修改搜索，或切换分类。')
                          if getattr(self, 'inventory_query', '') else tr('（空）'), style=PANEL_MUTED))
-            for index in visible:
 
 
-                item = state.inventory[index]
+            from .inventory_grid import build_grid
 
 
-                equipped = " *" if item.instance_id in state.equipped.values() else ""
+            if self.inventory_layout == 'list':
+                self._inventory_grid = None
+                for index in visible:
+                    item = state.inventory[index]
+                    selected = index == self.panel_selection and not self.inventory_layout_focused
+                    line = Text('▶ ' if selected else '  ', style=FC['count'])
+                    line.append(drop_glyph(item, self._symbol_mode()) + ' ', style=item_name_color(item))
+                    marked = item.instance_id in state.equipped.values() or state.board.placement(item.instance_id) is not None
+                    quantity = ('★ ' if marked else '') + '×' + str(item.quantity)
+                    name = Text(tr(item.name), style=item_name_color(item))
+                    name.truncate(max(1, self._portent_panel_width()-line.cell_len-cell_len(quantity)-2),
+                                  overflow='ellipsis')
+                    line.append_text(name)
+                    line.append(' ' * max(1, self._portent_panel_width()-line.cell_len-cell_len(quantity)))
+                    line.append(quantity, style=FC['count'])
+                    if selected:
+                        line.stylize('bold')
+                    add(line, index)
+                self._inventory_cell_rows = cell_rows
+                return lines, row_indices, header
 
-
-                selected = index == self.panel_selection
-
-
-                prefix = "▶ " if selected else "  "
-
-
-                # 物品名 = 物品自己的定义色（2026-09-21：不同物品不同颜色，
-
-
-                # 左右面板/气泡/播报同一口径），稀有度仍走四档微调。
-
-
-                style = item_name_color(item) + (" bold underline" if selected else "")
-
-
-                shown_name = "？？？" if amnesia else tr(item.name)
-
-
-                # 物品自带图标（书卷 📚 / 残页 📜）：行囊里也按同一把尺子画出来，
-
-
-                # 与地图、悬停的图标一致；没登记的物品不打前缀（保持列表清爽）。
-
-
-                # 装备（有栏位）也显示图标：四种栏位 emoji 与地图/携带意象页一致。
-
-
-                mark = f"{drop_glyph(item, self._symbol_mode())} " if (item.icon or item.slot) else ""
-
-
-                line = Text(f'{prefix}{index + 1}. ', style=FC['count'])
-
-
-                line.append(f'{mark}{shown_name}', style=item_name_color(item) + (' bold underline' if selected else ''))
-
-
-                line.append(f' ×{item.quantity}', style=FC['count'])
-
-
-                if equipped:
-
-
-                    line.append(equipped, style=FC['effect'])
-
-
-                add(line, index)
-
-
-                if not amnesia and self._entry_expanded(item.instance_id):
-
-
-                    for chunk in self._split_by_width(_item_description(item, state), width):
-
-
-                        add(Text("    " + chunk, style=PANEL_MUTED))
-
-
-                    for line in _item_sound_lines(state, item):
-
-
-                        for chunk in self._split_by_width(line, width):
-
-
-                            add(Text("    " + chunk, style=PANEL_MUTED))
+            grid = build_grid(
+                state.inventory,
+                list(visible),
+                state.inventory_capacity,
+                self._portent_panel_width(),
+                -1 if self.inventory_layout_focused else self.panel_selection,
+                self._symbol_mode(),
+                set(state.equipped.values()) | {p.instance_id for p in state.board.placements},
+                border_style=self.config.get("inventory_border_style") or "creased",
+                icon_style=self.config.get("inventory_icon_style") or "outline",
+            )
+            grid_start = len(lines)
+            for grid_line, hits in zip(grid.lines, grid.cell_hits):
+                lines.append(grid_line)
+                row_indices.append(-1)
+                cell_rows.append(hits)
+            self._inventory_grid = (grid_start, grid.metrics.cell_h, grid.metrics.columns, len(visible))
+            self._inventory_cell_rows = cell_rows
 
 
         elif self.panel_mode == "equipment":
@@ -10005,7 +10240,7 @@ class PanelViewMixin:
                 # 「在行囊里」和「已挂在栏位上」。
 
 
-                equipped = " *" if item.instance_id in state.equipped.values() else ""
+                equipped = " ★" if (state.board.placement(item.instance_id) is not None or item.instance_id in state.equipped.values()) else ""
 
 
                 # 行映射存真实行囊下标（口径见函数文档）：右键菜单/左键使用都按行囊定位。
@@ -10122,6 +10357,9 @@ class PanelViewMixin:
 
 
             return journal_lines(state, width=width, actionable=True, selection=self.panel_selection)
+
+
+        self._panel_cell_rows = cell_rows
 
 
         return lines, row_indices, header
@@ -10312,6 +10550,23 @@ class PanelViewMixin:
 
 
     def _message_text(self, message: str) -> Text:
+        # Old log rows outlive turns. Only matching actor names/relations affect
+        # their styling; movement and health do not. Keep caller mutations local.
+        actors = tuple((e.label, e.relation) for e in self.session.state.enemies
+                       if e.label in message)
+        key = (message, actors, get_language())
+        cache = getattr(self, '_message_render_cache', None)
+        if cache is None:
+            cache = self._message_render_cache = {}
+        cached = cache.get(key)
+        if cached is None:
+            cached = self._message_text_build(message)
+            if len(cache) >= 256:
+                del cache[next(iter(cache))]
+            cache[key] = cached
+        return cached.copy()
+
+    def _message_text_build(self, message: str) -> Text:
 
 
         marker, marker_style = self._message_marker(message)

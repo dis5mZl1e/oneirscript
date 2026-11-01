@@ -185,11 +185,11 @@ For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.
 
 ### Install the Python distribution
 
-The v0.1.1 Release focuses on desktop packages and the corresponding source archive.
-The Python 3.11+ wheel and source distribution remain in the [v0.1.0 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0). To use them, download that wheel, install it with your virtual environment's pip, then launch:
+The v0.1.1 Release also provides a wheel and source distribution for Python 3.11+.
+Download `oneirscript-0.1.1-py3-none-any.whl`, install it with your virtual environment's pip, then launch:
 
 ```sh
-python -m pip install oneirscript-0.1.0-py3-none-any.whl
+python -m pip install oneirscript-0.1.1-py3-none-any.whl
 oneirscript
 ```
 

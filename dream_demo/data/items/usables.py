@@ -6,7 +6,7 @@ from typing import Any
 
 ITEMS = {
     "model_screw": {
-        "name": "模型盒里多出的螺丝", "category": "惯用物", "slot": "惯用物",
+        "name": "模型余螺丝", "category": "惯用物", "slot": "惯用物",
         "rarity": "常见",
         "description": "拧紧一个错误，也许会松开另一个。", "color": "bright_white", "effect": "repair",
     },

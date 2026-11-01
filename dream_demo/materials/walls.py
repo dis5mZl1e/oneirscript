@@ -385,3 +385,7 @@ def wall_def(kind: str) -> WallDef:
     return WALL_DEFINITIONS.get(kind, WALL_DEFINITIONS[DEFAULT_WALL])
 from .library import WALLS as LIBRARY_WALLS
 WALL_DEFINITIONS.update(LIBRARY_WALLS)
+
+# Preserve the former unknown-wall fallback mechanics; only the identity differs.
+WALL_DEFINITIONS['玩具箱壁'] = replace(WALL_DEFINITIONS[DEFAULT_WALL],
+    name='玩具箱壁', symbol_key='wall.toy_box', spawn_realms=('toy_memories',))

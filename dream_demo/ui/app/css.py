@@ -260,6 +260,9 @@ class AppCssMixin:
     #nav-environment:hover, #nav-environment:focus { background: #12302a 85%; border: none; }
     # 当前对象沿用旧版完整地形叙述，按实际列宽自动换行。
     #layout { layers: default overlay toast; }
+    /* 地图提示容器本身必须在地图面板之上；子件的 default layer 不能
+       抵消兄弟容器被地图覆盖的问题。 */
+    #map-hints { layer: toast; }
     #map-hints > * { layer: default; }
     #hover-info { height: auto; color: #ffffff; }
     #sidebar-tools { height: 1; }
@@ -442,11 +445,21 @@ class AppCssMixin:
     # 高度预算：标题 1 + 盘面/说明 1fr + 工具栏 auto + 键位提示 auto；80×24 下
     # 完整 6 行盘面与「确认整理／取消」都可见，说明区自己滚动。
     #board-editor { display: none; position: absolute; width: 100%; height: 100%; padding: 0 1; layer: overlay; }
-    #board-editor-title { width: 100%; height: 2; color: #ffd166; text-style: bold; }
+    #board-editor-title { width: 100%; height: 1; color: #ffd166; text-style: bold; }
     #board-editor-body { width: 100%; height: 1fr; }
     # 盘面控件自带命中表，宽度按内容（每逻辑格两终端列，见 board_editor.GRID_ORIGIN_X）。
     #board-editor-grid { width: auto; height: auto; }
     #board-editor-map { width: 22; height: 1fr; }
+    # 玩法要点入口（2026-10-31）：盘面左上的一行，点开悬浮说明；标题行省下的
+    # 一行正好给它，6 行盘面与说明区高度不变。
+    #board-editor-info { width: auto; height: 1; color: #c9a0ff; }
+    #board-editor-info:hover { color: #ffd166; text-style: bold; }
+    # 说明悬浮窗：整屏遮罩收点击（点框外=关），卡片居中、衬线正文；英文正文
+    # 比中文长，卡片本身可滚（窄屏不裁句），滚轮在框内有效。
+    #board-editor-info-pane { display: none; position: absolute; width: 100%; height: 100%; layer: inspection; align: center middle; background: #05070b 55%; }
+    #board-editor-info-pane.open { display: block; }
+    #board-editor-info-card { width: 74; max-width: 96%; height: auto; max-height: 88%; border: round #c9a0ff; background: #12141c; scrollbar-size-vertical: 1; }
+    #board-editor-info-body { width: 100%; height: auto; padding: 1 2; color: #e6e1d3; }
     #board-editor-inspect { width: 100%; height: 1fr; overflow-y: auto; color: #b2bacb; }
     #board-editor-main { width: 1fr; height: 1fr; }
     #board-editor-grammar { height: auto; margin-bottom: 1; }

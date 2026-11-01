@@ -15,6 +15,7 @@ from textual.widgets._header import HeaderClockSpace, HeaderTitle
 from textual.visual import visualize
 
 from ..core import GameState
+from ..realm_glyphs import presentation_token
 from .styles import MAP_DEFAULT_ZOOM, MAP_ZOOM_LEVELS, highlighted_message
 from ..i18n import tr
 from ._native import _trace_native
@@ -121,7 +122,7 @@ class MapView(WorldCanvas):
         # 未经视口计算的实例（单元测试直接构造 MapView()、或还没法算出内容尺寸）
         # 也要有合法格尺寸：叠加层脏区刷新会用 self.cell_w/cell_h 换算像素矩形。
         _zoom = self.zoom if self.zoom in MAP_ZOOM_LEVELS else MAP_DEFAULT_ZOOM
-        self.cell_w, self.cell_h = max(1, round(2 * _zoom)), max(1, round(_zoom))
+        self.cell_w, self.cell_h = max(1, int(2 * _zoom + .5)), max(1, round(_zoom))
         self.cell_ranges = {}
         self.animated_combat = False
         self._scene_text = None
@@ -136,6 +137,8 @@ class MapView(WorldCanvas):
         # 帧的第二次整包 present，所以叠加层写入时消费掉它并跳过那次写出。
         self._base_rerender_pending = False
         self._interaction_key = None
+        from ..core.map_scene import SceneBuildCache
+        self._scene_build_cache = SceneBuildCache()
         self.shared_scene = None
         self._pending_shared_scene = None
         self._next_frame_defer = None
@@ -191,7 +194,7 @@ class MapView(WorldCanvas):
             len(state.events),
             width,
             height,
-            self.symbol_mode,
+            self.symbol_mode, presentation_token(),
             self.zoom,
             tuple(sorted(state.electric_field_cells())),
         )
@@ -210,17 +213,29 @@ class MapView(WorldCanvas):
         zoom = self.zoom if self.zoom in MAP_ZOOM_LEVELS else MAP_DEFAULT_ZOOM
         # 0.5 档是全图概览：每格压缩到一列。此前 max(2, ...) 把它
         # 强行钳成两列，导致 Ctrl+↓ 的 zoom 数值变了、可视范围却不变。
-        cell_w = max(1, round(2 * zoom))
+        # Character mode snaps half-column ties upward instead of rounding
+        # 125% back down to the unchanged 100% width (Python's bankers' round).
+        cell_w = max(1, int(2 * zoom + .5))
         cell_h = max(1, round(zoom))
         self.cell_w, self.cell_h = cell_w, cell_h
+        if (getattr(self.app, '_map_overview_zoom', None) is not None
+                and self.app.resolved_map_display()[0] == 'image'):
+            # The image transport fits the whole scene into the map region.
+            # Keep logical tiles integral; only the final overview is scaled.
+            self.cell_w = self.cell_h = 1
+            return (0, 0, state.width, state.height)
         if self.content_size.width <= 0 or self.content_size.height <= 0:
             # 地图被整块遮住时（键位表/QoL 确认框把 #map 设成 visibility:hidden，
             # content_size 归零），这里会算出 1×1 的退化视口并把相机钉到玩家脚下，
             # 关掉浮层后地图就跳两格。看不见的那一帧不该改写相机。
             return self.viewport
         physical_cols = max(1, self.content_size.width - 1)
-        width = max(1, min(physical_cols // cell_w, state.width))
-        height = max(1, min(self.content_size.height // cell_h, state.height))
+        if zoom in (1.25, 1.5) and self.app.resolved_map_display()[0] == 'image':
+            # Keep text/scene storage integral; image geometry supports subcells.
+            self.cell_w, self.cell_h = 2, 1
+            cell_w, cell_h = 2 * zoom, zoom
+        width = max(1, min(int(physical_cols // cell_w), state.width))
+        height = max(1, min(int(self.content_size.height // cell_h), state.height))
         # 相机跨尺寸锚定：可视格数一变（面板让宽、缩放、改窗口）原实现就把
         # previous 丢掉重新居中，整幅地图横向推 7 格、纵向推 4 行——玩家看到的是
         # 「切面板时地图跳一下」。同一层内玩家仍在上一帧视口里时改为沿用
@@ -366,7 +381,7 @@ class MapView(WorldCanvas):
         else:
             scene = build_scene(state, viewport=viewport, cell_w=self.cell_w, cell_h=self.cell_h,
                                 legacy_terrain=not bool(getattr(state,"map_memory_enabled",False)),
-                                visible=visible)
+                                visible=visible, cache=self._scene_build_cache)
             self.shared_scene = present_scene(scene, rendered, priority=priority,
                 source_cell_w=glyph_cell_w, ranges=ranges, visuals=visuals)
         # 新场景意味着上一帧采样贴片已不代表终端当前像素：mini 事务去重失效。
@@ -453,7 +468,7 @@ class MapView(WorldCanvas):
         from .map_presentation import present_scene
         scene = build_scene(state, viewport=viewport, cell_w=cell_w, cell_h=cell_h,
                             legacy_terrain=not bool(getattr(state, "map_memory_enabled", False)),
-                            visible=visible)
+                            visible=visible, cache=self._scene_build_cache)
         self.shared_scene = present_scene(scene, rendered, priority=priority,
                                           source_cell_w=source_w, ranges=ranges)
 
@@ -633,6 +648,17 @@ class MapView(WorldCanvas):
             dx, dy = self.content_offset
             self.refresh(region.translate((-dx, -dy)))
 
+    @property
+    def fractional_image_zoom(self):
+        return self.display_mode == 'image' and self.zoom in (1.25, 1.5)
+
+    def image_extent(self):
+        """Terminal-space image bounds, independent of integral text storage."""
+        _, _, width, height = self.viewport
+        if self.fractional_image_zoom:
+            return round(width * 2 * self.zoom), round(height * self.zoom)
+        return width * self.cell_w, height * self.cell_h
+
     def image_frame(self):
         from .map_image import render_scene_image
         transition = getattr(self.app,'_floor_transition',None)
@@ -648,6 +674,8 @@ class MapView(WorldCanvas):
         if pitch is not None:
             px,py=max(1,round(pitch[0])),max(1,round(pitch[1]))
         cell_px = (px*self.cell_w,py*self.cell_h)
+        if self.fractional_image_zoom:
+            cell_px = (max(1, round(px*2*self.zoom)), max(1, round(py*self.zoom)))
         preview = self.preview_tints or {}
         marks = self.preview_marks or {}
         smooth_player = self._smooth_player_sample()
@@ -907,6 +935,14 @@ class MapView(WorldCanvas):
             return None
         cell_w = getattr(self, "cell_w", 2)
         cell_h = getattr(self, "cell_h", 1)
+        if self.fractional_image_zoom:
+            columns, rows = self.image_extent()
+            cell_w = min(columns, self.content_size.width) / max(1, width)
+            cell_h = min(rows, self.content_size.height) / max(1, height)
+        if (getattr(self.app, '_map_overview_zoom', None) is not None
+                and self.display_mode == 'image'):
+            cell_w = min(width, self.content_size.width) / max(1, width)
+            cell_h = min(height, self.content_size.height) / max(1, height)
         smooth_player = self._smooth_player_sample()
         if smooth_player is not None:
             player_pos, sample = smooth_player
@@ -967,6 +1003,31 @@ class ClickableHoverInfo(Static):
 
 
 class EventPanel(OrnamentBorderMixin, WorldCanvas):
+    def _on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
+        # The sidebar slices its Rich rows itself. Do not let Widget consume
+        # the wheel by scrolling an overflowing render before the app sees it.
+        if self.id == 'panel' and self.app._scroll_right_panel(event, 1):
+            event.prevent_default()
+            return
+        super()._on_mouse_scroll_up(event)
+
+    def _on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
+        if self.id == 'panel' and self.app._scroll_right_panel(event, -1):
+            event.prevent_default()
+            return
+        super()._on_mouse_scroll_down(event)
+
+    def on_mount(self) -> None:
+        if self.id == 'panel':
+            from .inventory_icons import InventoryIconPlane
+            self._inventory_icon_plane = InventoryIconPlane(self)
+            self.set_interval(0.1, self._inventory_icon_plane.refresh)
+
+    def on_unmount(self) -> None:
+        plane = getattr(self, '_inventory_icon_plane', None)
+        if plane is not None:
+            plane.close()
+
     def on_resize(self, event) -> None:
         self.app.refresh_view()
 
@@ -1357,6 +1418,50 @@ class _PassiveHeaderIcon(Static):
         event.stop()
 
 
+class MapZoomControls(Static):
+    """Rich links keep map controls in the existing one-line header."""
+    DEFAULT_CSS = '''
+    MapZoomControls { dock: right; margin-right: 14; width: 26; height: 1; content-align: right middle; }
+    '''
+
+    def on_mount(self):
+        self.set_interval(.25, self.refresh)
+
+    def render(self):
+        if getattr(self.app, 'home_mode', True):
+            return Text('')
+        view = self.app.query_one('#map')
+        text = Text()
+        text.append(' (−) ', style='bold cyan link zoom:out')
+        text.append(f'{view.zoom:.0%} ', style='link zoom:reset')
+        text.append(' (+) ', style='bold cyan link zoom:in')
+        text.append(tr('跟随') if getattr(self.app, '_map_overview_zoom', None) is not None else tr('全图'),
+                    style='underline link zoom:fit')
+        text.append('  ')
+        return text
+
+    def on_click(self, event):
+        link = event.style.link or ''
+        if link.startswith('zoom:') and not self.app.home_mode:
+            action = link.split(':')[1]
+            if action in ('in', 'out'):
+                self.app._zoom_map(1 if action == 'in' else -1)
+            elif action == 'reset':
+                self.app._map_overview_zoom = None
+                self.app._qol_zoom(False)
+            else:
+                previous = getattr(self.app, '_map_overview_zoom', None)
+                if previous is None:
+                    self.app._map_overview_zoom = self.app.query_one('#map').zoom
+                    self.app._qol_zoom(True)
+                else:
+                    self.app.query_one('#map').zoom = previous
+                    self.app._map_overview_zoom = None
+                    self.app.refresh_view()
+            self.refresh()
+        event.stop()
+
+
 class DreamHeader(Header):
     """标准 Header 布局，右侧时钟位换成本局时长；标题位可被事件播报条临时替换。
 
@@ -1376,3 +1481,4 @@ class DreamHeader(Header):
         yield HeaderTicker(id="header-ticker")
         yield HeaderTitle()
         yield RunClock()
+        yield MapZoomControls(id='map-zoom-controls')

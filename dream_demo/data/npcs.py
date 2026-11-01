@@ -45,6 +45,7 @@ NPC_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "npc.calibrator": {
         "name": "校准师", "glyph": "⊞", "color": "#e8e8f0",
+        "description": "守着合辙枢的校准师，负责检查压板与立方体的咬合。",
         "integrity": 40, "relation": "稳定意识", "trauma_type": "心智创伤",
         "dialogue": ["每个空心方框都是压板。全部放上立方体，合辙枢才会打开校准之门。", "立方体到位后仍可移动。先留出绕行的位置，别把箱子推入没有标记的墙角。", "推错了？回来与我交谈，选择重置本层机关。"],
         "options": (
@@ -56,6 +57,7 @@ NPC_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "npc.toy_bear": {
         "name": "缺一只眼的布偶熊", "glyph": "ღ", "color": "#c8a86a",
+        "description": "缺一只眼的布偶熊，守着三盏灯与最后的合辙枢。",
         "integrity": 40, "relation": "稳定意识", "trauma_type": "心智创伤",
         "dialogue": ["门记得两盏并肩的灯，也记得第三盏灯熄灭时的安静。", "左灯与中灯经过合辙，右灯经过反相接线。观察它们怎样汇入最后的合辙枢。", "靠近开关，撞一下或按行动键操作。推错了？回来与我交谈，选择重置本层机关。"],
         "options": (
@@ -67,6 +69,7 @@ NPC_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "npc.wind_up_soldier": {
         "name": "上弦的士兵", "glyph": "♟", "color": "#8a9ac8",
+        "description": "上弦的士兵，守着两只需要调相的摆轮。",
         "integrity": 40, "relation": "稳定意识", "trauma_type": "清醒创伤",
         "dialogue": ["两只摆轮每八回合亮两拍，开局相差四拍。调相开关能让右摆轮追上左摆轮。", "让两轮同亮，再用你的重量压住同步压板。门会记住这次重合，不必抢跑。"],
         "options": (
@@ -78,6 +81,7 @@ NPC_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "npc.marionette": {
         "name": "提线木偶", "glyph": "✃", "color": "#c9a0ff",
+        "description": "提线木偶，把童谣的音序缝进压板机关。",
         "integrity": 40, "relation": "稳定意识", "trauma_type": "心智创伤",
         "dialogue": ["童谣的针脚是：低音、高音、中音、高音。每次走上压板才会记下一针。", "给玩偶上弦，再把童谣接回去。站着不动不会重复，踩错也不会受伤。"],
         "options": (

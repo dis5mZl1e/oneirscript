@@ -194,11 +194,28 @@ def write_config(base: Path, game_command: list[str] | None = None, *, maximize:
     if font is not None:
         fonts=persistent_font_dir(font.parent,base)
         lines.append(f"config.font_dirs = {{ {_lua_string(str(fonts))} }}")
+        # WezTerm 用 font_with_fallback 的第一个字体决定整个网格的单元宽高；
+        # 装饰字体只能做回退，排到主字体前面会把横向单元宽度撑坏。
+        from .realm_glyphs import available_codes, FAMILY as realm_family, available_emoji_codes
+        if available_emoji_codes() and (fonts / "DreamStrataObjectEmoji.ttf").is_file():
+            names_list.insert(1, '{ family = "Dream Strata Object Emoji", assume_emoji_presentation = true }')
+            lines.append("config.set_environment_variables = config.set_environment_variables or {}")
+            lines.append(f"config.set_environment_variables.{env_name('OBJECT_EMOJI_FONT')} = '1'")
+        if available_codes() and (fonts / 'DreamStrataLongDream.ttf').is_file():
+            names_list.insert(2, _lua_string(realm_family))
+            lines.append('config.set_environment_variables = config.set_environment_variables or {}')
+            lines.append(f"config.set_environment_variables.{env_name('LONG_DREAM_FONT')} = '1'")
+        from .plant_glyphs import available_codes as plant_codes, FAMILY as plant_family
+        if plant_codes() and (fonts / 'DreamStrataPlantIcons.ttf').is_file():
+            names_list.insert(3, _lua_string(plant_family))
+            lines.append('config.set_environment_variables = config.set_environment_variables or {}')
+            lines.append(f"config.set_environment_variables.{env_name('PLANT_ICONS_FONT')} = '1'")
         icons = _optional_faces(game_icon_face, fonts, '游戏图标字体', default=None)
         if icons and icons.get('family'):
             if not unified:
                 names_list.append(_lua_string(icons['family']))
-            lines.append(f"config.set_environment_variables = {{ {env_name('ICONS')} = '1' }}")
+            lines.append("config.set_environment_variables = config.set_environment_variables or {}")
+            lines.append(f"config.set_environment_variables.{env_name('ICONS')} = '1'")
         if not unified:
             semantic = _optional_faces(semantic_icon_faces, fonts, '语义图标字体', default=[])
             names_list.extend(_lua_string(item['family']) for item in semantic if item.get('family'))
@@ -220,7 +237,8 @@ def write_config(base: Path, game_command: list[str] | None = None, *, maximize:
     # Synthetic italics can make WezTerm halve individual wide CJK glyphs
     # (native reproduction: 型 advances 9.5 instead of 19). Use upright Song
     # faces for italic attributes in this game window; keep bold and colours.
-    bold_names=[f'{{ family = {_lua_string(face.family)}, weight = "Bold", italic = false }}',*names_list[1:]]
+    bold_names=[f'{{ family = {_lua_string(face.family)}, weight = "Bold", italic = false }}'
+                if name == _lua_string(face.family) else name for name in names_list]
     lines.append('local readable_bold = wezterm.font_with_fallback({'+', '.join(bold_names)+'})')
     sans_manifest = fonts / 'interface-sans.json'
     sans = None
@@ -245,11 +263,13 @@ def write_config(base: Path, game_command: list[str] | None = None, *, maximize:
     lines.append('}')
     lines.append(f"config.font_size = {FONT_SIZE}")
     lines.append(f"config.cell_width = {CELL_WIDTH}")
-    # A glyph must not change size when the next terminal cell changes.  The
-    # conditional overflow rule rescales our one-column PUA icons depending on
-    # whether their neighbour happens to be a space (including during redraws).
-    lines.append("config.allow_square_glyphs_to_overflow_width = 'Never'")
+    # Icon helpers reserve a second column with a space. Let square PUA and
+    # text-presentation emoji use it instead of squeezing into one column.
+    # Always is stable during redraws, unlike WhenFollowedBySpace.
+    lines.append("config.allow_square_glyphs_to_overflow_width = 'Always'")
     lines.append('config.unicode_version = 14')
+    # Procedural box/block glyphs meet at cell edges, independent of font bearings.
+    lines.append('config.custom_block_glyphs = true')
     if not sys.platform.startswith('win'):
         # 游戏内「Kitty 图像协议（实验）」默认关闭；这里只让非 Windows WezTerm
         # 解析 APC。Windows 的 ConPTY 会丢弃该序列，无需开启。

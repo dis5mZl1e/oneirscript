@@ -206,8 +206,8 @@ class KeyRoutingMixin:
             self._move_observe_cursor(*direction)
             return
         # Alt+方向 = 地图缩放（原 Ctrl+方向迁移；Ctrl 序列保留兼容）。
-        if key in ("ctrl+up", "ctrl+down", "alt+up", "alt+down"):
-            self._zoom_map(1 if key in ("ctrl+up", "alt+up") else -1)
+        if key in ("ctrl+up", "ctrl+down", "alt+up", "alt+down", "(", ")", "left_parenthesis", "right_parenthesis"):
+            self._zoom_map(1 if key in ("ctrl+up", "alt+up", ")", "right_parenthesis") else -1)
             return
         panel = self._panel_shortcut_for(key, character)
         if panel is not None:
@@ -571,6 +571,8 @@ class KeyRoutingMixin:
                 return indices[self.panel_selection]
             return None
         if self.panel_mode == "inventory":
+            if self.inventory_layout_focused:
+                return None
             if self.panel_selection in self._inventory_visible_indices():
                 return self.panel_selection
         return None
@@ -591,7 +593,9 @@ class KeyRoutingMixin:
             return False
         if self._world_tamper_side_active():
             return False
-        if key in self.WASD_PANEL_KEYS:
+        if self._inventory_layout_shortcut(key, getattr(event, 'character', None)):
+            pass
+        elif key in self.WASD_PANEL_KEYS:
             self._route_wasd_key(key)
         elif key in ('enter', 'return'):
             self._activate_panel_selection()
@@ -609,6 +613,21 @@ class KeyRoutingMixin:
         event.stop()
         event.prevent_default()
         return True
+
+    def _toggle_inventory_layout(self) -> None:
+        self.inventory_layout = 'list' if self.inventory_layout == 'grid' else 'grid'
+        self.panel_scroll = 0
+        self._panel_enter_mode = 'inventory'
+        if not self.inventory_layout_focused:
+            self._follow_list_selection()
+        self._refresh_panel_selection()
+
+    def _inventory_layout_shortcut(self, key, character=None) -> bool:
+        if (self.panel_mode == 'inventory' and self.cursor_zone == 'panel'
+                and (key in ('-', '=', 'minus', 'equals_sign') or character in ('-', '='))):
+            self._toggle_inventory_layout()
+            return True
+        return False
 
     def _cycle_sidebar_subtab(self, delta: int) -> None:
         """-/= 在当前右栏工作区的子标签之间切换（2026-10-24 键位治理 A1）。
@@ -689,13 +708,35 @@ class KeyRoutingMixin:
         if move is None:
             return False
         axis, delta = move
-        if axis == "h":
-            if self.panel_mode == 'inventory':
-                # 2026-10-24 玩家定稿：横轴到端**停住**，不再把焦点丢回地图。
-                # 区域切换只由 / 键承担，移动与点击都不再改 zone。
+        if self.panel_mode == 'inventory':
+            if axis == 'h':
+                # 2026-10-24 玩家定稿：横轴切分类（到端停住），纵轴按网格整行移动。
                 self.cycle_panel_subpage(delta)
                 self._panel_enter_mode = self.panel_mode
                 return True
+            indices = self._inventory_visible_indices()
+            if self.inventory_layout_focused:
+                if delta > 0 and indices:
+                    self.inventory_layout_focused = False
+                    self.panel_selection = indices[0]
+                    self._panel_enter_mode = 'inventory'
+                    self._follow_list_selection()
+                    self._refresh_navigation_selection()
+                return True
+            position = indices.index(self.panel_selection) if self.panel_selection in indices else 0
+            step = 5 if self.inventory_layout == 'grid' else 1
+            if delta < 0 and position < step:
+                self.inventory_layout_focused = True
+                self._panel_enter_mode = 'inventory'
+                self._refresh_navigation_selection()
+                return True
+            if indices:
+                target = max(0, min(len(indices) - 1, position + delta * step))
+                if delta > 0 and position // step == (len(indices) - 1) // step:
+                    target = position
+                self._move_panel_selection(target - position)
+            return True
+        if axis == "h":
             from ..sidebar_workspaces import ROUTES
             routes = [route for route in ROUTES.get(self.sidebar_workspace, ()) if not route.mode.startswith('@')]
             index = next((i for i, route in enumerate(routes)
@@ -936,6 +977,9 @@ class KeyRoutingMixin:
         else:
             real_index = self.panel_selection
         starts = [i for i, row in enumerate(row_indices) if row == real_index]
+        if self.panel_mode == 'inventory' and self.inventory_layout == 'grid':
+            starts = [i for i, hits in enumerate(self._inventory_cell_rows)
+                      if hits and any(hit[2] == real_index for hit in hits)]
         if not starts:
             return
         top = starts[0]
@@ -944,8 +988,9 @@ class KeyRoutingMixin:
         strip_lines = self._panel_subtabs_lines()
         if strip_lines:
             viewport = max(1, viewport - len(strip_lines))
-        if self._panel_footer(self.session.state) is not None:
-            viewport = max(1, viewport - 1)
+        footer = self._panel_footer(self.session.state)
+        if footer is not None:
+            viewport = max(1, viewport - (footer.plain.count("\n") + 1))
         if top < self.panel_scroll:
             self.panel_scroll = top
         elif bottom > self.panel_scroll + viewport:
@@ -983,6 +1028,9 @@ class KeyRoutingMixin:
         且点击路径不受「渲染后目标操作条数变化」的影响。
         """
         state = self.session.state
+        if self.panel_mode == 'inventory' and self.inventory_layout_focused:
+            self._toggle_inventory_layout()
+            return
         if self.panel_mode == "equipment" and self._panel_subpage_id() == "memory":
             # 记忆碎片分层页整页只读：Enter 不触发装备/拾取。
             return
@@ -1351,6 +1399,15 @@ class KeyRoutingMixin:
             self._sync_equipment_syntax()
             self.refresh_view()
     def on_key(self, event) -> None:
+        if getattr(self, '_board_info_open', False):
+            self._mark_key_handled(event.key)
+            if getattr(self, '_info_context', '') == 'intro':
+                self.game_intro_key(event.key)
+            else:
+                self.close_board_info()
+            event.stop()
+            event.prevent_default()
+            return
         self._note_activity()
         if getattr(self, '_coach_handle_key', lambda _event: False)(event):
             return
@@ -1368,6 +1425,15 @@ class KeyRoutingMixin:
         # 先吃掉，走不到 on_key，另由 DreamApp.action_focus_next 补收。
         self._dismiss_transient()
         if self._empty_aim_key(key):
+            self._mark_key_handled(key)
+            event.stop()
+            event.prevent_default()
+            return
+        pending_choice = getattr(self, 'equipment_choice', None)
+        if (key == 'r' and isinstance(pending_choice, dict)
+                and pending_choice.get('command') == 'aim_equipment'
+                and not any(getattr(self, attr, None) is not None for attr in self.LEFT_OVERLAY_ATTRS)):
+            self.action_reload_weapon()
             self._mark_key_handled(key)
             event.stop()
             event.prevent_default()
@@ -1625,6 +1691,8 @@ class KeyRoutingMixin:
             self.assist_key()
             return
         if key in ("backslash",) or character == "\\":
+            if self.panel_mode == 'inventory' and self.cell_detail_target is None:
+                self.inventory_intro_open = not self.inventory_intro_open
             self.details_expanded = not self.details_expanded
             # 少字模式默认收起，但玩家亲手按过 \ 后以玩家选择为准。
             self._terse_details_manual = True
@@ -2112,8 +2180,8 @@ class KeyRoutingMixin:
                 return
             # Other inputs cancel the prompt and retain their ordinary action.
         # Alt+方向 = 地图缩放（原 Ctrl+方向迁移；Ctrl 序列保留兼容）。
-        if key in ("ctrl+up", "ctrl+down", "alt+up", "alt+down"):
-            self._zoom_map(1 if key in ("ctrl+up", "alt+up") else -1)
+        if key in ("ctrl+up", "ctrl+down", "alt+up", "alt+down", "(", ")", "left_parenthesis", "right_parenthesis"):
+            self._zoom_map(1 if key in ("ctrl+up", "alt+up", ")", "right_parenthesis") else -1)
             return
         # 洞察之镜三选一面板：↑↓ 选择、Enter/左键 选定并消耗。
         if self.mirror_index is not None:
@@ -2200,6 +2268,8 @@ class KeyRoutingMixin:
         # equals_sign/plus 是 '-'/'_'、'='/'+' 在 Textual 里的键名，一并归一。
         subtab_prev = str(self.config.get("key_subtab_prev") or "-").lower()
         subtab_next = str(self.config.get("key_subtab_next") or "=").lower()
+        if self._inventory_layout_shortcut(key, character):
+            return
         if (subtab_prev in (key, character)
                 or (subtab_prev == "-" and (key in ("minus", "underscore") or character in ("-", "_")))):
             self._cycle_sidebar_subtab(-1)
@@ -2554,6 +2624,9 @@ class KeyRoutingMixin:
         self._return_home()
 
     def action_context_q(self) -> None:
+        if getattr(self, '_board_info_open', False):
+            self.close_board_info()
+            return
         if self._inspection_active() and self._dismiss_left_panel():
             return
         if self._empty_aim_key('q'):

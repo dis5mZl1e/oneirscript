@@ -11,6 +11,11 @@ class ProjectileGlyph(str):
         return {'.':.12, "'":.16, ':':.30, 'o':.46, '*':.52, '~':.50}.get(self,.64)
 
 
+class AmbientGlyph(ProjectileGlyph):
+    """Small ASCII ink shared by ambient cues in both map backends."""
+    raster_scale = .28
+
+
 @dataclass(frozen=True)
 class ProjectileVisual:
     family: str
