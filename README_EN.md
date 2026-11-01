@@ -24,6 +24,7 @@
 - [Feedback and contributions](#en-contribute)
 - [License](#en-license)
 - [AI-assisted development, forks, and contribution review](#en-ai-policy)
+- [English 0.1.1 changelog](CHANGELOG_EN.md)
 
 <a id="en-overview"></a>
 

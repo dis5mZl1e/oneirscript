@@ -1,5 +1,7 @@
 # Oneirscript v0.1.1
 
+**Full English changelog:** [CHANGELOG_EN.md](https://github.com/dis5mZl1e/oneirscript/blob/main/CHANGELOG_EN.md)
+
 Released 2026-11-01. Desktop packages are available for Windows x64, Linux x64,
 macOS Apple Silicon and macOS Intel. Choose **`-en`** for English or **`-zh`** for
 Chinese, then extract the whole archive.
