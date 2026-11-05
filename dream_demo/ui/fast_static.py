@@ -37,6 +37,13 @@ def _same_content(old, new) -> bool:
         return True
     from rich.text import Text
 
+    if isinstance(old, Text) and type(old) is type(new):
+        # Rich Text equality omits rendering options. A style-only repair must
+        # reach the widget just like a change to its text or spans.
+        return (old == new and old.style == new.style
+                and old.justify == new.justify and old.overflow == new.overflow
+                and old.no_wrap == new.no_wrap and old.end == new.end
+                and old.tab_size == new.tab_size)
     if isinstance(old, (str, Text)) and type(old) is type(new):
         return old == new
     return False

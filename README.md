@@ -4,7 +4,7 @@
 
 *Rewrite the dream. Face what follows.*
 
-**[简体中文](README_CN.md) · [English](README_EN.md) · [Download v0.1.1 / 下载](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)**
+**[简体中文](README_CN.md) · [English](README_EN.md) · [Download v0.1.2 / 下载](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)**
 
 **传统 Roguelike · 网格回合制 · 程序生成 · 失败重开**
 
@@ -63,8 +63,8 @@ Session commands feed the rules and world state. Equipment compilation, tamper s
 | [中文技术介绍](TECHNICAL_CN.md) | 架构、代码导航、系统实现、运行检查与仓库范围 |
 | [English technical guide](TECHNICAL_EN.md) | Architecture, code map, system implementation, development checks and repository scope |
 
-本仓库主分支源码已同步到 v0.1.1（开发快照 `d553842a`），并保留 Python 安装态适配；v0.1.1 桌面包与对应源码 ZIP 见 Release。网页版、便携终端二进制和完整维护者工具链另行维护。
-The main-branch source is synchronized to v0.1.1 (development snapshot `d553842a`) with the Python-installation adapters kept on top; the v0.1.1 desktop packages and corresponding source ZIP are in the Release. The web frontend, portable terminal binaries and full maintainer toolchain are maintained separately.
+本仓库主分支源码已同步到 v0.1.2（开发快照 `0df1867c`），并保留 Python 安装态适配；v0.1.2 桌面包与对应源码 ZIP 见 Release。网页版、便携终端二进制和完整维护者工具链另行维护。
+The main-branch source is synchronized to v0.1.2 (development snapshot `0df1867c`) with the Python-installation adapters kept on top; the v0.1.2 desktop packages and corresponding source ZIP are in the Release. The web frontend, portable terminal binaries and full maintainer toolchain are maintained separately.
 
 ## 阅读指南 / Guides
 

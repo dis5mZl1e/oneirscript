@@ -110,10 +110,10 @@ class SceneSnapshot:
     observe_layer: str = ""
 
     def __post_init__(self):
-        if not isinstance(self.cells, MappingProxyType):
-            object.__setattr__(self,'cells',MappingProxyType(dict(self.cells)))
-        if not isinstance(self.visuals, MappingProxyType):
-            object.__setattr__(self,'visuals',MappingProxyType(dict(self.visuals)))
+        # A read-only proxy can still wrap a dictionary retained by the caller.
+        # Every snapshot owns its backing maps, including proxy inputs.
+        object.__setattr__(self,'cells',MappingProxyType(dict(self.cells)))
+        object.__setattr__(self,'visuals',MappingProxyType(dict(self.visuals)))
 
     def cell(self, x: int, y: int) -> SceneCell | None:
         return self.cells.get((int(x), int(y)))

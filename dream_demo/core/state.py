@@ -64,6 +64,7 @@ from .enemies import EnemyMixin
 from .logic import LogicMixin
 from .dreams import DreamRealmMixin
 from .entities import ActionResult, Cell, Entity, Item, LayerSnapshot, WorldEvent, WorldItem
+from .metadata_versions import OwnedList, owned_copy
 from ..data.dreams import EMBER_LIGHTER_NPC, REALM_ENTRY_NPCS, REALM_GATE_DEFS
 from ..equipment.aggregation import diminish_int
 from ..equipment.board import EquipmentBoard
@@ -221,8 +222,8 @@ class GameState(
     legacy_basic_magazine: int | None = None
     legacy_basic_reload_steps: int = 0
     legacy_basic_reload_paid: bool = False
-    world_items: list[WorldItem] = field(default_factory=list)
-    events: list[WorldEvent] = field(default_factory=list)
+    world_items: list[WorldItem] = field(default_factory=OwnedList)
+    events: list[WorldEvent] = field(default_factory=OwnedList)
     inventory: list[Item] = field(default_factory=list)
     # 携带意象联想盘（8×6）是装备的唯一权威。旧五栏 `equipped` 只是兼容读取
     # 视图（见 EquipmentBoardMixin / EquipmentView.compat_slots），不参与结算。
@@ -517,6 +518,19 @@ class GameState(
     # 挂起后，只有拓扑真的变了才重新尝试，避免每回合重复寻路。
     topology_revision: int = 0
 
+    # UI invalidation is runtime state; persistence deliberately excludes it.
+    ui_dirty: set[str] = field(default_factory=lambda: {
+        'status', 'body', 'panels', 'log', 'hitmap'})
+    ui_revision: int = 0
+    material_revision: int = 0
+
+    def mark_ui_dirty(self, *domains: str) -> None:
+        domains = domains or ('status', 'body', 'panels', 'log', 'hitmap')
+        if set(domains) - {'status', 'body', 'panels', 'log', 'hitmap'}:
+            raise ValueError('Unknown UI refresh domain')
+        self.ui_dirty.update(domains)
+        self.ui_revision += 1
+
 
     @property
     def inventory_capacity(self) -> int:
@@ -560,14 +574,86 @@ class GameState(
             self._sight_revision = int(getattr(self, "_sight_revision", 0)) + 1
 
 
+    def __setattr__(self, name, value):
+        if name == 'enemies':
+            from .spatial_index import SpatialActors
+            if isinstance(value, list) and type(value) not in (list, SpatialActors):
+                raise TypeError('custom enemy list policies require explicit migration to SpatialActors')
+            if not isinstance(value, SpatialActors):
+                value = SpatialActors(value)
+        if name == 'messages':
+            from .message_history import MessageHistory
+            if value is not self.__dict__.get('messages'):
+                value = MessageHistory(value)
+        if name == 'ticker_notes':
+            from .presentation_events import TickerHistory
+            if value is not self.__dict__.get('ticker_notes'):
+                value = TickerHistory(value)
+        if name == 'cells':
+            import os
+            if os.environ.get('ONEIRSCRIPT_MATERIAL_AUTHORITY', '0').strip().lower() not in ('1', 'true', 'yes', 'on'):
+                if '_presentation_map_identity' in self.__dict__:
+                    from uuid import uuid4
+                    self.__dict__['_presentation_map_identity'] = uuid4().int
+                object.__setattr__(self, name, value)
+                return
+            from .material_store import MaterialRows, MaterialStore
+            if not isinstance(value, MaterialRows):
+                height = len(value)
+                width = len(value[0]) if height else 0
+                value = MaterialStore(value, width, height).cells
+            # Runtime structures live on the list, outside save schema/state dict.
+            self.__dict__.pop('_material_grid', None)
+            self.__dict__['_material_index_ready_value'] = False
+            if '_presentation_map_identity' in self.__dict__:
+                from uuid import uuid4
+                self.__dict__['_presentation_map_identity'] = uuid4().int
+        object.__setattr__(self, name, value)
+
+    def __deepcopy__(self, memo):
+        clone = type(self).__new__(type(self))
+        memo[id(self)] = clone
+        for name, value in self.__dict__.items():
+            if name not in ('cells', '_material_grid', 'enemies', 'player'):
+                object.__setattr__(clone, name, deepcopy(value, memo))
+        clone.player = deepcopy(self.player, memo)
+        clone.enemies = deepcopy(self.enemies, memo)
+        clone.cells = deepcopy(self.cells, memo)
+        # A faithful ownership transfer preserves pending event identities.
+        # Ordinary cells replacement above deliberately starts a fresh map.
+        if '_presentation_map_identity' in self.__dict__:
+            clone._presentation_map_identity = self._presentation_map_identity
+        return clone
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for name in ('_material_grid', '_material_index_cursor', '_material_index_projection'):
+            state.pop(name, None)
+        state['_material_index_ready_value'] = False
+        return state
+
+    def __setstate__(self, state):
+        for name, value in state.items():
+            if name not in ('player', 'cells', 'enemies'):
+                setattr(self, name, value)
+        self.player = state['player']
+        self.cells = state['cells']
+        self.enemies = state['enemies']
+        if '_presentation_map_identity' in state:
+            self._presentation_map_identity = state['_presentation_map_identity']
+
+    @property
+    def material_store(self):
+        return self.cells.store
+
     def cell(self, x: int, y: int) -> Cell:
         return self.cells[y][x]
 
     def set_plant(self, x: int, y: int, code: int) -> int:
         """改写某格的植物码，返回原值（0 = 原本没有植物）。"""
-        return self.set_plant_at(self.cells[y][x], code)
+        return self.set_plant_at(self.cells[y][x], code, position=(x, y))
 
-    def set_plant_at(self, cell: Cell, code: int) -> int:
+    def set_plant_at(self, cell: Cell, code: int, *, position: tuple[int, int] | None = None) -> int:
         """按格子对象改写植物码，返回原值。
 
         植物在运行时只有四个变更通道：拔除、被液体淹死、被火烧尽、被踩踏。
@@ -583,6 +669,14 @@ class GameState(
             # 否则「踩倒的蒲草」会继承挺立态的方向/预算。
             cell.plant_state = {}
             self.plant_revision += 1
+            if getattr(self, '_material_grid', None) is not None:
+                # Cell-only callers have no coordinates. Resolve only on a real
+                # plant change, avoiding a permanent per-cell reverse index.
+                if position is None:
+                    position = next(((x, y) for y, row in enumerate(self.cells)
+                                     for x, candidate in enumerate(row) if candidate is cell), None)
+                if position is not None:
+                    self._sync_material_position(*position)
         return previous
 
     def trample_plant(self, x: int, y: int, holder: Entity | None = None) -> int:
@@ -658,10 +752,24 @@ class GameState(
                     best = max(best, penalty)
         return best
 
+    @property
+    def spatial_index(self):
+        return self.enemies.spatial
+
+    def entities_at(self, x: int, y: int, *, include_player=True) -> tuple:
+        actors = self.spatial_index.enemies_at(x, y)
+        if include_player and (self.player.x, self.player.y) == (x, y):
+            return (self.player,) + actors
+        return actors
+
+    def occupied_positions(self, known_cells=None, *, include_player=True) -> frozenset:
+        return self.spatial_index.occupied_positions(known_cells, include_player, self.player)
+
     def entity_at(self, x: int, y: int) -> Entity | None:
-        if (self.player.x, self.player.y) == (x, y):
+        if self.player.x == x and self.player.y == y:
             return self.player
-        return next((enemy for enemy in self.enemies if (enemy.x, enemy.y) == (x, y) and enemy.integrity > 0), None)
+        actors = self.spatial_index.enemies_at(x, y)
+        return actors[0] if actors else None
 
     @property
     def lucidity_tier(self) -> int:
@@ -1380,14 +1488,14 @@ class GameState(
             map_form=self.map_form,
             width=self.width,
             height=self.height,
-            logic_scenarios=dict(self.trap_scenarios),
-            logic_valves={k: tuple(v) for k, v in self.valve_stored.items()},
-            logic_boards=deepcopy(self.circuit_boards),
-            logic_fences={f"{x},{y}": life for (x,y), life in self._mind_fences.items()},
-            enemy_skill_fields=deepcopy(self.enemy_skill_fields),
-            realm_bg_zones=normalize_bg_zones(self.realm_bg_zones, self.width, self.height),
+            logic_scenarios=owned_copy(dict(self.trap_scenarios)),
+            logic_valves=owned_copy({k: tuple(v) for k, v in self.valve_stored.items()}),
+            logic_boards=owned_copy(self.circuit_boards),
+            logic_fences=owned_copy({f"{x},{y}": life for (x,y), life in self._mind_fences.items()}),
+            enemy_skill_fields=owned_copy(self.enemy_skill_fields),
+            realm_bg_zones=owned_copy(normalize_bg_zones(self.realm_bg_zones, self.width, self.height)),
             material_time=self.time,
-            realm_features=deepcopy(self.realm_features),
+            realm_features=owned_copy(self.realm_features),
         )
 
     def _trim_layer_states(self) -> None:
@@ -1427,8 +1535,8 @@ class GameState(
         sx, sy = info["spawn"]
         self.player.x, self.player.y = sx, sy
         self.enemies = []
-        self.world_items = []
-        self.events = []
+        self.world_items = OwnedList()
+        self.events = OwnedList()
         self.dissolution = 0
         self.turns_since_descend = 0
         lo, hi = {28: (12, 18), 29: (18, 24), 30: (8, 12)}[depth]
@@ -1604,8 +1712,8 @@ class GameState(
         sx, sy = info["spawn"]
         self.player.x, self.player.y = sx, sy
         self.enemies = []
-        self.world_items = []
-        self.events = []
+        self.world_items = OwnedList()
+        self.events = OwnedList()
         self.dissolution = 0
         self.turns_since_descend = 0
         for x, y in info["dolls"]:
@@ -2061,11 +2169,11 @@ class GameState(
         """
         if not self.closed_realms or self.realm_id:
             return
-        self.events = [
+        self.events = OwnedList(
             e for e in self.events
             if not (e.event_id.startswith("realm_gate.")
                     and e.event_id.split(".", 1)[1] in self.closed_realms)
-        ]
+        )
         closed_npc_ids = {
             REALM_ENTRY_NPCS[realm] for realm in self.closed_realms
             if realm in REALM_ENTRY_NPCS
@@ -2142,6 +2250,7 @@ class GameState(
             self.cells = snapshot.cells
             self._resume_material_clocks(snapshot)
             self.enemies = snapshot.enemies
+            snapshot.enemies = self.enemies
             self.world_items = snapshot.world_items
             self.events = snapshot.events
             self.player.x, self.player.y = snapshot.player_x, snapshot.player_y
@@ -2212,8 +2321,8 @@ class GameState(
                     self._prime_material_clocks(cell)
             self._reset_material_index()
         self.enemies = []
-        self.world_items = []
-        self.events = []
+        self.world_items = OwnedList()
+        self.events = OwnedList()
         self.dissolution = 0
         self.turns_since_descend = 0
         self.theme = LAYER_THEMES[min(depth - 1, len(LAYER_THEMES) - 1)]

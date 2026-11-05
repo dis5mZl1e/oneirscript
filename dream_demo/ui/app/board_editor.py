@@ -1,5 +1,6 @@
 """联想盘编辑器：开关、提交、光标/点击/滚动与刷新。"""
 from __future__ import annotations
+from ..action_completion import after_action
 
 import math
 import json
@@ -194,18 +195,18 @@ class BoardEditorMixin:
             editor.cancel_held()
         changed_layout = not editor.draft.same_layout(self.session.state.board)
         result = editor.commit(self.session)
-        if not result.changed:
-            # ActionResult 用 changed 当成功位：commit_board 失败时给出原因，
-            # 布局没变的「空确认」则是 changed=True 且不扣时间。
-            editor.message = result.message
-            self.refresh_view()
-            return
-        if changed_layout:
-            self._capture_projectile_action(changed=True)
-        self.close_board_editor(committed=True)
-        sentence = result.data.get('equipment_sentence')
-        if sentence:
-            self.query_one('#equipment-sentence', SentenceWriter).write(sentence, force=True)
+        def finish(result):
+            if not result.changed:
+                editor.message = result.message
+                self.refresh_view()
+                return
+            if changed_layout:
+                self._capture_projectile_action(changed=True)
+            self.close_board_editor(committed=True)
+            sentence = result.data.get('equipment_sentence')
+            if sentence:
+                self.query_one('#equipment-sentence', SentenceWriter).write(sentence, force=True)
+        return after_action(self, result, finish)
 
     # ---- 玩法要点悬浮窗（2026-10-31） ----
     def toggle_board_info(self) -> None:

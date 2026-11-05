@@ -1,4 +1,5 @@
 """Temporary, read-only layer observation. No GameState or config fields."""
+from ..core.presentation_control import submit_presentation
 from dataclasses import dataclass
 
 from rich.cells import cell_len
@@ -189,7 +190,9 @@ class LayerObservationMixin:
                 if name.startswith('_') and name != '_world_hover_target':
                     continue
                 if name == '_world_hover_target':
-                    self.session.state.hover_target = value
+                    submit_presentation(self.session, self.session.state,
+                                        'clear_hover' if value is None else 'hover',
+                                        *(() if value is None else value))
                 else:
                     setattr(self, name, value)
             map_view = self.query_one('#map')

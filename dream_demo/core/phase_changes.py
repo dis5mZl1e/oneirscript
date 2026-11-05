@@ -8,6 +8,8 @@ from math import ceil
 from ..materials.reactions import OTHER_REACTIONS
 from ..materials.plants import plant_survives_liquid
 from ..materials.walls import WALL_DEFINITIONS
+from ..cy_kernels import enabled as _kernel_enabled
+from . import materials_kernel
 from .constants import Material
 from .tamper_protection import construction_reason, liquid_reason, terrain_reason
 
@@ -76,30 +78,37 @@ def locked(state, cell):
     return cell.material_clocks.get(CLOCK) == state.time
 
 
-def _near(state, x, y, include_self=True):
-    points = ((x, y), (x+1, y), (x-1, y), (x, y+1), (x, y-1))
-    return [p for p in points[int(not include_self):] if state.inside_board(*p)]
-
-
 def _mark(state, cell):
     cell.material_clocks[CLOCK] = state.time
 
 
 def hot(state, x, y):
-    cell = state.cell(x, y)
+    grid = state.cells
+    cell = grid[y][x]
     if cell.aggregate_variant == '灼热聚合物':
         return True
-    return any((other.flame > 0 or other.gas_kind == '灼热蒸汽' and other.gas > 0
-                or other.liquid_kind == '熔念金属' and other.liquid > 0)
-               for other in (state.cell(*p) for p in _near(state, x, y)))
+    width, height = state.width, state.height
+    for px, py in ((x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+        if not (0 <= px < width and 0 <= py < height):
+            continue
+        other = grid[py][px]
+        if (other.flame > 0
+                or (other.gas_kind == '灼热蒸汽' and other.gas > 0)
+                or (other.liquid_kind == '熔念金属' and other.liquid > 0)):
+            return True
+    return False
 
 
 def _deposit_plan(state, x, y, kind, amount, attribute):
     """Reserve compatible capacity before touching any source material."""
     plan = []
-    for point in _near(state, x, y):
-        cell = state.cell(*point)
-        if cell.solid or (point != (x, y) and locked(state, cell)):
+    grid = state.cells
+    width, height = state.width, state.height
+    for px, py in ((x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+        if not (0 <= px < width and 0 <= py < height):
+            continue
+        cell = grid[py][px]
+        if cell.solid or ((px, py) != (x, y) and locked(state, cell)):
             continue
         current = int(getattr(cell, attribute))
         current_kind = getattr(cell, attribute + '_kind')
@@ -107,7 +116,7 @@ def _deposit_plan(state, x, y, kind, amount, attribute):
             continue
         take = min(amount, max(0, 100-current))
         if take:
-            plan.append((point, take)); amount -= take
+            plan.append(((px, py), take)); amount -= take
         if not amount:
             break
     return plan
@@ -127,16 +136,20 @@ def _deposit(state, plan, kind, attribute):
 
 
 def _cold_source(state, x, y, required_kind=None):
-    for point in _near(state, x, y):
-        cell = state.cell(*point)
+    grid = state.cells
+    width, height = state.width, state.height
+    for px, py in ((x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+        if not (0 <= px < width and 0 <= py < height):
+            continue
+        cell = grid[py][px]
         if (cell.liquid > 0 and cell.liquid_kind in COLD
                 and (required_kind is None or cell.liquid_kind == required_kind)
                 and not locked(state, cell)
                 and not liquid_reason(cell.liquid_kind)):
             # The exhausted cold liquid has an existing, inert vapor product.
-            plan = _deposit_plan(state, *point, '晨霜清气', 1, 'gas')
+            plan = _deposit_plan(state, px, py, '晨霜清气', 1, 'gas')
             if sum(q for _, q in plan) == 1:
-                return point, cell, plan
+                return (px, py), cell, plan
     return None
 
 
@@ -258,52 +271,78 @@ def melt_wall(state, x, y, *, force=False):
 def tick(state):
     state._ensure_material_index()
     # 相变存量/蜡墙由材料索引维护；不再每拍全图补扫（docs §11 P0）。
-    candidates = set(state._liquid_cells) | set(state._gas_cells)
-    candidates |= set(getattr(state, '_phase_cells', ()))
-    for x, y in sorted(candidates):
-        cell = state.cell(x, y)
-        if locked(state, cell):
-            continue
-        if cell.solid:
-            if cell.wall_kind in WAX:
-                _melt_wall(state, x, y)
-            continue
-        if (cell.phase_stock or cell.aggregate_variant == '冰面') and melt_ice(state, x, y):
-            continue
-        liquid_kind = str(cell.liquid_kind or '')
-        gas_kind = str(cell.gas_kind or '')
-        liquid = int(cell.liquid)
-        gas = int(cell.gas)
-        vapor = liquid > 0 and liquid_kind in VAPOR
-        condensate = gas > 0 and gas_kind in CONDENSATE
-        recipes = FREEZE_BY_LIQUID.get(liquid_kind) if liquid > 0 else ()
-        if not (vapor or condensate or recipes or cell.phase_stock):
-            continue
-        is_hot = hot(state, x, y) if (vapor or condensate or recipes) else False
-        if vapor and is_hot and not liquid_reason(liquid_kind):
-            product = VAPOR[liquid_kind]
-            plan = _deposit_plan(state, x, y, product, min(RATE, liquid), 'gas')
-            taken = sum(q for _, q in plan)
-            if taken:
-                cell.liquid -= taken
-                if not cell.liquid: cell.liquid_kind = ''
-                _mark(state, cell); _deposit(state, plan, product, 'gas')
-                state._sync_material_position(x, y)
-            continue
-        if is_hot is False and condensate:
-            source = _cold_source(state, x, y)
-            product = CONDENSATE[gas_kind]
-            plan = _deposit_plan(state, x, y, product, min(RATE, gas), 'liquid')
-            taken = sum(q for _, q in plan)
-            if source is not None and taken:
-                # The target plan must not consume capacity reserved for the
-                # cold byproduct; those are separate material slots.
-                cell.gas -= taken
-                if not cell.gas: cell.gas_kind = ''
-                _mark(state, cell); _deposit(state, plan, product, 'liquid')
-                _consume_cold(state, source); state._sync_material_position(x, y)
-                continue
-        if is_hot is False and recipes:
-            for recipe in recipes:
-                if freeze_recipe(state, x, y, recipe, is_hot=False):
-                    break
+    if (getattr(state, '_material_dirty_on', False)
+            and not getattr(state, '_material_full_step', False)):
+        # P1（2026-11-04）：脏区模式保留全量并集的迭代顺序，只跳过休眠格
+        # （合同 A）；休眠格在被写入唤醒前不进入相变判定。
+        allowed = state._awake_liquid | state._awake_gas | state._awake_phase
+        candidates = {position for position in
+                      state._liquid_cells | state._gas_cells
+                      | set(getattr(state, '_phase_cells', ()))
+                      if position in allowed}
+    else:
+        candidates = set(state._liquid_cells) | set(state._gas_cells)
+        candidates |= set(getattr(state, '_phase_cells', ()))
+    from . import material_numeric
+    mirror = getattr(state, '_material_grid', None)
+    if material_numeric.enabled(mirror) and material_numeric.run_array_phase(state, mirror, candidates):
+        return
+    if _kernel_enabled("phase"):
+        # 方案 1（2026-11-04）：内核只筛掉本拍必然不动作的格；排序与逐格结算
+        # 仍在下面，保证与旧路径同一顺序、同一副作用。
+        points = sorted(materials_kernel.phase_candidates(
+            state.cells, state.width, state.height, candidates, CLOCK, state.time,
+            VAPOR, CONDENSATE, FREEZE_BY_LIQUID, WAX))
+    else:
+        points = sorted(candidates)
+    for x, y in points:
+        _tick_point(state, x, y)
+
+
+def _tick_point(state, x, y):
+    cell = state.cell(x, y)
+    if locked(state, cell):
+        return
+    if cell.solid:
+        if cell.wall_kind in WAX:
+            _melt_wall(state, x, y)
+        return
+    if (cell.phase_stock or cell.aggregate_variant == '冰面') and melt_ice(state, x, y):
+        return
+    liquid_kind = str(cell.liquid_kind or '')
+    gas_kind = str(cell.gas_kind or '')
+    liquid = int(cell.liquid)
+    gas = int(cell.gas)
+    vapor = liquid > 0 and liquid_kind in VAPOR
+    condensate = gas > 0 and gas_kind in CONDENSATE
+    recipes = FREEZE_BY_LIQUID.get(liquid_kind) if liquid > 0 else ()
+    if not (vapor or condensate or recipes or cell.phase_stock):
+        return
+    is_hot = hot(state, x, y) if (vapor or condensate or recipes) else False
+    if vapor and is_hot and not liquid_reason(liquid_kind):
+        product = VAPOR[liquid_kind]
+        plan = _deposit_plan(state, x, y, product, min(RATE, liquid), 'gas')
+        taken = sum(q for _, q in plan)
+        if taken:
+            cell.liquid -= taken
+            if not cell.liquid: cell.liquid_kind = ''
+            _mark(state, cell); _deposit(state, plan, product, 'gas')
+            state._sync_material_position(x, y)
+        return
+    if is_hot is False and condensate:
+        source = _cold_source(state, x, y)
+        product = CONDENSATE[gas_kind]
+        plan = _deposit_plan(state, x, y, product, min(RATE, gas), 'liquid')
+        taken = sum(q for _, q in plan)
+        if source is not None and taken:
+            # The target plan must not consume capacity reserved for the
+            # cold byproduct; those are separate material slots.
+            cell.gas -= taken
+            if not cell.gas: cell.gas_kind = ''
+            _mark(state, cell); _deposit(state, plan, product, 'liquid')
+            _consume_cold(state, source); state._sync_material_position(x, y)
+            return
+    if is_hot is False and recipes:
+        for recipe in recipes:
+            if freeze_recipe(state, x, y, recipe, is_hot=False):
+                break

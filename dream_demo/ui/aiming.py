@@ -1,4 +1,7 @@
 """Shared keyboard/mouse aiming transaction, with explicit target identity."""
+from .action_completion import after_action
+from ..core.tutorial_control import submit_tutorial
+from ..core.command_context import capture_command_context
 from ..core.entities import ActionResult
 from ..i18n import tr
 
@@ -89,6 +92,7 @@ class AimingMixin:
         state = self.session.state
         from ..core.origin_course import is_course
         self._aim_started_at = (state.action_seq,state.time) if is_course(state) else None
+        self._aim_started_context = capture_command_context(state) if self._aim_started_at is not None else ()
         self._aim_equipment_identity = (state.equipment.formation().semantic_signature
                                         if hasattr(state, 'equipment') else None)
         index = next((v for v in (self.throw_item_index, self.fire_once_index,
@@ -239,11 +243,13 @@ class AimingMixin:
         # in the same world action, even if it happened between two UI frames.
         if (self.aiming and getattr(self,'_aim_started_at',None) is not None
                 and self._aim_started_at==(state.action_seq,state.time)):
-            from ..core.origin_course import is_course, note, pump
+            from ..core.origin_course import is_course
             if is_course(state):
-                note(state,'aim_cancelled',*(['throw_cancelled'] if self.throw_item_index is not None else []))
-                pump(state)
+                submit_tutorial(self.session, 'cancel_aim', *self._aim_started_at,
+                                self.throw_item_index is not None,
+                                expected_context=getattr(self, '_aim_started_context', ()))
         self._aim_started_at=None
+        self._aim_started_context=()
         self.aiming = False
         self._aim_failed = False
         self.construct_aim_id = None
@@ -661,7 +667,7 @@ class AimingMixin:
             return ActionResult(False, tr('这个构想没有可用的瞄准规则。'))
         aim_dir = direction or getattr(self, '_aim_direction', None) or self.facing
         if spec.form == 'direction':
-            result = state.activate_ability(ability_id, direction=aim_dir)
+            result = self.session.apply('ability_targeted', ability_id, {'direction': aim_dir})
             self._finish_targeted_aim(result)
             return result
         point = target
@@ -697,25 +703,27 @@ class AimingMixin:
                 self.show_toast(message, 4)
                 self.refresh_view()
                 return ActionResult(False, message)
-            result = state.activate_ability(
-                ability_id, target=(*self._rewire_source, *point))
+            result = self.session.apply('ability_targeted', ability_id,
+                                        {'target': (*self._rewire_source, *point)})
         else:
             if not ability_targeting.valid_target(state, ability_id, point):
                 message = tr('这个落点不成立——本次不消耗。')
                 self.show_toast(message, 4)
                 self.refresh_view()
                 return ActionResult(False, message)
-            result = state.activate_ability(ability_id, target=point)
+            result = self.session.apply('ability_targeted', ability_id, {'target': point})
         self._finish_targeted_aim(result)
         return result
 
     def _finish_targeted_aim(self, result):
-        if result.changed:
-            from ..core.origin_course import note
-            note(self.session.state, 'ability_cast')
-            self.cancel_aim()
-        self.show_toast(result.message, 4)
-        self.refresh_view()
+        def finish(result):
+            if result.changed:
+                submit_tutorial(self.session, 'facts', 'ability_cast')
+                self.cancel_aim()
+            self.show_toast(result.message, 4)
+            self.refresh_view()
+
+        return after_action(self, result, finish)
 
     def _confirm_construct_aim(self, target=None, direction=None):
         """§13：把瞄准草稿提交成一次真实构想动作。
@@ -772,17 +780,19 @@ class AimingMixin:
         if (ability_id == 'combat.cross_step'
                 and self._construct_landing is not None):
             kwargs['landing'] = self._construct_landing
-        result = state.activate_ability(ability_id, target=call_target,
-                                        direction=aim_dir, **kwargs)
-        if result.changed:
-            from ..core.origin_course import note
-            note(state, 'ability_cast')
-            self.cancel_aim()
-        else:
-            self._aim_failed = True
-        self.show_toast(result.message, 4)
-        self.refresh_view()
-        return result
+        result = self.session.apply('ability_targeted', ability_id,
+                                    dict(target=call_target, direction=aim_dir, **kwargs))
+        def finish(result):
+            if result.changed:
+                submit_tutorial(self.session, 'facts', 'ability_cast')
+                self.cancel_aim()
+            else:
+                self._aim_failed = True
+            self.show_toast(result.message, 4)
+            self.refresh_view()
+            return result
+
+        return after_action(self, result, finish)
 
     def _confirm_item_deploy_aim(self, target=None, direction=None):
         """部署类物品的落点提交（2026-10-22 A2）。
@@ -849,13 +859,16 @@ class AimingMixin:
                 self.refresh_view()
                 return ActionResult(False, message)
             result = self._apply('deploy_target', index, point[0], point[1])
-        if result.changed:
-            self.cancel_aim()
-        else:
-            self._aim_failed = True
-        self.show_toast(result.message, 4)
-        self.refresh_view()
-        return result
+        def finish(result):
+            if result.changed:
+                self.cancel_aim()
+            else:
+                self._aim_failed = True
+            self.show_toast(result.message, 4)
+            self.refresh_view()
+            return result
+
+        return after_action(self, result, finish)
 
     def _item_aim_direction_key(self, dx, dy):
         """部署类物品的方向键：direction 形态转向，其余形态在射程内移光标。"""
@@ -951,32 +964,35 @@ class AimingMixin:
                 command = 'spray_target' if target is not None else 'spray_fire'
                 args = (self.spray_source if self.spray_source is not None else -1, *args)
             result = self._apply(command, *args)
-        keep_aim = (result.changed and command in ('fire', 'fire_assisted')
-                    and choice_before is not None
-                    and choice_before.get('kind') == 'fire'
-                    and getattr(self, 'equipment_choice', None) is None)
-        if keep_aim:
-            # 普通武器成功开火后留在瞄准：下一发仍只由一次确认触发。
-            self._stay_in_equipment_aim(choice_before)
-        elif result.changed and self.fire_once_index is not None:
-            # 一次性发射物按来源顺序自动衔接；当前堆耗尽时跳到下一枚，
-            # 没有其它来源才结束瞄准。
-            next_option = self._next_consumable_source(consumable_key, consumable_order)
-            if next_option is not None:
-                self._begin_equipment_aim(next_option, preserve_aim=True)
-            else:
+        def finish(result):
+            keep_aim = (result.changed and command in ('fire', 'fire_assisted')
+                        and choice_before is not None
+                        and choice_before.get('kind') == 'fire'
+                        and getattr(self, 'equipment_choice', None) is None)
+            if keep_aim:
+                # 普通武器成功开火后留在瞄准：下一发仍只由一次确认触发。
+                self._stay_in_equipment_aim(choice_before)
+            elif result.changed and self.fire_once_index is not None:
+                # 一次性发射物按来源顺序自动衔接；当前堆耗尽时跳到下一枚，
+                # 没有其它来源才结束瞄准。
+                next_option = self._next_consumable_source(consumable_key, consumable_order)
+                if next_option is not None:
+                    self._begin_equipment_aim(next_option, preserve_aim=True)
+                else:
+                    self.cancel_aim()
+            elif result.changed:
                 self.cancel_aim()
-        elif result.changed:
-            self.cancel_aim()
-        elif choice_before is not None and self._aim_ammo_status() != 'ready':
-            self._stay_in_equipment_aim(choice_before)
-        elif getattr(self, "equipment_choice", None) is None:
-            # 失败且没有弹出「换一个动作」选择时，记下失败态：下一次左键/任意
-            # 键取消，避免条件缺失（无弹药/无成立动作句…）时卡在瞄准里。
-            self._aim_failed = True
-        self.show_toast(result.message, 4)
-        self.refresh_view()
-        return result
+            elif choice_before is not None and self._aim_ammo_status() != 'ready':
+                self._stay_in_equipment_aim(choice_before)
+            elif getattr(self, "equipment_choice", None) is None:
+                # 失败且没有弹出「换一个动作」选择时，记下失败态：下一次左键/任意
+                # 键取消，避免条件缺失（无弹药/无成立动作句…）时卡在瞄准里。
+                self._aim_failed = True
+            self.show_toast(result.message, 4)
+            self.refresh_view()
+            return result
+
+        return after_action(self, result, finish)
 
     def _next_consumable_source(self, current, order):
         """Return the next live item source after a consumed projectile."""

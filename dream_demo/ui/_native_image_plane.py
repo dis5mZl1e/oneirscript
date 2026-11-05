@@ -6,6 +6,27 @@ import threading
 import time
 
 
+def _encode_upload_rows(image, bpp, dirty=None):
+    """Convert only full-width dirty rows to the DIB's padded pixel format."""
+    from PIL import Image, ImageChops
+    width, height = image.size
+    top, bottom = (0, height) if dirty is None else (dirty[1], dirty[3])
+    if not 0 <= top < bottom <= height:
+        raise ValueError('invalid native upload rows')
+    stride = (width*(bpp//8)+3)//4*4
+    if top != 0 or bottom != height:
+        image = image.crop((0, top, width, bottom))
+    if bpp == 32:
+        r, green, blue, alpha = image.convert('RGBA').split()
+        image = Image.merge('RGBA', (ImageChops.multiply(r, alpha),
+                                     ImageChops.multiply(green, alpha),
+                                     ImageChops.multiply(blue, alpha), alpha))
+        payload = image.tobytes('raw', 'BGRA')
+    else:
+        payload = image.tobytes('raw', 'BGR', stride, 1)
+    return payload, top*stride
+
+
 def _find_owner(owner_file=None):
     """只选择显式 QA 句柄或本进程祖先中的 WezTerm，绝不覆盖任意前台应用。"""
     import os
@@ -80,13 +101,14 @@ class _NativeImagePlaneRenderer:
     """终端所属的不可激活、鼠标穿透窗口，由专用线程维护 GDI/DWM 资源。"""
 
     def __init__(self, owner, *, trace=False):
+        from ._native_precision_wake import _PrecisionWake
         self.owner = int(owner)
         self.error = ''
         self.metrics = deque(maxlen=1200)
         self.trace = deque(maxlen=900) if trace else None
         self._pending = None
         self._lock = threading.Lock()
-        self._wake = threading.Event()
+        self._wake = _PrecisionWake()
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run, name='native-map-plane', daemon=True)
@@ -134,6 +156,10 @@ class _NativeImagePlaneRenderer:
         self._wake.set()
         if threading.current_thread() is not self._thread:
             self._thread.join(timeout=3)
+            if not self._thread.is_alive():
+                # Also cover an exception during Win32 setup, before _run's
+                # resource-cleanup block has been entered.
+                self._wake.close()
 
     def _run(self):
         import ctypes
@@ -183,12 +209,24 @@ class _NativeImagePlaneRenderer:
         alpha_blend.restype = wt.BOOL
         hwnd = dc = bitmap = old_bitmap = None
         source_contexts = {}
+        uploaded_versions = {}
+        uploaded_bytes = 0
 
-        def upload(name, image, bpp):
+        def upload(name, image, bpp, version=None, change=None):
+            nonlocal uploaded_bytes
             from PIL import Image, ImageChops
             width, height = image.size
             stride = (width*(bpp//8)+3)//4*4
             context = source_contexts.get(name)
+            if (version is not None and context is not None
+                    and context[0] == (width, height, bpp)
+                    and uploaded_versions.get(name) == version):
+                return context[1]
+            dirty = None
+            if (context is not None and context[0] == (width, height, bpp)
+                    and change is not None
+                    and uploaded_versions.get(name) == change['previous']):
+                dirty = change['dirty']
             if context is None or context[0] != (width, height, bpp):
                 if context:
                     _key, source_dc, source_bitmap, source_old, _bits = context
@@ -206,15 +244,10 @@ class _NativeImagePlaneRenderer:
                 source_old = gdi.SelectObject(source_dc, source_bitmap)
                 context = source_contexts[name] = ((width, height, bpp), source_dc,
                                                    source_bitmap, source_old, source_bits)
-            if bpp == 32:
-                r, green, blue, alpha = image.convert('RGBA').split()
-                image = Image.merge('RGBA', (ImageChops.multiply(r, alpha),
-                                             ImageChops.multiply(green, alpha),
-                                             ImageChops.multiply(blue, alpha), alpha))
-                payload = image.tobytes('raw', 'BGRA')
-            else:
-                payload = image.tobytes('raw', 'BGR', stride, 1)
-            ctypes.memmove(context[4], payload, len(payload))
+            payload, byte_offset = _encode_upload_rows(image, bpp, dirty)
+            ctypes.memmove(context[4].value + byte_offset, payload, len(payload))
+            uploaded_bytes += len(payload)
+            uploaded_versions[name] = version
             return context[1]
         instance = win32api.GetModuleHandle(None)
         class_name = 'OneirscriptNativeMapPlane-' + str(id(self))
@@ -237,8 +270,9 @@ class _NativeImagePlaneRenderer:
                 wc.WS_EX_LAYERED | wc.WS_EX_TRANSPARENT | wc.WS_EX_NOACTIVATE | wc.WS_EX_TOOLWINDOW,
                 class_name, '', wc.WS_POPUP, 0, 0, 1, 1, self.owner, 0, instance, None)
             dc = gdi.CreateCompatibleDC(None)
-            from ._native_map_scene import _PlaneMotion, _compose_frame
+            from ._native_map_scene import _PlaneMotion, _ScaledFrameCache
             motion = _PlaneMotion()
+            scaled_frames = _ScaledFrameCache()
             self._ready.set()
             current_size = None
             frame = None
@@ -247,6 +281,9 @@ class _NativeImagePlaneRenderer:
             needs_final = False
             next_present = 0.
             while not self._stop.is_set() and wg.IsWindow(self.owner):
+                # Clear before consuming the slot so a concurrent submission
+                # after consumption remains signalled through the next wait.
+                self._wake.clear()
                 if wg.PumpWaitingMessages():
                     break
                 with self._lock:
@@ -284,12 +321,16 @@ class _NativeImagePlaneRenderer:
                         sampled = packet is not None and motion.active(now)
                         if update is not None or origin != previous_origin or hidden or ((sampled or needs_final) and now >= next_present):
                             started = time.perf_counter_ns()
-                            stride = (size[0]*3+3)//4*4
-                            if size != current_size:
+                            upload_start = uploaded_bytes
+                            alpha = image is not None and image.mode == 'RGBA' and packet is None
+                            bpp = 32 if alpha else 24
+                            stride = (size[0]*(bpp//8)+3)//4*4
+                            bitmap_size = (*size, bpp)
+                            if bitmap_size != current_size:
                                 if bitmap:
                                     gdi.SelectObject(dc, old_bitmap)
                                     gdi.DeleteObject(bitmap)
-                                header = Header(ctypes.sizeof(Header), size[0], -size[1], 1, 24,
+                                header = Header(ctypes.sizeof(Header), size[0], -size[1], 1, bpp,
                                                 0, stride*size[1], 0, 0, 0, 0)
                                 bits = ctypes.c_void_p()
                                 bitmap = gdi.CreateDIBSection(dc, ctypes.byref(header), 0,
@@ -297,7 +338,7 @@ class _NativeImagePlaneRenderer:
                                 if not bitmap:
                                     raise ctypes.WinError()
                                 old_bitmap = gdi.SelectObject(dc, bitmap)
-                                current_size = size
+                                current_size = bitmap_size
                             player = camera = None
                             if packet is not None:
                                 player, camera = motion.sample(now)
@@ -308,10 +349,15 @@ class _NativeImagePlaneRenderer:
                                             and top+size[1] <= packet['canvas'].height)
                                 if can_blit:
                                     if update is not None or 'canvas' not in source_contexts:
-                                        upload('canvas', packet['canvas'], 24)
-                                        upload('sprite', packet['sprite'], 32)
+                                        versions = packet.get('_asset_versions', {})
+                                        changes = packet.get('_asset_updates', {})
+                                        upload('canvas', packet['canvas'], 24, versions.get('canvas'),
+                                               changes.get('canvas'))
+                                        upload('sprite', packet['sprite'], 32, versions.get('sprite'),
+                                               changes.get('sprite'))
                                         if packet.get('text_overlay') is not None:
-                                            upload('text_overlay', packet['text_overlay'], 32)
+                                            upload('text_overlay', packet['text_overlay'], 32,
+                                                   versions.get('text_overlay'), changes.get('text_overlay'))
                                     if not gdi.BitBlt(dc, 0, 0, *size, source_contexts['canvas'][1], left, top, wc.SRCCOPY):
                                         raise ctypes.WinError()
                                     px = round((player[0]-camera[0])*packet['cell_px'][0])
@@ -328,38 +374,33 @@ class _NativeImagePlaneRenderer:
                                     image = None
                                 else:
                                     try:
-                                        image = _compose_frame(packet['canvas'], packet['origin'],
-                                                               packet['sprite'], packet['cell_px'],
-                                                               player, camera, packet['viewport_size'])
+                                        image = scaled_frames.compose(packet, player, camera, size)
                                     except ValueError:
                                         motion.update(packet['layer'], packet['player'], packet['camera'],
                                                       packet['cell_px'], now, 0., False)
                                         player, camera = motion.sample(now)
-                                        image = _compose_frame(packet['canvas'], packet['origin'],
-                                                               packet['sprite'], packet['cell_px'],
-                                                               player, camera, packet['viewport_size'])
-                                    if image.size != size:
-                                        from PIL import Image
-                                        image = image.resize(size, Image.Resampling.BILINEAR)
-                                    overlay = packet.get('text_overlay')
-                                    if overlay is not None:
-                                        from PIL import Image
-                                        if overlay.size != size:
-                                            overlay = overlay.resize(size, Image.Resampling.BILINEAR)
-                                        image = image.convert('RGBA')
-                                        image.alpha_composite(overlay)
+                                        image = scaled_frames.compose(packet, player, camera, size)
                             if image is not None:
-                                if image.mode != 'RGB':
-                                    image = image.convert('RGB')
-                                payload = image.tobytes('raw', 'BGR', stride, 1)
+                                if alpha:
+                                    from PIL import Image, ImageChops
+                                    r, green, blue, opacity = image.split()
+                                    premultiplied = Image.merge('RGBA', (
+                                        ImageChops.multiply(r, opacity),
+                                        ImageChops.multiply(green, opacity),
+                                        ImageChops.multiply(blue, opacity), opacity))
+                                    payload = premultiplied.tobytes('raw', 'BGRA')
+                                else:
+                                    if image.mode != 'RGB':
+                                        image = image.convert('RGB')
+                                    payload = image.tobytes('raw', 'BGR', stride, 1)
                                 ctypes.memmove(bits, payload, len(payload))
                             prepared = time.perf_counter_ns()
                             target, extent, source = wt.POINT(*origin), wt.SIZE(*size), wt.POINT(0, 0)
-                            blend = Blend(0, 0, 255, 0)
+                            blend = Blend(0, 0, 255, 1 if alpha else 0)
                             if not user32.UpdateLayeredWindow(hwnd, None, ctypes.byref(target),
                                                              ctypes.byref(extent), dc,
                                                              ctypes.byref(source), 0,
-                                                             ctypes.byref(blend), 4):
+                                                             ctypes.byref(blend), 2 if alpha else 4):
                                 raise ctypes.WinError()
                             if clip != previous_clip:
                                 region = wg.CreateRectRgnIndirect((0, 0, 0, 0))
@@ -373,6 +414,7 @@ class _NativeImagePlaneRenderer:
                             finished = time.perf_counter_ns()
                             timestamp = time.time_ns()
                             self.metrics.append({'t_ns': timestamp,
+                                                 'upload_bytes': uploaded_bytes - upload_start,
                                                  'present_ms': (finished-prepared)/1e6,
                                                  'compose_ms': (prepared-started)/1e6,
                                                  'total_ms': (finished-(enqueued if update is not None else started))/1e6,
@@ -398,7 +440,9 @@ class _NativeImagePlaneRenderer:
                             next_present = now+1/60
                             needs_final = sampled
                             hidden = False
-                if frame is not None and frame[5] is not None and motion.active(time.perf_counter()):
+                animating = (not hidden and frame is not None and frame[5] is not None
+                             and (needs_final or motion.active(time.perf_counter())))
+                if animating:
                     # Present is capped at 60Hz below. Polling every 5ms wakes
                     # this worker about 200 times per second to discover that
                     # most frames are still early; sleep until the next slot,
@@ -406,11 +450,11 @@ class _NativeImagePlaneRenderer:
                     delay = max(.001, min(.02, next_present - time.perf_counter()))
                 else:
                     delay = .02
-                self._wake.wait(delay)
-                self._wake.clear()
+                self._wake.wait(delay, precise=animating)
         except Exception as error:
             self.error = repr(error)
         finally:
+            self._wake.close()
             self._ready.set()
             if hwnd and wg.IsWindow(hwnd):
                 wg.DestroyWindow(hwnd)
@@ -437,24 +481,40 @@ class _NativeImagePlane:
         import subprocess
         import sys
         import tempfile
+        import uuid
+        import win32event
         from pathlib import Path
-        from ._native_plane_ipc import _CAPACITY
+        from ._native_plane_ipc import _CAPACITY, _FramePublisher
         self.owner = int(owner)
         self._error, self._sequence, self._closed = '', 0, False
         self._report = {}
+        self._frame_publisher = _FramePublisher()
         self._temporary = tempfile.TemporaryDirectory(prefix='oneirscript-map-plane-')
         self._directory = Path(self._temporary.name)
         self._stream = (self._directory / 'frames.bin').open('w+b')
         self._stream.truncate(_CAPACITY)
         self._memory = mmap.mmap(self._stream.fileno(), _CAPACITY)
         self._log = (self._directory / 'worker.log').open('wb')
-        arguments = [str(self._directory), str(owner), str(int(trace)), str(os.getpid())]
+        # Auto-reset events coalesce publications just like the latest-slot
+        # transport. Never reset after reading: a concurrent publish must remain
+        # signalled until the worker waits again.
+        wake_name = 'Local\\OneirscriptMapWake-' + uuid.uuid4().hex
+        self._wake_event = win32event.CreateEvent(None, False, False, wake_name)
+        arguments = [str(self._directory), str(owner), str(int(trace)), str(os.getpid()), wake_name]
         command = ([sys.executable, '--native-map-worker', *arguments]
                    if getattr(sys, 'frozen', False) else
                    [sys.executable, '-X', 'utf8', '-m', 'dream_demo.ui._native_plane_worker', *arguments])
-        self._worker = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[2],
-                                        stdin=subprocess.DEVNULL, stdout=self._log, stderr=self._log,
-                                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        try:
+            self._worker = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[2],
+                                            stdin=subprocess.DEVNULL, stdout=self._log, stderr=self._log,
+                                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except Exception:
+            self._wake_event.Close()
+            self._memory.close()
+            self._stream.close()
+            self._log.close()
+            self._temporary.cleanup()
+            raise
         ready = self._directory / 'ready.json'
         deadline = time.monotonic()+8
         while not ready.exists() and self._worker.poll() is None and time.monotonic() < deadline:
@@ -474,8 +534,10 @@ class _NativeImagePlane:
         return self._error
 
     def _publish(self, metadata, chunks=()):
+        import win32event
         from ._native_plane_ipc import _publish
         self._sequence = _publish(self._memory, self._sequence, metadata, chunks)
+        win32event.SetEvent(self._wake_event)
 
     def present(self, image, client_box, rectangles, *, scene=None):
         if self._closed or self.error:
@@ -486,21 +548,23 @@ class _NativeImagePlane:
         if scene is None:
             source = image.convert('RGB') if image.mode != 'RGB' else image
             metadata['image_size'] = source.size
-            chunks = [source.tobytes()]
+            images = {'canvas': source}
         else:
             source, sprite = scene['canvas'], scene['sprite']
             metadata['image_size'] = source.size
             metadata['scene'] = {k:v for k,v in scene.items()
                                  if k not in ('canvas', 'sprite', 'text_overlay')}
             metadata['scene']['sprite_size'] = sprite.size
-            chunks = [source.tobytes(), sprite.tobytes()]
+            images = {'canvas': source, 'sprite': sprite}
             overlay = scene.get('text_overlay')
             if overlay is not None:
                 overlay = overlay.convert('RGBA')
                 metadata['scene']['text_overlay_size'] = overlay.size
-                chunks.append(overlay.tobytes())
+                images['text_overlay'] = overlay
         try:
-            self._publish(metadata, chunks)
+            import win32event
+            self._sequence = self._frame_publisher.publish(self._memory, self._sequence, metadata, images)
+            win32event.SetEvent(self._wake_event)
             return True
         except Exception as error:
             self._error = repr(error)
@@ -557,6 +621,7 @@ class _NativeImagePlane:
                 self._worker.kill()
                 self._worker.wait(timeout=3)
         self._closed = True
+        self._wake_event.Close()
         self._memory.close()
         self._stream.close()
         self._log.close()

@@ -60,12 +60,14 @@ class DoorMixin:
                 if occupied:
                     if cell.solid:
                         self._open_door(cell)
+                        self._sync_material_position(x, y)
                         self.topology_revision += 1
                         # docs 261022 §16.6：门状态确实改变才发 R=2 机械声。
                         self._sound_pulse(x, y, 2, category="mechanical",
                                           source=tr("门"), announce=False)
                 elif not cell.solid:
                     self._close_door(cell)
+                    self._sync_material_position(x, y)
                     self.topology_revision += 1
                     self._sound_pulse(x, y, 2, category="mechanical",
                                       source=tr("门"), announce=False)

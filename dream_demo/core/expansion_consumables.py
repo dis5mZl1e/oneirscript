@@ -154,7 +154,9 @@ def terrain(s,p,q,d,n):
         points=[(p[0]+i,p[1]) for i in range(3)]
         if not all(known(s,a,open=True) for a in points):return FAIL
         stock=[[x,y,s.cell(x,y).elevation] for x,y in points]
-        for i,(x,y,old) in enumerate(stock):s.cell(x,y).elevation=old-1-(i if n==3 else 0)
+        for i,(x,y,old) in enumerate(stock):
+            s.cell(x,y).elevation=old-1-(i if n==3 else 0)
+            s._sync_material_position(x,y)
         register(s,'drain',p,3,terrain=stock)
         return success()
     # Damaged physical vessels are native low walls holding real liquid.
@@ -448,7 +450,9 @@ def tick_record(s,r):
     if r['turns']>0:return True
     if k=='light':c.light_radius=a['prev_radius'];c.light_on=a['prev_on']
     elif k=='drain':
-        for x,y,old in a['terrain']:s.cell(x,y).elevation=old
+        for x,y,old in a['terrain']:
+            s.cell(x,y).elevation=old
+            s._sync_material_position(x,y)
     elif k=='bridge':
         hit=s.circuit_node_at(*a['second'])
         if hit:hit[2]['inputs']=a['old_inputs'];s._settle_circuit(hit[0])

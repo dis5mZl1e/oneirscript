@@ -474,7 +474,7 @@ SYMBOLS: dict[str, SymbolDef] = {
     "section.insights": SymbolDef("◆ ", "IN"),
     "section.portents": SymbolDef("◇ ", "PT"),
     "section.stats": SymbolDef("∑ ", "ST"),
-    "section.audit": SymbolDef("⊙ ", "AU"),
+    "section.audit": SymbolDef("⊙ ", "AD"),
     "section.nearby": SymbolDef("⌖ ", "EN"),
     "section.records": SymbolDef("▤ ", "RC"),
     "section.quests": SymbolDef("✓ ", "QS"),

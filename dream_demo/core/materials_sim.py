@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import heapq
 import random
+from collections import deque
+from functools import lru_cache
 from zlib import crc32
 
+from ..env_compat import flag as _env_flag, get as _env_get
 from ..i18n import tr
 from ..materials import (
     CONTAINER_KINDS,
@@ -32,13 +36,16 @@ from ..materials.reactions import (
     ReactionDef,
 )
 from ..materials.logic import LOGIC_KINDS
+from ..materials.floors import FLOOR_DEFINITIONS, PLAIN_FLOOR
 
 # 棋盘格地板的「常见增益征兆集合」：温和的正面材料征兆（8 回合封顶）。
 CHECKER_BUFF_PORTENTS = ("calmed", "warmed", "tear_warm", "moist")
 from .entities import Cell, Entity
+from .material_numeric import owned_boundary_cadence, cadence_grid_enabled, try_rule_stage_owned, try_ensure_index_owned, try_sync_position_owned, register_owned_boundary_methods
 from ..data.anomalies import ANOMALY_DEFINITIONS
 from .gas_kernel import (collect_gas_sources as _kernel_collect_gas_sources,
                          plan_material_transfers as _kernel_plan_transfers)
+from .materials_kernel import recipe_cells as _kernel_recipe_cells
 from ..cy_kernels import enabled as _kernel_enabled
 from .constants import (
     ELEV_STEP,
@@ -55,6 +62,24 @@ from .constants import (
 # 由材料索引维护，phase_changes.tick 不再每拍全图补扫。
 _PHASE_WALL_KINDS = frozenset(('蜡化记忆墙', '烛泪柱'))
 
+# P1（2026-11-04，性能方案 §3）：材料脏区 + 休眠，默认关闭。
+# 开启后各材料 pass 沿用原来的全量迭代顺序，只跳过休眠格；连续 SETTLE_TICKS
+# 拍本体与四邻都没有写入的格子退出活动集。任何材料写入都会经
+# `_sync_material_position` 唤醒本体与四邻，所以休眠只是「本拍不必再算」，
+# 不是删格：再次被触碰就原地醒回来。
+MATERIAL_DIRTY_FLAG = "MATERIAL_DIRTY"
+SETTLE_TICKS = 3
+# 有流动周期的液体（凝胶基液、纤维蛋白胶、书脊胶等）按拍计时：它们可以连续
+# 很多拍「什么都不做」再突然流动，休眠会把它们永久冻住，所以不进休眠集合。
+_SLOW_FLOW_KINDS = frozenset(kind for kind, definition in LIQUID_DEFINITIONS.items()
+                             if definition.flow_period > 1)
+
+
+def material_dirty_enabled() -> bool:
+    """本拍是否走脏区/休眠路径（``ONEIRSCRIPT_MATERIAL_DIRTY=1`` 开启）。"""
+    return _env_flag(MATERIAL_DIRTY_FLAG, False)
+
+
 # 拨号音环境声源（docs 261022 §13.2／盘点 §2）：浓度门槛、世界回合周期与声径。
 # 一个连通气团每周期只在稳定锚点登记一个声源，不让每格每拍各刷一次 AI。
 DIAL_TONE_GAS = "拨号音"
@@ -65,6 +90,16 @@ DIAL_TONE_RADIUS = 3
 
 class _UnstableExplosionResult(tuple):
     """Two-value mix result carrying a local explosion, without shared state."""
+
+
+@lru_cache(maxsize=16384)
+def _interior_neighbors(x: int, y: int) -> tuple[tuple[int, int], ...]:
+    """Immutable geometry only; callers first check that the source is interior.
+
+    No cells or map bounds are cached, so replacing/resizing a realm needs no
+    invalidation. Keep the established east, west, south, north iteration order.
+    """
+    return ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
 
 
 class MaterialSimMixin:
@@ -212,59 +247,45 @@ class MaterialSimMixin:
     def electric_field_cells(self, *, at_time: int | None = None) -> set[tuple[int, int]]:
         at_time = self.time if at_time is None else at_time
         prefix = self._electric_prefix()
-        best: dict[tuple[int, int], float] = {}
-        for key, expiry in list(self.player.portent_debt.items()):
-            if not key.startswith(prefix) or expiry < at_time:
-                continue
-            entry = self._electric_entry(key, prefix)
-            if entry is None:
-                continue
-            _, x, y = entry
-            if (0 <= x < self.width and 0 <= y < self.height
-                    and self._conductive_cell(self.cell(x, y))):
-                best[(x, y)] = max(best.get((x, y), 0.0), float(expiry))
-        if not best:
-            return set()
         origin_prefix = self._electric_origin_prefix()
+        best: set[tuple[int, int]] = set()
         origins = []
         legacy: set[tuple[int, int]] = set()
+        # Parse the ledger once per query; the world remains mutable between queries.
         for key, expiry in list(self.player.portent_debt.items()):
-            if not key.startswith(origin_prefix) or expiry < at_time:
+            if not (key.startswith(prefix) or key.startswith(origin_prefix)) or expiry < at_time:
                 continue
-            entry = self._electric_origin_entry(key, origin_prefix)
-            if entry is not None:
-                origins.append(entry)
-        for key, expiry in list(self.player.portent_debt.items()):
-            if not key.startswith(prefix) or expiry < at_time:
-                continue
-            if key[len(prefix):].count(":") == 1:
+            if key.startswith(prefix):
                 entry = self._electric_entry(key, prefix)
+                if entry is None:
+                    continue
+                _, x, y = entry
+                if (0 <= x < self.width and 0 <= y < self.height
+                        and self._conductive_cell(self.cell(x, y))):
+                    best.add((x, y))
+                    if key[len(prefix):].count(":") == 1:
+                        legacy.add((x, y))
+            elif key.startswith(origin_prefix):
+                entry = self._electric_origin_entry(key, origin_prefix)
                 if entry is not None:
-                    legacy.add((entry[1], entry[2]))
+                    origins.append(entry)
+        if not best:
+            return set()
         if not origins:
-            # 旧档没有来源记录：按旧口径保留全部仍在导电的记账格。
-            return set(best)
-        # 介质断开后，从仍带电的充能源沿记账格重新取连通区；失去通路的
-        # 远端格即使自身还导电、记账未过期，也不再算在电场里。只走已充能
-        # 的记账格，不做全图导电扫描（渲染每帧都会读这里）。
-        connected: set[tuple[int, int]] = set(legacy) & set(best)
-        for _source, x, y in origins:
-            origin = (x, y)
-            if origin not in best:
-                continue
-            seen = {origin}
-            queue = [origin]
-            while queue:
-                cx, cy = queue.pop(0)
-                for nx, ny in ((cx + 1, cy), (cx - 1, cy),
-                               (cx, cy + 1), (cx, cy - 1)):
-                    pos = (nx, ny)
-                    if pos in seen or pos not in best:
-                        continue
+            return best
+        # Multi-source traversal visits each charged component at most once.
+        # Legacy cells are included in the result but are never traversal seeds.
+        seen = {(x, y) for _, x, y in origins if (x, y) in best}
+        queue = deque(seen)
+        while queue:
+            cx, cy = queue.popleft()
+            for nx, ny in ((cx + 1, cy), (cx - 1, cy),
+                           (cx, cy + 1), (cx, cy - 1)):
+                pos = (nx, ny)
+                if pos not in seen and pos in best:
                     seen.add(pos)
                     queue.append(pos)
-            connected.update(seen)
-        return connected
+        return seen | legacy
 
     def _electric_expiry_at(self, x: int, y: int) -> float:
         prefix = self._electric_prefix()
@@ -391,6 +412,12 @@ class MaterialSimMixin:
 
     def _prime_material_clocks(self, cell: Cell) -> None:
         """A newly arrived material cannot accumulate time before its arrival."""
+        # An ordinary Cell can never enter the owned-array kernel. Keep the
+        # default path free of per-cell imports and inapplicable owner checks.
+        if type(cell) is not Cell:
+            from .material_numeric import try_prime_owned
+            if try_prime_owned(self, cell, globals()):
+                return
         liquid = LIQUID_DEFINITIONS.get(cell.liquid_kind) if cell.liquid > 0 else None
         gas = GAS_DEFINITIONS.get(cell.gas_kind) if cell.gas > 0 else None
         active = set()
@@ -430,8 +457,50 @@ class MaterialSimMixin:
 
     def _ensure_material_index(self) -> None:
         """建立材料活动格索引；后续行动只遍历这些格子。"""
-        if getattr(self, "_material_index_ready", False):
+        if getattr(self.cells, 'store', None) is not None and try_ensure_index_owned(self, globals()):
             return
+        if not hasattr(self, '_material_grid_on'):
+            self._material_grid_on = _env_flag('MATERIAL_GRID', False)
+        mirror = getattr(self, '_material_grid', None)
+        if mirror is not None and not mirror.matches(self.cells, self.width, self.height):
+            self._material_index_ready = False
+        store = getattr(self.cells, 'store', None)
+        if getattr(self, "_material_index_ready", False):
+            if store is None:
+                return
+            cursor = getattr(self, '_material_index_cursor', None)
+            if cursor == store.journal.cursor:
+                return
+            batch = store.journal.changes_since(cursor)
+            if not batch.reset:
+                # Finish clock writes before projecting membership/derived flags.
+                # A shared clock can change another Cell's phase stock; projecting
+                # before priming would require projecting the source twice.
+                initial = batch.positions
+                for position in sorted(initial):
+                    y, x = divmod(position, self.width)
+                    self._prime_material_clocks(self.cell(x, y))
+                primed = store.journal.changes_since(batch.cursor)
+                positions = (frozenset(range(self.width * self.height)) if primed.reset
+                             else initial | primed.positions)
+                for position in sorted(positions):
+                    y, x = divmod(position, self.width)
+                    # Never prime dependent aliases again: Cells sharing clocks
+                    # can intentionally require conflicting clock keys.
+                    self._sync_material_position(x, y, prime=False, _index_current=True)
+                if (initial and self._material_grid_on
+                        and getattr(self, '_material_grid', None) is None):
+                    from .material_grid import MaterialGrid
+                    try:
+                        self._material_grid = MaterialGrid.from_cells(self.cells, self.width, self.height)
+                        self._material_grid_error = ''
+                    except ValueError as error:
+                        self._material_grid_error = str(error)
+                self._material_index_cursor = primed.cursor
+                self._material_index_projection = (
+                    primed.cursor, self.time, getattr(self, '_material_step', 0), positions)
+                return
+            self._material_index_ready = False
         liquid: set[tuple[int, int]] = set()
         gas: set[tuple[int, int]] = set()
         flame: set[tuple[int, int]] = set()
@@ -439,24 +508,44 @@ class MaterialSimMixin:
         fans: set[tuple[int, int]] = set()
         exhausts: set[tuple[int, int]] = set()
         phases: set[tuple[int, int]] = set()
+        if store is not None:
+            # Finish writes before reading membership. A later Cell's clocks
+            # may alias an earlier Cell's phase stock (or other tracked state).
+            for row in self.cells:
+                for cell in row:
+                    self._prime_material_clocks(cell)
+        compact = store is not None and not store.exceptions
+        columns = store.columns if compact else None
         for y, row in enumerate(self.cells):
             for x, cell in enumerate(row):
-                self._prime_material_clocks(cell)
+                if store is None:
+                    self._prime_material_clocks(cell)
                 position = (x, y)
-                if cell.liquid > 0:
+                if compact:
+                    index = y*self.width+x
+                    liquid_amount, gas_amount = columns['liquid'][index], columns['gas'][index]
+                    flame_amount, wall_kind = columns['flame'][index], columns['wall_kind'][index]
+                    solid, integrity = columns['solid'][index], columns['integrity'][index]
+                    phase = (bool(columns['phase_stock'][index]) or flame_amount > 0
+                             or columns['aggregate_variant'][index] == '冰面'
+                             or (solid and wall_kind in _PHASE_WALL_KINDS))
+                else:
+                    liquid_amount, gas_amount = cell.liquid, cell.gas
+                    flame_amount, wall_kind = cell.flame, cell.wall_kind
+                    solid, integrity = cell.solid, cell.integrity
+                    phase = self._cell_in_phase_index(cell)
+                if liquid_amount > 0:
                     liquid.add(position)
-                if cell.gas > 0:
+                if gas_amount > 0:
                     gas.add(position)
-                if cell.flame > 0:
+                if flame_amount > 0:
                     flame.add(position)
-                if (cell.phase_stock or cell.flame > 0
-                        or cell.aggregate_variant == '冰面'
-                        or (cell.solid and cell.wall_kind in _PHASE_WALL_KINDS)):
+                if phase:
                     phases.add(position)
-                if cell.wall_kind in self._SPECIAL_WALL_KINDS:
+                if wall_kind in self._SPECIAL_WALL_KINDS:
                     special.add(position)
-                wall = WALL_DEFINITIONS.get(cell.wall_kind)
-                if cell.solid and cell.integrity > 0 and wall is not None:
+                wall = WALL_DEFINITIONS.get(wall_kind)
+                if solid and integrity > 0 and wall is not None:
                     if wall.gas_push_direction:
                         fans.add(position)
                     if wall.gas_dissipation_multiplier > 1:
@@ -475,6 +564,118 @@ class MaterialSimMixin:
         self._ventilation_cells = fans
         self._exhaust_cells = exhausts
         self._material_index_ready = True
+        self._material_grid = None
+        if self._material_grid_on:
+            from .material_grid import MaterialGrid
+            try:
+                self._material_grid = MaterialGrid.from_cells(self.cells, self.width, self.height)
+                self._material_grid_error = ''
+            except ValueError as error:
+                # 旧档/调试值无法放入紧凑数组时保持原 Cell 结算，绝不截断。
+                self._material_grid_error = str(error)
+        if getattr(self, "_material_dirty_on", False):
+            # 冷启动/换层/50 回合校准：活动集从全量索引重建，全部材料格先当
+            # 活动格，之后只有写入能唤醒（休眠格由 `_settle_material_cells` 收走）。
+            self._rebuild_awake_sets(liquid, gas, phases)
+            self._rebuild_material_channels()
+        if store is not None:
+            self._material_index_cursor = store.journal.cursor
+
+    @staticmethod
+    def _cell_in_phase_index(cell: Cell) -> bool:
+        """相变活动格的成员条件（相变存量/冰面/蜡墙/火焰）。"""
+        return (bool(cell.phase_stock) or cell.flame > 0
+                or cell.aggregate_variant == '冰面'
+                or (cell.solid and cell.wall_kind in _PHASE_WALL_KINDS))
+
+    def _rebuild_awake_sets(self, liquid, gas, phases) -> None:
+        step = getattr(self, "_material_step", 0)
+        self._awake_liquid = set(liquid)
+        self._awake_gas = set(gas)
+        self._awake_phase = set(phases)
+        self._touch_tick = {position: step
+                            for position in set(liquid) | set(gas) | set(phases)}
+
+    # ---- P1b（2026-11-04，性能方案 §3）：每拍全量通道改为索引集 --------------
+    # 三条通道（气体消散、月壤吸气、拨号音）原本每拍/每数拍扫全部气体索引。
+    # 这里为它们维护三份更窄的索引，只在脏区模式下启用：
+    #   `_decay_due` + `_decay_heap`：按格子自身时钟排出的「下一拍该消散」；
+    #   `_decay_hold`：容器/密封地板格，全量路径每拍都会把时钟写成当前时间；
+    #   `_gas_absorb_cells`：月壤等吸气地板上的气格；
+    #   `_dial_tone_cells`：浓度可能够的拨号音格（用量门槛在使用时复核）。
+    # 索引由 `_sync_material_position` 单点维护，并在全量重建时重排，语义与
+    # 全量路径逐字符合（含 `material_clocks` 的写入时机）。
+
+    def _gas_decay_interval(self) -> int:
+        """普通气体的消散间隔（心智失序减慢：每档 +2）。"""
+        return GAS_DECAY_INTERVAL + self.mind_tier * 2
+
+    def _rebuild_material_channels(self) -> None:
+        self._decay_hold = set()
+        self._decay_due = {}
+        self._decay_heap = []
+        self._gas_absorb_cells = set()
+        self._dial_tone_cells = set()
+        interval = self._gas_decay_interval()
+        self._decay_interval_used = interval
+        for position in self._gas_cells:
+            cell = self.cell(*position)
+            if cell.gas <= 0:
+                continue
+            if cell.gas_kind == DIAL_TONE_GAS:
+                self._dial_tone_cells.add(position)
+            effect = floor_effect_for(cell)
+            if effect.gas_absorb > 0 and not effect.preserves_gas:
+                self._gas_absorb_cells.add(position)
+            self._schedule_gas_decay(position, cell, interval)
+
+    def _drop_gas_decay(self, position) -> None:
+        self._decay_due.pop(position, None)
+        self._decay_hold.discard(position)
+
+    def _schedule_gas_decay(self, position, cell, interval: int | None = None) -> None:
+        """把一格气体排进「下一次该消散」的表；容器/密封地板进保持集。"""
+        if cell.gas <= 0:
+            self._drop_gas_decay(position)
+            return
+        definition = GAS_DEFINITIONS.get(cell.gas_kind)
+        if definition is None:
+            self._drop_gas_decay(position)
+            return
+        if cell.wall_kind in CONTAINER_KINDS or floor_effect_for(cell).preserves_gas:
+            self._decay_hold.add(position)
+            self._decay_due.pop(position, None)
+            return
+        self._decay_hold.discard(position)
+        if interval is None:
+            interval = self._gas_decay_interval()
+        period = definition.dissipation_period or interval
+        mark = cell.material_clocks.get("decay:" + cell.gas_kind)
+        # 没有时钟的气格下一次结算就会写入时钟（值与全量路径的
+        # setdefault(mark, time) 一致），所以排在当前时间即可。
+        due = self.time if mark is None else mark + period
+        if self._decay_due.get(position) == due:
+            return
+        self._decay_due[position] = due
+        heapq.heappush(self._decay_heap, (due, position))
+
+    def _sync_gas_channels(self, position, cell) -> None:
+        """单格气体通道索引维护（只在脏区模式调用）。"""
+        if cell.gas <= 0:
+            self._dial_tone_cells.discard(position)
+            self._gas_absorb_cells.discard(position)
+            self._drop_gas_decay(position)
+            return
+        if cell.gas_kind == DIAL_TONE_GAS:
+            self._dial_tone_cells.add(position)
+        else:
+            self._dial_tone_cells.discard(position)
+        effect = floor_effect_for(cell)
+        if effect.gas_absorb > 0 and not effect.preserves_gas:
+            self._gas_absorb_cells.add(position)
+        else:
+            self._gas_absorb_cells.discard(position)
+        self._schedule_gas_decay(position, cell)
 
     def _reset_material_index(self) -> None:
         """换幅时作废材料索引：旧地图的坐标在新地图上没有意义。
@@ -485,6 +686,7 @@ class MaterialSimMixin:
         直接越界——窄图对宽图时必然踩到。
         """
         self._material_index_ready = False
+        self._material_grid = None
         self._liquid_cells = set()
         self._gas_cells = set()
         self._periodic_liquid_cells = set()
@@ -494,18 +696,142 @@ class MaterialSimMixin:
         self._special_cells = set()
         self._ventilation_cells = set()
         self._exhaust_cells = set()
+        self._awake_liquid = set()
+        self._awake_gas = set()
+        self._awake_phase = set()
+        self._touch_tick = {}
+        self._decay_hold = set()
+        self._decay_due = {}
+        self._decay_heap = []
+        self._decay_interval_used = None
+        self._gas_absorb_cells = set()
+        self._dial_tone_cells = set()
 
-    def _sync_material_position(self, x: int, y: int, *, prime: bool = True) -> None:
+    def _project_material_arrays(self, x, y, store):
+        """Project compact authoritative values without re-entering Cell reads."""
+        from .material_numeric import try_project_owned
+        if try_project_owned(self, x, y, store, globals()):
+            return
+        columns = store.columns
+        index = y * self.width + x
+        point = (x, y)
+        liquid, gas, flame = columns['liquid'][index], columns['gas'][index], columns['flame'][index]
+        liquid_kind, gas_kind = columns['liquid_kind'][index], columns['gas_kind'][index]
+        wall_kind, solid = columns['wall_kind'][index], columns['solid'][index]
+        phase = bool(columns['phase_stock'][index]) or flame > 0 or columns['aggregate_variant'][index] == '冰面' or (solid and wall_kind in _PHASE_WALL_KINDS)
+        liquid_definition = LIQUID_DEFINITIONS.get(liquid_kind) if liquid > 0 else None
+        gas_definition = GAS_DEFINITIONS.get(gas_kind) if gas > 0 else None
+        ventilation = exhaust = False
+        if solid and columns['integrity'][index] > 0:
+            wall = wall_def(wall_kind)
+            ventilation = bool(wall.gas_push_direction)
+            exhaust = wall.gas_dissipation_multiplier > 1
+        flags = (("_liquid_cells", liquid > 0), ("_gas_cells", gas > 0),
+                 ("_periodic_liquid_cells", liquid_definition is not None and liquid_definition.evaporation_period > 0),
+                 ("_periodic_gas_cells", gas_definition is not None and gas_definition.dissipation_period > 0),
+                 ("_flame_cells", flame > 0), ("_phase_cells", phase),
+                 ("_special_cells", wall_kind in self._SPECIAL_WALL_KINDS),
+                 ("_ventilation_cells", ventilation), ("_exhaust_cells", exhaust))
+        for name, active in flags:
+            bucket = getattr(self, name)
+            if active:
+                bucket.add(point)
+            else:
+                bucket.discard(point)
+        if getattr(self, '_material_dirty_on', False):
+            step = getattr(self, '_material_step', 0)
+            for nx, ny in ((x, y), (x+1, y), (x-1, y), (x, y+1), (x, y-1)):
+                if not (0 <= nx < self.width and 0 <= ny < self.height):
+                    continue
+                neighbour = ny*self.width+nx
+                p = (nx, ny)
+                self._touch_tick[p] = step
+                if columns['liquid'][neighbour] > 0:
+                    self._awake_liquid.add(p)
+                if columns['gas'][neighbour] > 0:
+                    self._awake_gas.add(p)
+                if (columns['phase_stock'][neighbour] or columns['flame'][neighbour] > 0
+                        or columns['aggregate_variant'][neighbour] == '冰面'
+                        or (columns['solid'][neighbour] and columns['wall_kind'][neighbour] in _PHASE_WALL_KINDS)):
+                    self._awake_phase.add(p)
+            if gas <= 0:
+                self._dial_tone_cells.discard(point)
+                self._gas_absorb_cells.discard(point)
+                self._drop_gas_decay(point)
+            else:
+                if gas_kind == DIAL_TONE_GAS:
+                    self._dial_tone_cells.add(point)
+                else:
+                    self._dial_tone_cells.discard(point)
+                effect = (FLOOR_DEFINITIONS.get(columns['aggregate_variant'][index], PLAIN_FLOOR)
+                          if columns['floor'][index] is Material.PLAIN_AGGREGATE else PLAIN_FLOOR)
+                if effect.gas_absorb > 0 and not effect.preserves_gas:
+                    self._gas_absorb_cells.add(point)
+                else:
+                    self._gas_absorb_cells.discard(point)
+                if gas_definition is None:
+                    self._drop_gas_decay(point)
+                elif wall_kind in CONTAINER_KINDS or effect.preserves_gas:
+                    self._decay_hold.add(point)
+                    self._decay_due.pop(point, None)
+                else:
+                    self._decay_hold.discard(point)
+                    period = gas_definition.dissipation_period or self._gas_decay_interval()
+                    mark = columns['material_clocks'][index].get('decay:' + gas_kind)
+                    due = self.time if mark is None else mark + period
+                    if self._decay_due.get(point) != due:
+                        self._decay_due[point] = due
+                        heapq.heappush(self._decay_heap, (due, point))
+        mirror = getattr(self, '_material_grid', None)
+        if mirror is not None:
+            try:
+                mirror.sync_cell(x, y, self.cells[y][x])
+            except ValueError as error:
+                self._material_grid = None
+                self._material_grid_error = str(error)
+
+    def _sync_material_position(self, x: int, y: int, *, prime: bool = True,
+                                _index_current: bool = False) -> None:
         """同步单格索引；用于材料转移及墙体/火焰变化。
 
         prime=False 只给已经在本拍内调用过 _prime_material_clocks 的写入路径用
         （_add_liquid/_add_gas），避免同一格每拍重复建时钟集合。
         """
-        self._ensure_material_index()
+        if (getattr(self.cells, 'store', None) is not None
+                and try_sync_position_owned(self, x, y, prime, _index_current, globals())):
+            return
+        if not _index_current:
+            self._ensure_material_index()
+            store = getattr(self.cells, 'store', None)
+            projection = getattr(self, '_material_index_projection', None)
+            if (store is not None and projection is not None
+                    and projection[:3] == (store.journal.cursor, self.time,
+                                           getattr(self, '_material_step', 0))
+                    and y * self.width + x in projection[3]):
+                # Ordinary clocks were already primed for this exact final
+                # state. Shared clocks retain the legacy explicit caller prime:
+                # another source may have removed its key in the same batch.
+                clocks = self.cell(x, y).material_clocks
+                notifier = getattr(clocks, '_changed', None)
+                shared_prime = prime and notifier is not None and len(notifier.owners) > 1
+                if not shared_prime:
+                    return
+                self._prime_material_clocks(self.cell(x, y))
+                if store.journal.cursor == projection[0]:
+                    return
+                prime = False
+        if hasattr(self, 'ui_dirty'):
+            self.material_revision += 1
+            self.ui_revision += 1
+            self.ui_dirty.update(('body', 'status'))
         position = (x, y)
         cell = self.cell(x, y)
         if prime:
             self._prime_material_clocks(cell)
+        store = getattr(self.cells, 'store', None)
+        if store is not None and not store.exceptions:
+            self._project_material_arrays(x, y, store)
+            return
         liquid_definition = LIQUID_DEFINITIONS.get(cell.liquid_kind) if cell.liquid > 0 else None
         gas_definition = GAS_DEFINITIONS.get(cell.gas_kind) if cell.gas > 0 else None
         ventilation = exhaust = False
@@ -521,9 +847,7 @@ class MaterialSimMixin:
             ("_periodic_gas_cells", gas_definition is not None
              and gas_definition.dissipation_period > 0),
             ("_flame_cells", cell.flame > 0),
-            ("_phase_cells", bool(cell.phase_stock) or cell.flame > 0
-             or cell.aggregate_variant == '冰面'
-             or (cell.solid and cell.wall_kind in _PHASE_WALL_KINDS)),
+            ("_phase_cells", self._cell_in_phase_index(cell)),
             ("_special_cells", cell.wall_kind in self._SPECIAL_WALL_KINDS),
             ("_ventilation_cells", ventilation),
             ("_exhaust_cells", exhaust),
@@ -534,6 +858,112 @@ class MaterialSimMixin:
                 bucket.add(position)
             else:
                 bucket.discard(position)
+        if getattr(self, "_material_dirty_on", False):
+            self._wake_material_region(x, y)
+            self._sync_gas_channels(position, cell)
+        mirror = getattr(self, '_material_grid', None)
+        if mirror is not None:
+            try:
+                mirror.sync_cell(x, y, cell)
+            except ValueError as error:
+                self._material_grid = None
+                self._material_grid_error = str(error)
+
+    def _wake_material_region(self, x: int, y: int) -> None:
+        """写入格 + 四邻登记为活动格，并记下触碰时刻。
+
+        半径 1 就够：**任何**材料变化都经 ``_sync_material_position`` 走这里，
+        唤醒会沿邻接逐格传递；多扫一圈半径 2 只是重复劳动。
+        """
+        touch = self._touch_tick
+        grid = self.cells
+        width, height = self.width, self.height
+        step = getattr(self, "_material_step", 0)
+        for nx, ny in ((x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            touch[(nx, ny)] = step
+            cell = grid[ny][nx]
+            if cell.liquid > 0:
+                self._awake_liquid.add((nx, ny))
+            if cell.gas > 0:
+                self._awake_gas.add((nx, ny))
+            if self._cell_in_phase_index(cell):
+                self._awake_phase.add((nx, ny))
+
+    def _settle_material_cells(self) -> None:
+        """连续 ``SETTLE_TICKS`` 拍本体与四邻都没被触碰的格退出活动集。
+
+        先查本体再查四邻：流动中的格子本体几乎每拍都被触碰，只有真正静止的
+        格才付四次邻格查询。相变格一律不减：``locked()`` 与冷源解锁都是按拍
+        变化，少算一格就会改变「谁先拿到冷源」的顺序。
+        """
+        touch = self._touch_tick
+        threshold = getattr(self, "_material_step", 0) - SETTLE_TICKS
+        grid = self.cells
+        for x, y in tuple(self._awake_liquid):
+            if touch.get((x, y), threshold) > threshold:
+                continue
+            if grid[y][x].liquid_kind in _SLOW_FLOW_KINDS:
+                continue
+            if self._neighbor_touched(x, y, threshold):
+                continue
+            self._awake_liquid.discard((x, y))
+        for x, y in tuple(self._awake_gas):
+            if touch.get((x, y), threshold) > threshold:
+                continue
+            if self._neighbor_touched(x, y, threshold):
+                continue
+            self._awake_gas.discard((x, y))
+
+    def _neighbor_touched(self, x: int, y: int, threshold: int) -> bool:
+        touch = self._touch_tick
+        return any(touch.get((x + dx, y + dy), threshold) > threshold
+                   for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+
+    def _liquid_pass_cells(self) -> tuple[tuple[int, int], ...]:
+        """液体 pass 的候选：脏区模式保留全量索引的原有迭代顺序，只跳过休眠格。
+
+        顺序不动 = 平局规则不动（合同 A）；收益来自「休眠格不再进循环体」，
+        不是来自换一种排序。
+        """
+        # Sleeping sources still occupy slots in the full path's fixed budget.
+        # Dropping those slots changes which queued snapshots execute this pass.
+        # Retain the full candidate stream whenever a budget boundary is possible.
+        dirty = self._material_awake_filter('liquid')
+        if getattr(self, '_material_canonical_on', False):
+            cells = (self._awake_liquid if dirty
+                     else self._liquid_cells)
+            return tuple(sorted(cells))
+        if dirty:
+            awake = self._awake_liquid
+            return tuple(position for position in self._liquid_cells
+                         if position in awake)
+        return tuple(self._liquid_cells)
+
+    def _gas_pass_cells(self) -> tuple[tuple[int, int], ...]:
+        dirty = self._material_awake_filter('gas')
+        if getattr(self, '_material_canonical_on', False):
+            cells = (self._awake_gas if dirty
+                     else self._gas_cells)
+            return tuple(sorted(cells))
+        if dirty:
+            awake = self._awake_gas
+            return tuple(position for position in self._gas_cells
+                         if position in awake)
+        return tuple(self._gas_cells)
+
+    def _material_awake_filter(self, channel):
+        if (not getattr(self, '_material_dirty_on', False)
+                or getattr(self, '_material_full_step', False)):
+            return False
+        return (len(getattr(self, '_' + channel + '_cells'))
+                + len(getattr(self, '_deferred_' + channel + '_sources', ()))
+                <= self.SIM_SOURCE_BUDGET)
+
+    def _material_positions(self, cells):
+        """Opt-in contract B; legacy mode retains its established iteration order."""
+        return tuple(sorted(cells)) if getattr(self, '_material_canonical_on', False) else tuple(cells)
 
     def _set_flame(self, x: int, y: int, amount: int) -> None:
         self.cell(x, y).flame = max(0, amount)
@@ -567,7 +997,7 @@ class MaterialSimMixin:
         newly = 0
         self._ensure_material_index()
         # 2026-09-19 性能改造：只扫有液体的格子（索引快照）。
-        for x, y in tuple(self._liquid_cells):
+        for x, y in self._material_positions(self._liquid_cells):
             cell = self.cells[y][x]
             if cell.liquid_kind == "显影液" and cell.liquid > 0 and self.mark_developed(x, y):
                 newly += 1
@@ -747,6 +1177,7 @@ class MaterialSimMixin:
         note_gate_breach(self,x,y,cause)
         # 墙体破坏改变可听拓扑：挂起的调查任务在下一回合重新尝试寻路。
         self.topology_revision += 1
+        self._sync_material_position(x, y)
         return True
 
     def _ash_memory_reward(self, x: int, y: int) -> None:
@@ -871,6 +1302,8 @@ class MaterialSimMixin:
         self._material_index_ready = False
         # 爆炸动画标记（运行期缓存，不入档）：UI 按帧渐隐黄→红高亮。
         self._emit_combat_fx("explosion", (cx, cy), cells_marked)
+        from .presentation_events import publish_explosion
+        publish_explosion(self, cells_marked, (cx, cy, radius))
         # 并集累积（2026-09-22）：连锁爆炸的每一圈都显示，不再被最后一次覆盖。
         existing = getattr(self, "explosion_cells", None) or set()
         self.explosion_cells = existing | cells_marked
@@ -880,7 +1313,15 @@ class MaterialSimMixin:
         blasts = getattr(self, "explosion_blasts", None)
         if blasts is None:
             self.explosion_blasts = blasts = []
-        blasts.append((cx, cy, radius))
+        # A repeated center's largest radius dominates every distance ratio;
+        # keep the legacy compatibility facts bounded by map area as well.
+        for index, (bx, by, br) in enumerate(blasts):
+            if (bx, by) == (cx, cy):
+                if radius > br:
+                    blasts[index] = (cx, cy, radius)
+                break
+        else:
+            blasts.append((cx, cy, radius))
         # §11 H1：真实爆炸在爆心发普通警戒脉冲（不自动强诱引，也不触发
         # 主动发声的装备连击／回声控制奖励）。基础声径随实际半径增长。
         self._sound_pulse(cx, cy, max(8, 2 * radius + 4), by_player=bool(from_player),
@@ -891,33 +1332,8 @@ class MaterialSimMixin:
 
     def _remote_overwrite(self) -> None:
         self.overwrite_count += 1
-        radius = max(4, min(self.width, self.height) // 3)
-        rng = random.Random(self.seed + self.depth * 1009 + self.overwrite_count * 9176)
-        liquid_choices = tuple(k for k, d in LIQUID_DEFINITIONS.items()
-                               if not d.spawn_realms or self.realm_id in d.spawn_realms)
-        gas_choices = tuple(k for k, d in GAS_DEFINITIONS.items()
-                            if not d.spawn_realms or self.realm_id in d.spawn_realms)
-        changed = 0
-        for y in range(1, self.height - 1):
-            for x in range(1, self.width - 1):
-                distance = abs(x - self.player.x) + abs(y - self.player.y)
-                if distance <= radius or rng.random() > 0.12:
-                    continue
-                if rng.random() < 0.18:
-                    # 远程覆写只生成内部墙材；意识边界与地面容器必须排除——
-                    # 前者永远留在最外圈，后者离开内容物只是空罐。
-                    wall_choices = tuple(
-                        kind for kind, definition in WALL_DEFINITIONS.items()
-                        if kind != "意识边界" and kind not in CONTAINER_KINDS
-                        and (not definition.spawn_realms or self.realm_id in definition.spawn_realms)
-                    )
-                    kind = wall_choices[rng.randrange(len(wall_choices))]
-                    self._overwrite_cell(x, y, wall_kind=kind)
-                else:
-                    liquid_kind = rng.choice(liquid_choices) if rng.random() < 0.08 else ""
-                    gas_kind = rng.choice(gas_choices) if rng.random() < 0.08 else ""
-                    self._overwrite_cell(x, y, wall_kind=None, liquid_kind=liquid_kind, gas_kind=gas_kind)
-                changed += 1
+        from .remote_overwrite import run_remote_overwrite
+        changed = run_remote_overwrite(self)
         if changed:
             self.messages.append(tr("清醒度归零，远域覆写永久改变了 {count} 个格子。", count=changed))
 
@@ -955,6 +1371,7 @@ class MaterialSimMixin:
             self._prime_material_clocks(cell)
             self._redistribute_overwrite_products(x, y, released_liquid, released_gas,
                                                   gas_decay_mark=released_gas_mark)
+            self._sync_material_position(x, y)
             return
         if cell.solid:
             self.destroy_wall(x, y, "remote_overwrite")
@@ -969,6 +1386,7 @@ class MaterialSimMixin:
             self._add_liquid(cell, liquid_kind, 100)
         if gas_kind:
             self._add_gas(cell, gas_kind, 100)
+        self._sync_material_position(x, y)
 
     def _redistribute_overwrite_products(
         self,
@@ -1004,10 +1422,37 @@ class MaterialSimMixin:
     # 漏同步的索引漂移（正常情况下增量同步已经精确）。
     FULL_INDEX_SCAN_INTERVAL = 50
 
+    @owned_boundary_cadence
     def _simulate_materials(self, amount: int) -> None:
         """Run synchronous material passes; low lucidity adds discrete instability."""
+        grid_on = cadence_grid_enabled(self)
+        if grid_on != getattr(self, '_material_grid_on', None):
+            self._material_grid_on = grid_on
+            self._material_grid = None
+            if grid_on:
+                self._material_index_ready = False
+        self._material_canonical_on = _env_flag('MATERIAL_CANONICAL', False)
         instability = self.lucidity_tier
         passes = min(4, max(1, amount + instability))
+        # P1（2026-11-04）：脏区/休眠开关与全量索引必须同源；切换的那一拍重建
+        # 索引，活动集随之从全部材料格重新填满。
+        dirty = material_dirty_enabled()
+        if dirty != getattr(self, "_material_dirty_on", None):
+            self._material_dirty_on = dirty
+            if dirty:
+                # 首次开启：索引与活动集同源重建。
+                self._material_index_ready = False
+        # 休眠按「模拟步」计时，不按世界时间：同一个世界时刻里重复结算材料
+        # （读档补算/调试）时，休眠判据仍只认真正跑过的拍数。
+        self._material_step = getattr(self, "_material_step", 0) + 1
+        # P3 的保守分支：只周期性绕过休眠，不合并 pass、不改预算和顺序。
+        # 0 为关闭；按模拟步计数，避免同一世界时刻多次结算失去全量校准。
+        try:
+            interval = max(0, int(_env_get('MATERIAL_FULL_INTERVAL', '0')))
+        except (ValueError, TypeError):
+            interval = 0
+        self._material_full_interval = interval
+        self._material_full_step = bool(dirty and interval and self._material_step % interval == 0)
         # 50 回合一次的全图校准：强制重建活动格索引（自愈兜底）。
         if self.time - getattr(self, "_last_full_scan_time", -(10 ** 9)) >= self.FULL_INDEX_SCAN_INTERVAL:
             self._material_index_ready = False
@@ -1031,7 +1476,7 @@ class MaterialSimMixin:
             # 2026-09-19 性能改造：火焰蔓延只扫「当前着火的格子」（索引快照），
             # 不再每拍全图重建。快照语义与旧全图扫描一致：本拍新增的火不影响
             # 本拍的蔓延候选。
-            for x, y in tuple(self._flame_cells):
+            for x, y in self._material_positions(self._flame_cells):
                 cell = self.cell(x, y)
                 if cell.flame <= 0:
                     continue
@@ -1068,14 +1513,8 @@ class MaterialSimMixin:
         self._mark_developing_liquid()
         self._apply_liquid_evaporation(instability)
         self._simulate_ventilation(amount)
-        # 2026-09-19 性能改造：暴露气收集只扫有气的格子（索引快照）。
-        for x, y in tuple(self._gas_cells):
-            cell = self.cell(x, y)
-            if cell.gas and any(
-                0 <= nx < self.width and 0 <= ny < self.height and not self.cell(nx, ny).solid
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
-            ):
-                exposed_gas.add((x, y))
+        # 消散已改为逐格时钟（_apply_gas_dissipation 不再读暴露面），
+        # 这里的全量暴露格收集已无消费者，删除以免每拍多扫一遍气体索引。
         self._apply_gas_dissipation(exposed_gas, instability)
         # 拨号音连通气团的周期性短音：按客观世界回合节拍，不按额外材料拍重复触发。
         self._simulate_dial_tone_regions(amount)
@@ -1089,6 +1528,9 @@ class MaterialSimMixin:
         # 再考虑是否被热度蒸发；额外的失序材料拍不得加速相变。
         from .phase_changes import tick as tick_phase_changes
         tick_phase_changes(self)
+        # 本拍所有材料结算做完后再收睡：休眠看的是「这一拍有没有被写过」。
+        if dirty:
+            self._settle_material_cells()
 
     def _dial_tone_cell(self, x: int, y: int) -> bool:
         """这一格是否属于「够浓的拨号音」（连通区域的成员条件）。"""
@@ -1109,7 +1551,10 @@ class MaterialSimMixin:
         if self.time // DIAL_TONE_PERIOD == max(0, self.time - amount) // DIAL_TONE_PERIOD:
             return
         self._ensure_material_index()
-        pending = {pos for pos in self._gas_cells if self._dial_tone_cell(*pos)}
+        candidates = (self._dial_tone_cells
+                      if getattr(self, "_material_dirty_on", False)
+                      else self._gas_cells)
+        pending = {pos for pos in candidates if self._dial_tone_cell(*pos)}
         while pending:
             origin = min(pending)
             region = {origin}
@@ -1138,7 +1583,7 @@ class MaterialSimMixin:
             self._simulate_fire_burn_items()
             item_positions = {(entry.x, entry.y) for entry in self.world_items
                               if item_is_flammable(entry.item)}
-            for x, y in tuple(self._flame_cells):
+            for x, y in self._material_positions(self._flame_cells):
                 cell = self.cell(x, y)
                 if cell.flame <= 0:
                     continue
@@ -1314,7 +1759,8 @@ class MaterialSimMixin:
             return
         from .content import item_is_flammable
 
-        survivors: list = []
+        from .metadata_versions import OwnedList
+        survivors: list = OwnedList()
         burned: list = []
         progressed: set[tuple[int, int]] = set()
         for entry in self.world_items:
@@ -1493,18 +1939,25 @@ class MaterialSimMixin:
         """
         rng = random.Random(self.seed ^ (self.time * 0x9E3779B1))
         self._ensure_material_index()
-        # 液氦灭火：液体索引里只查液氦格，便宜且与流动通道解耦。
-        for x, y in tuple(self._liquid_cells):
+        dirty = getattr(self, "_material_dirty_on", False)
+        # 液氦灭火：液氦必须同时着火才有事可做，所以扫火焰索引（小集）而不是
+        # 液体索引；逐格独立结算，换一个更窄的候选集不改变任何格的结果。
+        for x, y in self._material_positions(self._flame_cells):
             cell = self.cell(x, y)
-            if cell.liquid_kind == "液氦" and cell.liquid > 0 and cell.flame:
+            if cell.flame <= 0:
+                continue
+            if cell.liquid_kind == "液氦" and cell.liquid > 0:
                 cell.flame = 0
+                self._sync_material_position(x, y)
         # 月壤吸气：气体索引里的月壤格每 2 回合吸 1 点。
         if self.time % 2 == 0:
-            for x, y in tuple(self._gas_cells):
+            cells = self._gas_absorb_cells if dirty else self._gas_cells
+            for x, y in self._material_positions(cells):
                 cell = self.cell(x, y)
                 effect = floor_effect_for(cell)
                 if cell.gas > 0 and effect.gas_absorb > 0 and not effect.preserves_gas:
                     cell.gas = max(0, cell.gas - effect.gas_absorb)
+                    self._sync_material_position(x, y)
         # 压电蓄电 / 棋盘格增益：按生物逐个结算（不扫全图）。
         stacks = getattr(self, "_piezo_stacks", None)
         if stacks is None:
@@ -1600,13 +2053,15 @@ class MaterialSimMixin:
         cell = self.cell(origin.x, origin.y)
         if cell.aggregate_variant == "压电地板" and cell.floor is Material.PLAIN_AGGREGATE:
             cell.aggregate_variant = "普通聚合物"
+            self._sync_material_position(origin.x, origin.y)
         for dy in range(-1, 2):
             for dx in range(-1, 2):
                 nx, ny = origin.x + dx, origin.y + dy
                 if 0 < nx < self.width - 1 and 0 < ny < self.height - 1:
-                    neighbor = self.cell(nx, ny)
+                    neighbor = self.cells[ny][nx]
                     if neighbor.aggregate_variant == "压电地板" and neighbor.floor is Material.PLAIN_AGGREGATE:
                         neighbor.aggregate_variant = "普通聚合物"
+                        self._sync_material_position(nx, ny)
         """压电地板放电：3×3 内的失控意识吃 2 点完整度创伤，稳定意识免疫，
         归零走正常崩解；玩家零创伤（2026-10-15 混乱化改造，地板零创伤回归）。"""
         ox, oy = origin.x, origin.y
@@ -1639,6 +2094,8 @@ class MaterialSimMixin:
     def _simulate_special_materials(self) -> None:
         """内容扩展材料反应：火+水→灼热蒸汽；蜡化记忆墙热敏融解；
         《新材料》的烛泪柱/枕木/黄粱米堆燃烧转化与梦晶簇吸储气体。"""
+        if try_rule_stage_owned(self, 'special'):
+            return
         # 索引由写入处增量同步；只有墙体破坏等确实使索引失效的路径才重建，
         # 不再每拍无条件全图重建（docs §11 P0）。
         self._ensure_material_index()
@@ -1646,43 +2103,42 @@ class MaterialSimMixin:
         # 候选集：特殊墙体自身 + 火焰格 + 特殊墙体的相邻格
         # （燃烧看邻居火焰、吸储看邻居气体、热敏看邻居火焰）。
         candidates = set(self._special_cells) | set(self._flame_cells)
-        for sx, sy in tuple(self._special_cells):
+        for sx, sy in self._material_positions(self._special_cells):
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 candidates.add((sx + dx, sy + dy))
         # 超临界流体所在格也纳入候选（剥蚀相邻墙体）。
-        for x, y in tuple(self._liquid_cells):
-            if self.cell(x, y).liquid_kind == "超临界流体":
+        for x, y in self._liquid_pass_cells():
+            if (self.cell(x, y).liquid_kind) == "超临界流体":
                 candidates.add((x, y))
         for x, y in tuple(candidates):
             if not (0 < x < self.width - 1 and 0 < y < self.height - 1):
                 continue
             cell = self.cell(x, y)
-            neighbors = [
-                (nx, ny)
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
-                if 0 <= nx < self.width and 0 <= ny < self.height
-            ]
-            if cell.flame > 0:
+            neighbors = _interior_neighbors(x, y)
+            if (cell.flame) > 0:
                 # 火+水→灼热蒸汽（30% 概率转化 10 点）。
                 for nx, ny in neighbors:
-                    neighbor = self.cell(nx, ny)
-                    if not neighbor.solid and neighbor.liquid_kind == "水" and neighbor.liquid >= 10 and rng.random() < 0.3:
+                    neighbor = self.cells[ny][nx]
+                    if not (neighbor.solid) and (neighbor.liquid_kind) == "水" and (neighbor.liquid) >= 10 and rng.random() < 0.3:
                         neighbor.liquid -= 10
-                        if neighbor.liquid <= 0:
+                        if (neighbor.liquid) <= 0:
                             neighbor.liquid_kind = ""
                         self._add_gas(neighbor, "灼热蒸汽", 10, position=(nx, ny))
                         self._sync_material_position(nx, ny)
-            if cell.liquid_kind == "超临界流体" and cell.liquid > 0:
+            if (cell.liquid_kind) == "超临界流体" and (cell.liquid) > 0:
                 # 超临界流体渗进墙体缝隙：直接剥蚀相邻墙体（无需生物携带）。
                 eroded = False
                 for nx, ny in neighbors:
-                    neighbor = self.cell(nx, ny)
-                    if neighbor.solid and neighbor.wall_kind != "意识边界":
-                        neighbor.integrity = max(0, neighbor.integrity - 3)
+                    neighbor = self.cells[ny][nx]
+                    if (neighbor.solid) and (neighbor.wall_kind) != "意识边界":
+                        neighbor.integrity = max(0, (neighbor.integrity) - 3)
                         eroded = True
-                        if neighbor.integrity == 0:
+                        if (neighbor.integrity) == 0:
                             self.destroy_wall(nx, ny, "peel")
                 if eroded:
+                    # 剥蚀只改邻墙的 integrity，本格自身状态没变；不显式登记触碰
+                    # 的话，脏区模式会把正在持续剥蚀的格子当成静止格睡死。
+                    self._sync_material_position(x, y)
                     # 事件消息每层只播一次（运行期记录，不进存档）。
                     notified = getattr(self, "_superfluid_notified_depths", None)
                     if notified is None:
@@ -1691,48 +2147,49 @@ class MaterialSimMixin:
                     if self.depth not in notified:
                         notified.add(self.depth)
                         self.messages.append(tr("超临界流体渗进墙体缝隙，石体簌簌剥落。"))
-            if cell.solid and cell.wall_kind == "盐晶壁":
+            if (cell.solid) and (cell.wall_kind) == "盐晶壁":
                 # 盐晶壁遇水溶解：任一邻格有水即化。
-                if any(self.cell(nx, ny).liquid_kind == "水" and self.cell(nx, ny).liquid > 0 for nx, ny in neighbors):
+                if any((self.cell(nx, ny).liquid_kind) == "水" and (self.cell(nx, ny).liquid) > 0 for nx, ny in neighbors):
                     self.destroy_wall(x, y, "dissolve")
                     self.messages.append(tr("盐晶壁遇水，簌地溶掉了。"))
                     continue
-            if cell.wall_kind in ("蜡化记忆墙", "烛泪柱", "枕木", "黄粱米堆"):
-                if any(self.cell(nx, ny).flame > 0 for nx, ny in neighbors):
+            if (cell.wall_kind) in ("蜡化记忆墙", "烛泪柱", "枕木", "黄粱米堆"):
+                if any((self.cell(nx, ny).flame) > 0 for nx, ny in neighbors):
                     self._ignite_cell(x, y, 2)
                 continue
-            if cell.wall_kind in ("梦晶簇", "无意识结晶"):
+            if (cell.wall_kind) in ("梦晶簇", "无意识结晶"):
                 # 吸收 3×3 范围内全部气体并储存（不混合种类）。
                 # 无意识结晶是深处的强化种：上限 160。
-                capacity = (160 if cell.wall_kind == "无意识结晶" else 100) - cell.cover
+                capacity = (160 if (cell.wall_kind) == "无意识结晶" else 100) - (cell.cover)
                 if capacity > 0:
                     for ny2 in range(max(1, y - 1), min(self.height - 1, y + 2)):
                         for nx2 in range(max(1, x - 1), min(self.width - 1, x + 2)):
                             if capacity <= 0:
                                 break
                             neighbor = self.cell(nx2, ny2)
-                            if neighbor.solid or neighbor.gas <= 0 or neighbor.gas_kind not in GAS_DEFINITIONS:
+                            if (neighbor.solid) or (neighbor.gas) <= 0 or (neighbor.gas_kind) not in GAS_DEFINITIONS:
                                 continue
-                            if neighbor.wall_kind in CONTAINER_KINDS:
+                            if (neighbor.wall_kind) in CONTAINER_KINDS:
                                 continue
-                            if cell.cover > 0 and neighbor.gas_kind != cell.gas_kind:
+                            if (cell.cover) > 0 and (neighbor.gas_kind) != (cell.gas_kind):
                                 continue
-                            taken = min(capacity, neighbor.gas)
-                            kind = neighbor.gas_kind
+                            taken = min(capacity, (neighbor.gas))
+                            kind = (neighbor.gas_kind)
                             stored_key,decay_key = 'crystal_stored:' + kind,'crystal_decay:' + kind
-                            stored = cell.material_clocks.get(stored_key,self.time)
-                            previous_age = max(0,stored-cell.material_clocks.get(decay_key,stored)) if cell.cover else 0
-                            source_age = max(0,self.time-neighbor.material_clocks.get('decay:' + kind,self.time))
-                            cell.material_clocks[stored_key] = self.time
-                            cell.material_clocks[decay_key] = self.time-max(previous_age,source_age)
-                            if cell.cover == 0:
-                                cell.gas_kind = neighbor.gas_kind
+                            stored = (cell.material_clocks).get(stored_key,self.time)
+                            previous_age = max(0,stored-(cell.material_clocks).get(decay_key,stored)) if (cell.cover) else 0
+                            source_age = max(0,self.time-(neighbor.material_clocks).get('decay:' + kind,self.time))
+                            (cell.material_clocks)[stored_key] = self.time
+                            (cell.material_clocks)[decay_key] = self.time-max(previous_age,source_age)
+                            if (cell.cover) == 0:
+                                cell.gas_kind = (neighbor.gas_kind)
                             neighbor.gas -= taken
-                            if neighbor.gas <= 0:
+                            if (neighbor.gas) <= 0:
                                 neighbor.gas_kind = ""
                             cell.cover += taken
                             capacity -= taken
                             self._sync_material_position(nx2,ny2)
+                            self._sync_material_position(x,y)
 
     def _note_seen_reaction(self, recipe, x: int, y: int) -> None:
         """亲眼见过的液气反应记一笔（洞察「留意产物」的账）。
@@ -1764,6 +2221,8 @@ class MaterialSimMixin:
         熔穿/崩解/脆裂/凝固/冻结。播报每种反应每层只播一次（运行期记录，
         不进存档），与超临界流体剥蚀的播报模式一致。
         """
+        if try_rule_stage_owned(self, 'recipe'):
+            return
         self._ensure_material_index()
         notified = getattr(self, "_recipe_notified_depths", None)
         if notified is None:
@@ -1775,85 +2234,95 @@ class MaterialSimMixin:
                 notified.add((self.depth, id(recipe)))
                 self.messages.append(tr(recipe.message))
 
-        for x, y in tuple(self._liquid_cells):
+        grid = self.cells
+        # 方案 1（2026-11-04）：编译版只做候选筛选，保持 _liquid_cells 的迭代
+        # 顺序；未命中「有气体 / 有登记配方」的静态液提前剔除。落账仍在下面。
+        if _kernel_enabled("recipe"):
+            points = _kernel_recipe_cells(
+                grid, self.width, self.height, self._liquid_pass_cells(), OTHER_BY_REACTANT)
+        else:
+            points = self._liquid_pass_cells()
+        for x, y in points:
             if not (0 < x < self.width - 1 and 0 < y < self.height - 1):
                 continue
-            cell = self.cell(x, y)
+            cell = grid[y][x]
             # ---- 液气反应：同格液气命中配方即全量转化（总量守恒、上限 100）----
-            recipe = LIQUID_GAS_RECIPES.get(frozenset((cell.liquid_kind, cell.gas_kind)))
-            if recipe and recipe.mechanism == 'lg_neutralize' and cell.liquid > 0 and cell.gas > 0:
+            # 只有真有气体的格才构造 frozenset 查表：液体格远多于液气共存格。
+            recipe = None
+            if (cell.gas) > 0 and (cell.gas_kind):
+                recipe = LIQUID_GAS_RECIPES.get(frozenset(((cell.liquid_kind), (cell.gas_kind))))
+            if recipe and recipe.mechanism == 'lg_neutralize' and (cell.liquid) > 0:
                 self._neutralize_hospital_dust(x, y)
                 continue
-            if cell.liquid >= 10 and cell.gas >= 10 and cell.gas_kind:
-                recipe = LIQUID_GAS_RECIPES.get(frozenset((cell.liquid_kind, cell.gas_kind)))
+            if (cell.liquid) >= 10 and (cell.gas) >= 10 and (cell.gas_kind):
                 if recipe is not None:
                     if recipe.product_type == "液体":
                         cell.liquid_kind = recipe.product
-                        cell.liquid = min(100, cell.liquid + cell.gas)
+                        cell.liquid = min(100, (cell.liquid) + (cell.gas))
                         cell.gas, cell.gas_kind = 0, ""
                     else:  # 产物是气体：液量并入气量
                         cell.gas_kind = recipe.product
-                        cell.gas = min(100, cell.gas + cell.liquid)
+                        cell.gas = min(100, (cell.gas) + (cell.liquid))
                         cell.liquid, cell.liquid_kind = 0, ""
                     self._sync_material_position(x, y)
                     self._note_seen_reaction(recipe, x, y)
                     notify(recipe)
                     continue
             # ---- 其他反应：液体格的邻接结算 ----
-            neighbors = [
-                (nx, ny)
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
-                if 0 <= nx < self.width and 0 <= ny < self.height
-            ]
-            # 2026-09-19 性能改造：倒排索引只取与本格液体相关的配方
-            # （通常 0–3 条），不再遍历整张 OTHER 表。
-            for recipe in OTHER_BY_REACTANT.get(cell.liquid_kind, ()):
+            # 没有登记配方的液体（多数静态液）连邻接表都不必构造。
+            recipes = OTHER_BY_REACTANT.get((cell.liquid_kind))
+            if not recipes:
+                continue
+            neighbors = _interior_neighbors(x, y)
+            for recipe in recipes:
                 mechanism = recipe.mechanism
                 if mechanism == "wall_melt":
                     # 熔念金属渗进相邻固体墙：按配方扣完整度并消耗液体，熔穿后留一洼余浆。
-                    if cell.liquid_kind == recipe.reactant_a and cell.liquid >= recipe.min_amount:
+                    if (cell.liquid_kind) == recipe.reactant_a and (cell.liquid) >= recipe.min_amount:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
+                            neighbor = self.cells[ny][nx]
                             # 不腐蚀容器、机关、边界和可推解谜固体。
-                            definition = WALL_DEFINITIONS.get(neighbor.wall_kind)
-                            if (neighbor.solid and definition is not None and definition.hardness < 999
-                                    and neighbor.wall_kind not in CONTAINER_KINDS and neighbor.wall_kind not in SOLID_KINDS
-                                    and neighbor.wall_kind not in LOGIC_KINDS
+                            definition = WALL_DEFINITIONS.get((neighbor.wall_kind))
+                            if ((neighbor.solid) and definition is not None and definition.hardness < 999
+                                    and (neighbor.wall_kind) not in CONTAINER_KINDS and (neighbor.wall_kind) not in SOLID_KINDS
+                                    and (neighbor.wall_kind) not in LOGIC_KINDS
                                     and not definition.path_clickable and not definition.pushable
-                                    and not neighbor.wall_kind.startswith("逻辑")):
-                                neighbor.integrity = max(0, neighbor.integrity - recipe.damage)
-                                cell.liquid = max(0, cell.liquid - recipe.consumption)
-                                if neighbor.integrity == 0:
+                                    and not (neighbor.wall_kind).startswith("逻辑")):
+                                neighbor.integrity = max(0, (neighbor.integrity) - recipe.damage)
+                                cell.liquid = max(0, (cell.liquid) - recipe.consumption)
+                                if (neighbor.integrity) == 0:
                                     self.destroy_wall(nx, ny, "peel")
-                                    self._add_liquid(self.cell(nx, ny), recipe.reactant_a, 5)
+                                    self._add_liquid(self.cells[ny][nx], recipe.reactant_a, 5)
+                                self._sync_material_position(x, y)
                                 notify(recipe)
                                 break
                 elif mechanism == "wall_bust_gas":
                     # 酸蚀液剧烈溶蚀盐晶壁：墙崩解并放出毒气 20 点。
-                    if cell.liquid_kind == recipe.reactant_b and cell.liquid > 0:
+                    if (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) > 0:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.wall_kind == recipe.reactant_a:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.wall_kind) == recipe.reactant_a:
                                 self.destroy_wall(nx, ny, "dissolve")
-                                self._add_gas(self.cell(nx, ny), recipe.product, 20)
+                                self._add_gas(self.cells[ny][nx], recipe.product, 20)
                                 notify(recipe)
                 elif mechanism == "wall_shatter":
                     # 寒液脆裂墙体：每拍完整度 −8，消耗液体 1。
-                    if cell.liquid_kind == recipe.reactant_b and cell.liquid >= recipe.min_amount:
+                    if (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= recipe.min_amount:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.wall_kind == recipe.reactant_a:
-                                neighbor.integrity = max(0, neighbor.integrity - recipe.damage)
-                                cell.liquid = max(0, cell.liquid - recipe.consumption)
-                                if neighbor.integrity == 0:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.wall_kind) == recipe.reactant_a:
+                                neighbor.integrity = max(0, (neighbor.integrity) - recipe.damage)
+                                cell.liquid = max(0, (cell.liquid) - recipe.consumption)
+                                if (neighbor.integrity) == 0:
                                     self.destroy_wall(nx, ny, "shatter")
+                                self._sync_material_position(x, y)
                                 notify(recipe)
                                 break
                 elif mechanism == "freeze_wall":
                     # 液态蜡与寒液相邻：当场凝固成蜡化记忆墙。
-                    if cell.liquid_kind == recipe.reactant_a and cell.liquid > 0 and not cell.solid:
+                    if (cell.liquid_kind) == recipe.reactant_a and (cell.liquid) > 0 and not (cell.solid):
                         if any(
-                            self.cell(nx, ny).liquid_kind == recipe.reactant_b and self.cell(nx, ny).liquid > 0
+                            (grid[ny][nx].liquid_kind) == recipe.reactant_b and (grid[ny][nx].liquid) > 0
                             for nx, ny in neighbors
                         ):
                             cell.liquid, cell.liquid_kind = 0, ""
@@ -1863,51 +2332,52 @@ class MaterialSimMixin:
                 elif mechanism == "freeze_floor":
                     # 水面与寒液相邻：整格冻成冰面（只覆盖普通聚合物地板，保留植物外的内容）。
                     if (
-                        cell.liquid_kind == recipe.reactant_a and cell.liquid > 0
-                        and not cell.solid and not cell.plant
+                        (cell.liquid_kind) == recipe.reactant_a and (cell.liquid) > 0
+                        and not (cell.solid) and not (cell.plant)
                     ):
                         if any(
-                            self.cell(nx, ny).liquid_kind == recipe.reactant_b and self.cell(nx, ny).liquid > 0
+                            (grid[ny][nx].liquid_kind) == recipe.reactant_b and (grid[ny][nx].liquid) > 0
                             for nx, ny in neighbors
                         ):
                             cell.liquid, cell.liquid_kind = 0, ""
-                            if cell.floor is Material.PLAIN_AGGREGATE:
+                            if (cell.floor) is Material.PLAIN_AGGREGATE:
                                 cell.aggregate_variant = recipe.product
                             self._sync_material_position(x, y)
                             notify(recipe)
                 elif mechanism == "wall_to_liquid":
                     # 墙化液：墙被相邻液体泡溶，整段墙消失、原地淌出产物液体。
-                    if cell.liquid_kind == recipe.reactant_b and cell.liquid >= 10:
+                    if (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= 10:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.solid and neighbor.wall_kind == recipe.reactant_a:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.solid) and (neighbor.wall_kind) == recipe.reactant_a:
                                 self.destroy_wall(nx, ny, "dissolve")
-                                self._add_liquid(self.cell(nx, ny), recipe.product, 20)
-                                cell.liquid = max(0, cell.liquid - 10)
+                                self._add_liquid(self.cells[ny][nx], recipe.product, 20)
+                                cell.liquid = max(0, (cell.liquid) - 10)
                                 self._sync_material_position(x, y)
                                 notify(recipe)
                                 break
                 elif mechanism == "wall_flush":
                     # 墙冲平：液体冲塌墙，原地留指定地板变体。
-                    if cell.liquid_kind == recipe.reactant_b and cell.liquid >= 10:
+                    if (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= 10:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.solid and neighbor.wall_kind == recipe.reactant_a:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.solid) and (neighbor.wall_kind) == recipe.reactant_a:
                                 self.destroy_wall(nx, ny, "flush")
-                                if neighbor.floor is Material.PLAIN_AGGREGATE:
+                                if (neighbor.floor) is Material.PLAIN_AGGREGATE:
                                     neighbor.aggregate_variant = recipe.product
-                                cell.liquid = max(0, cell.liquid - 10)
+                                    self._sync_material_position(nx, ny)
+                                cell.liquid = max(0, (cell.liquid) - 10)
                                 self._sync_material_position(x, y)
                                 notify(recipe)
                                 break
                 elif mechanism == "wall_retype":
                     # 墙改型：液体改写墙种（洗蜡/去锈/淬覆），墙还在、材料换了。
-                    if cell.liquid_kind == recipe.reactant_b and cell.liquid >= 10:
+                    if (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= 10:
                         for nx, ny in neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.solid and neighbor.wall_kind == recipe.reactant_a:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.solid) and (neighbor.wall_kind) == recipe.reactant_a:
                                 self.configure_wall(neighbor, recipe.product)
-                                cell.liquid = max(0, cell.liquid - 10)
+                                cell.liquid = max(0, (cell.liquid) - 10)
                                 self._material_index_ready = False
                                 notify(recipe)
                                 break
@@ -1915,83 +2385,87 @@ class MaterialSimMixin:
                     # 地板退化：特殊地板浸入反应液体，退回指定地板变体（一般
                     # 是普通聚合物）。同格判定——液体就淌在这块地板上。
                     if (
-                        not cell.solid and not cell.wall_kind
-                        and cell.aggregate_variant == recipe.reactant_a
-                        and cell.liquid_kind == recipe.reactant_b and cell.liquid >= 10
+                        not (cell.solid) and not (cell.wall_kind)
+                        and (cell.aggregate_variant) == recipe.reactant_a
+                        and (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= 10
                     ):
-                        cell.liquid = max(0, cell.liquid - 10)
-                        if cell.liquid <= 0:
+                        cell.liquid = max(0, (cell.liquid) - 10)
+                        if (cell.liquid) <= 0:
                             cell.liquid, cell.liquid_kind = 0, ""
-                        if cell.floor is Material.PLAIN_AGGREGATE:
+                        if (cell.floor) is Material.PLAIN_AGGREGATE:
                             cell.aggregate_variant = recipe.product
+                        self._sync_material_position(x, y)
                         notify(recipe)
                 elif mechanism == "floor_pulp":
                     # 地板化液：特殊地板泡烂退回普通地面，并淌出产物液体。
                     # 媒介液体（reactant_b）被反应消耗：先清空再倒产物——否则
                     # 产物与本格残水混合，主导方判定会翻回媒介（如 水<纸浆 字典序）。
                     if (
-                        not cell.solid and not cell.wall_kind
-                        and cell.aggregate_variant == recipe.reactant_a
-                        and cell.liquid_kind == recipe.reactant_b and cell.liquid >= 10
+                        not (cell.solid) and not (cell.wall_kind)
+                        and (cell.aggregate_variant) == recipe.reactant_a
+                        and (cell.liquid_kind) == recipe.reactant_b and (cell.liquid) >= 10
                     ):
                         cell.liquid, cell.liquid_kind = 0, ""
-                        if cell.floor is Material.PLAIN_AGGREGATE:
+                        if (cell.floor) is Material.PLAIN_AGGREGATE:
                             cell.aggregate_variant = "普通聚合物"
                         self._add_liquid(cell, recipe.product, 20)
                         self._sync_material_position(x, y)
                         notify(recipe)
         # ---- 气体侧反应：气在墙上（低墙共存）与气蚀墙/气体地板退化 ----
-        for x, y in tuple(self._gas_cells):
+        for x, y in self._gas_pass_cells():
             if not (0 < x < self.width - 1 and 0 < y < self.height - 1):
                 continue
-            cell = self.cell(x, y)
-            if cell.gas <= 0 or not cell.gas_kind:
+            cell = grid[y][x]
+            if (cell.gas) <= 0 or not (cell.gas_kind):
                 continue
-            gas_neighbors = [
-                (nx, ny)
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
-                if 0 <= nx < self.width and 0 <= ny < self.height
-            ]
-            for recipe in OTHER_BY_REACTANT.get(cell.gas_kind, ()):
+            recipes = OTHER_BY_REACTANT.get((cell.gas_kind))
+            if not recipes:
+                continue
+            gas_neighbors = None
+            for recipe in recipes:
                 mechanism = recipe.mechanism
                 if mechanism == "wall_to_liquid":
                     # 热汽闷软低墙（高度 1 的墙允许气体共存）：墙化液。
                     if (
-                        cell.gas_kind == recipe.reactant_b and cell.gas >= 15
-                        and cell.solid and cell.wall_kind == recipe.reactant_a
+                        (cell.gas_kind) == recipe.reactant_b and (cell.gas) >= 15
+                        and (cell.solid) and (cell.wall_kind) == recipe.reactant_a
                     ):
                         self.destroy_wall(x, y, "dissolve")
                         self._add_liquid(cell, recipe.product, 20)
-                        cell.gas = max(0, cell.gas - 15)
-                        if cell.gas <= 0:
+                        cell.gas = max(0, (cell.gas) - 15)
+                        if (cell.gas) <= 0:
                             cell.gas_kind = ""
                         self._sync_material_position(x, y)
                         notify(recipe)
                         break
                 elif mechanism == "gas_etch":
                     # 酸雾蚀墙：气体与墙相邻，每拍完整度 −6，消耗气体 1，浓度至少 15。
-                    if cell.gas_kind == recipe.reactant_a and cell.gas >= recipe.min_amount:
+                    if (cell.gas_kind) == recipe.reactant_a and (cell.gas) >= recipe.min_amount:
+                        if gas_neighbors is None:
+                            gas_neighbors = _interior_neighbors(x, y)
                         for nx, ny in gas_neighbors:
-                            neighbor = self.cell(nx, ny)
-                            if neighbor.solid and neighbor.wall_kind == recipe.reactant_b:
-                                neighbor.integrity = max(0, neighbor.integrity - recipe.damage)
-                                cell.gas = max(0, cell.gas - recipe.consumption)
-                                if neighbor.integrity == 0:
+                            neighbor = self.cells[ny][nx]
+                            if (neighbor.solid) and (neighbor.wall_kind) == recipe.reactant_b:
+                                neighbor.integrity = max(0, (neighbor.integrity) - recipe.damage)
+                                cell.gas = max(0, (cell.gas) - recipe.consumption)
+                                self._sync_material_position(x, y)
+                                if (neighbor.integrity) == 0:
                                     self.destroy_wall(nx, ny, "etch")
                                 notify(recipe)
                                 break
                 elif mechanism == "floor_revert":
                     # 气体地板退化：反应气体笼罩特殊地板，退回普通地面。
                     if (
-                        not cell.solid and not cell.wall_kind
-                        and cell.aggregate_variant == recipe.reactant_a
-                        and cell.gas_kind == recipe.reactant_b and cell.gas >= 15
+                        not (cell.solid) and not (cell.wall_kind)
+                        and (cell.aggregate_variant) == recipe.reactant_a
+                        and (cell.gas_kind) == recipe.reactant_b and (cell.gas) >= 15
                     ):
-                        cell.gas = max(0, cell.gas - 15)
-                        if cell.gas <= 0:
+                        cell.gas = max(0, (cell.gas) - 15)
+                        if (cell.gas) <= 0:
                             cell.gas_kind = ""
-                        if cell.floor is Material.PLAIN_AGGREGATE:
+                        if (cell.floor) is Material.PLAIN_AGGREGATE:
                             cell.aggregate_variant = recipe.product
+                        self._sync_material_position(x, y)
                         notify(recipe)
 
     @staticmethod
@@ -2183,6 +2657,29 @@ class MaterialSimMixin:
         else:
             self._material_index_ready = False
 
+    def _liquid_amount_for_target(self, x: int, y: int) -> int:
+        """与液体源筛选同一判据：不合格的格在 amounts 里记 0（旧行为）。"""
+        if not (0 < x < self.width - 1 and 0 < y < self.height - 1):
+            return 0  # 边界格从不入源表
+        cell = self.cells[y][x]
+        if (cell.liquid >= LIQ_MIN_FLOW and cell.liquid_kind in LIQUID_DEFINITIONS
+                and not (cell.solid and cell.height > 1)
+                and cell.wall_kind not in CONTAINER_KINDS):
+            return cell.liquid
+        return 0
+
+    def _gas_amount_for_target(self, x: int, y: int, sealed) -> int:
+        if (x, y) in sealed:
+            return 0  # 密封容器里的气体从不入源表，液面同样按 0 记账
+        if not (0 < x < self.width - 1 and 0 < y < self.height - 1):
+            return 0
+        cell = self.cells[y][x]
+        if (cell.gas >= GAS_MIN_FLOW and cell.gas_kind in GAS_DEFINITIONS
+                and not (cell.solid and cell.height > 1)
+                and cell.wall_kind not in CONTAINER_KINDS):
+            return cell.gas
+        return 0
+
     @staticmethod
     def _plan_material_transfers(
         x: int,
@@ -2194,10 +2691,13 @@ class MaterialSimMixin:
         *,
         equalize: bool,
         use_kernel: bool,
+        canonical: bool = False,
     ) -> list[tuple[tuple[int, int], int]]:
         # use_kernel 由调用方在**每拍开始前**解析一次再传进来（2026-10-27）：
         # 本函数逐气体/液体源调用，单拍约 950 次；enabled() 每次都要读两个环境
         # 变量（实测 2.4µs/次 ≈ 2.3ms/行动），放在这里纯属重复付费。
+        if canonical:
+            targets = sorted(targets)
         if use_kernel:
             return _kernel_plan_transfers(x, y, targets, amounts, reserved, budget, equalize)
         source_remaining = amounts.get((x, y), 0)
@@ -2230,6 +2730,17 @@ class MaterialSimMixin:
 
     def _simulate_liquid_pass(self) -> None:
         self._ensure_material_index()
+        mirror = getattr(self, '_material_grid', None)
+        from . import material_numeric
+        numeric = material_numeric.enabled(mirror)
+        if numeric:
+            handled, _ = material_numeric.run_array_pass(self, mirror, 'liquid')
+            if handled:
+                return
+            if handled is None:
+                numeric = False
+        prepared = []
+        awake_transfer_levels = self._material_awake_filter('liquid')
         # 只为有资格流动的液体源建立稀疏快照，避免每回合创建整张二维表。
         # 2026-09-19 性能改造：直接遍历液体活动格索引，不再全图扫描。
         sources: list[tuple[int, int, int, str]] = []
@@ -2238,9 +2749,15 @@ class MaterialSimMixin:
             getattr(self, "_deferred_liquid_sources", ()) or ()
         )
         height, width = self.height, self.width
-        for x, y in tuple(self._liquid_cells):
+        for x, y in self._liquid_pass_cells():
             if not (0 <= y < height and 0 <= x < width):
                 continue  # 陈旧索引坐标（换层竞态）：丢弃，50 回合校准会自愈
+            if mirror is not None:
+                index = y * width + x
+                if mirror.flags[index] & mirror.LIQUID_SOURCE:
+                    candidates.append((x, y, mirror.liquid[index],
+                                       mirror.name(mirror.liquid_id[index])))
+                continue
             cell = self.cells[y][x]
             if (
                 cell.liquid >= LIQ_MIN_FLOW
@@ -2262,6 +2779,8 @@ class MaterialSimMixin:
         from .expansion_abilities import liquid_pinned_cells
         pinned = liquid_pinned_cells(self)
         use_kernel = _kernel_enabled("gas")
+        from ..equipment.remaining_gear import liquid_edge_allowed, liquid_edge_index
+        barriers = liquid_edge_index(self)
         for x, y, amount, kind in sources:
                 if (x,y) in pinned:
                     continue
@@ -2272,25 +2791,44 @@ class MaterialSimMixin:
                 clock_key = "flow:" + kind
                 if period > 1 and self.time - source_cell.material_clocks.get(clock_key, 0) < period:
                     continue
-                neighbors = [
+                if mirror is not None:
+                    source_elevation = mirror.elevation[y * width + x]
+                    cloud = mirror._ids.get('云块')
+                    neighbors = [(nx, ny) for nx, ny in
+                                 ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
+                                 if mirror.flags[ny * width + nx] & mirror.FLOW_PASSABLE
+                                 and mirror.wall_id[ny * width + nx] != cloud]
+                else:
+                    source_elevation = source_cell.elevation
+                    neighbors = [
                     (nx, ny)
                     for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
                     if self._flow_passable(grid[ny][nx]) and grid[ny][nx].wall_kind != "云块"
                 ]
-                from ..equipment.remaining_gear import liquid_edge_allowed
-                neighbors = [p for p in neighbors if liquid_edge_allowed(self,(x,y),p)]
-                lower = [(nx, ny) for nx, ny in neighbors if grid[ny][nx].elevation < source_cell.elevation]
+                if barriers is None or barriers:
+                    neighbors = [p for p in neighbors if liquid_edge_allowed(self,(x,y),p,index=barriers)]
+                lower = [(nx, ny) for nx, ny in neighbors
+                         if (mirror.elevation[ny * width + nx] if mirror is not None
+                             else grid[ny][nx].elevation) < source_elevation]
                 if lower:
                     targets = lower
                 else:
-                    source_surface = source_cell.elevation * ELEV_STEP + amount
+                    source_surface = source_elevation * ELEV_STEP + amount
                     targets = [
                         (nx, ny)
                         for nx, ny in neighbors
-                        if grid[ny][nx].elevation * ELEV_STEP + grid[ny][nx].liquid < source_surface
+                        if ((mirror.elevation[ny * width + nx] * ELEV_STEP
+                             + mirror.liquid[ny * width + nx]) if mirror is not None else
+                            (grid[ny][nx].elevation * ELEV_STEP + grid[ny][nx].liquid)) < source_surface
                     ]
                 if not targets:
                     continue
+                if awake_transfer_levels:
+                    # 休眠格不进循环体，但它作为目标时的液面仍参与「谁最低」
+                    # 的比较；按全量源判据把它补进 amounts，顺序与结果不变。
+                    for target in targets:
+                        if target not in amounts:
+                            amounts[target] = self._liquid_amount_for_target(*target)
                 if period > 1:
                     source_cell.material_clocks[clock_key] = self.time
                 rotation = (x + y + self.time) % len(targets)
@@ -2305,6 +2843,9 @@ class MaterialSimMixin:
                     budget = max(1, budget // floor.flow_divisor)
                 budget = min(amount, budget)
                 equalize = not lower
+                if numeric:
+                    prepared.append((x, y, kind, targets, budget, equalize))
+                    continue
                 for target, transfer in self._plan_material_transfers(
                     x,
                     y,
@@ -2314,9 +2855,13 @@ class MaterialSimMixin:
                     budget,
                     equalize=equalize,
                     use_kernel=use_kernel,
+                    canonical=getattr(self, '_material_canonical_on', False),
                 ):
                     proposals.append(((x, y), target, kind, transfer))
                     reserved[target] = reserved.get(target, 0) + transfer
+        if numeric:
+            proposals = material_numeric.proposals(
+                mirror, amounts, prepared, getattr(self, '_material_canonical_on', False))
         outgoing: dict[tuple[int, int], int] = {}
         incoming: dict[tuple[int, int], list[tuple[str, int]]] = {}
         for source, target, kind, transfer in proposals:
@@ -2328,7 +2873,7 @@ class MaterialSimMixin:
                 self.cell(*position).liquid_kind,
                 max(0, self.cell(*position).liquid - outgoing.get(position, 0)),
             )
-            for position in touched
+            for position in self._material_positions(touched)
         }
         for (x, y), arrivals in incoming.items():
             kind, amount = results[(x, y)]
@@ -2386,7 +2931,7 @@ class MaterialSimMixin:
         self._ensure_material_index()
         # 2026-09-19 性能改造：只扫有液体的格子（索引快照）。
         positions = self._liquid_cells if evap_steps or absorb_steps else self._periodic_liquid_cells
-        for x, y in tuple(positions):
+        for x, y in self._material_positions(positions):
             cell = self.cells[y][x]
             changed = False
             if cell.liquid <= 0:
@@ -2448,6 +2993,17 @@ class MaterialSimMixin:
 
     def _simulate_gas_pass(self) -> set[tuple[int, int]]:
         self._ensure_material_index()
+        mirror = getattr(self, '_material_grid', None)
+        from . import material_numeric
+        numeric = material_numeric.enabled(mirror)
+        if numeric:
+            handled, exposed = material_numeric.run_array_pass(self, mirror, 'gas')
+            if handled:
+                return exposed
+            if handled is None:
+                numeric = False
+        prepared = []
+        awake_transfer_levels = self._material_awake_filter('gas')
         from .realm_challenges import sealed_gas_cells
         sealed = sealed_gas_cells(self)
         # 气体扩散同样使用稀疏快照；没有气体的地图不再分配两张整图数组。
@@ -2459,10 +3015,12 @@ class MaterialSimMixin:
         # 变量、且 gas pass 每动作会跑数拍。每次 pass 现读保证
         # ONEIRSCRIPT_CY_KERNEL_GAS 的运行时切换在下一拍立即生效（不做跨动作缓存）。
         use_kernel = _kernel_enabled("gas")
-        if use_kernel:
+        # 脏区模式沿用全量索引的迭代顺序，只跳过休眠格（合同 A）。
+        gas_cells = self._gas_pass_cells()
+        if use_kernel and mirror is None:
             # CY-4：候选筛选的纯循环交给编译内核；顺序与预算完全一致。
             sources, amounts, deferred = _kernel_collect_gas_sources(
-                self.cells, self.width, self.height, self._gas_cells,
+                self.cells, self.width, self.height, gas_cells,
                 getattr(self, "_deferred_gas_sources", ()), sealed,
                 self.SIM_SOURCE_BUDGET,
             )
@@ -2472,9 +3030,15 @@ class MaterialSimMixin:
                 getattr(self, "_deferred_gas_sources", ()) or ()
             )
             height, width = self.height, self.width
-            for x, y in tuple(self._gas_cells):
+            for x, y in gas_cells:
                 if not (0 <= y < height and 0 <= x < width):
                     continue  # 陈旧索引坐标：丢弃
+                if mirror is not None:
+                    index = y * width + x
+                    if mirror.flags[index] & mirror.GAS_SOURCE:
+                        candidates.append((x, y, mirror.gas[index],
+                                           mirror.name(mirror.gas_id[index])))
+                    continue
                 cell = self.cells[y][x]
                 if (
                     cell.gas >= GAS_MIN_FLOW
@@ -2503,11 +3067,18 @@ class MaterialSimMixin:
                 targets = [
                     (nx, ny)
                     for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
-                    if (nx, ny) not in sealed and self._gas_flow_passable(grid[ny][nx])
-                    and grid[ny][nx].gas < amount
+                    if (nx, ny) not in sealed
+                    and ((mirror.flags[ny * self.width + nx] & mirror.GAS_FLOW_PASSABLE)
+                         if mirror is not None else self._gas_flow_passable(grid[ny][nx]))
+                    and (mirror.gas[ny * self.width + nx] if mirror is not None
+                         else grid[ny][nx].gas) < amount
                 ]
                 if not targets:
                     continue
+                if awake_transfer_levels:
+                    for target in targets:
+                        if target not in amounts:
+                            amounts[target] = self._gas_amount_for_target(*target, sealed)
                 rotation = (x + y + self.time) % len(targets)
                 targets = targets[rotation:] + targets[:rotation]
                 budget = min(amount, GAS_DEFINITIONS[kind].max_diffusion)
@@ -2519,6 +3090,9 @@ class MaterialSimMixin:
                 divisor = plant_gas_flow_divisor(source_cell.plant)
                 if divisor > 1:
                     budget = max(1, budget // divisor)
+                if numeric:
+                    prepared.append((x, y, kind, targets, budget, True))
+                    continue
                 for target, transfer in self._plan_material_transfers(
                     x,
                     y,
@@ -2528,11 +3102,15 @@ class MaterialSimMixin:
                     budget,
                     equalize=True,
                     use_kernel=use_kernel,
+                    canonical=getattr(self, '_material_canonical_on', False),
                 ):
                     proposals.append(((x, y), target, kind, transfer))
                     reserved[target] = reserved.get(target, 0) + transfer
         outgoing: dict[tuple[int, int], int] = {}
         incoming: dict[tuple[int, int], list[tuple[str, int]]] = {}
+        if numeric:
+            proposals = material_numeric.proposals(
+                mirror, amounts, prepared, getattr(self, '_material_canonical_on', False))
         arrival_marks: dict[tuple[int, int], list[tuple[str, int]]] = {}
         for source, target, kind, transfer in proposals:
             outgoing[source] = outgoing.get(source, 0) + transfer
@@ -2545,7 +3123,7 @@ class MaterialSimMixin:
                 self.cell(*position).gas_kind,
                 max(0, self.cell(*position).gas - outgoing.get(position, 0)),
             )
-            for position in touched
+            for position in self._material_positions(touched)
         }
         for position, arrivals in incoming.items():
             kind, amount = results[position]
@@ -2659,11 +3237,16 @@ class MaterialSimMixin:
         if steps:
             self.gas_decay_mark += steps * interval
         self._ensure_material_index()
+        # P1b（2026-11-04）：脏区模式只结算「这一拍真的该动」的气格；时钟写入
+        # 时机与全量路径一致（容器/密封地板格每拍重置、其余格按自身周期）。
+        if getattr(self, "_material_dirty_on", False):
+            self._apply_gas_dissipation_indexed(interval)
+            return
         # 2026-09-19 性能改造：只扫有气体的格子（索引快照），逐格增量同步。
         # Each ordinary cloud has its own phase; a global tick cannot decide
         # which cells are due. The existing sparse index avoids a full-map scan.
         positions = self._gas_cells
-        for x, y in tuple(positions):
+        for x, y in self._material_positions(positions):
             cell = self.cells[y][x]
             if cell.gas <= 0:
                 continue
@@ -2696,6 +3279,77 @@ class MaterialSimMixin:
                 cell.gas_kind = ""
             self._sync_material_position(x, y)
 
+    def _apply_gas_dissipation_indexed(self, interval: int) -> None:
+        """脏区模式的气体消散：保持集每拍重置时钟，其余格只处理到期的。
+
+        与全量路径逐格等价：
+        - 容器/密封地板格：全量路径每拍都把 ``decay:`` 时钟写成当前时间，这里
+          同样每拍处理（省掉这一步会让时钟值和读档补算失真）；
+        - 普通气格：只在 ``mark + period <= time`` 的那一拍进入扣减分支；
+        - 陈旧排期（写入没走同步、种类变了）在出堆时按当前时钟复核并重排。
+        """
+        if interval != self._decay_interval_used:
+            # 心智失序档会改变普通气体的消散间隔：整表重排一次（很少发生）。
+            self._decay_interval_used = interval
+            for position in self._gas_cells:
+                cell = self.cell(*position)
+                if cell.gas > 0:
+                    self._schedule_gas_decay(position, cell, interval)
+        for position in tuple(self._decay_hold):
+            x, y = position
+            cell = self.cells[y][x]
+            if cell.gas <= 0 or GAS_DEFINITIONS.get(cell.gas_kind) is None:
+                self._decay_hold.discard(position)
+                continue
+            if cell.wall_kind in CONTAINER_KINDS or floor_effect_for(cell).preserves_gas:
+                cell.material_clocks["decay:" + cell.gas_kind] = self.time
+            else:
+                self._schedule_gas_decay(position, cell, interval)
+        heap = self._decay_heap
+        due_table = self._decay_due
+        gas_cells = self._gas_cells
+        now = self.time
+        while heap and heap[0][0] <= now:
+            due, position = heapq.heappop(heap)
+            if due_table.get(position) != due:
+                continue
+            x, y = position
+            cell = self.cells[y][x]
+            definition = GAS_DEFINITIONS.get(cell.gas_kind) if cell.gas > 0 else None
+            if definition is None:
+                due_table.pop(position, None)
+                if cell.gas <= 0 and position in gas_cells:
+                    # 写气体时没走同步的空格仍留在全量索引里；全量路径每拍都会
+                    # 看一眼，这里下一拍再看一次，成本只落在这些残格上。
+                    due_table[position] = now + 1
+                    heapq.heappush(heap, (now + 1, position))
+                continue
+            if cell.wall_kind in CONTAINER_KINDS or floor_effect_for(cell).preserves_gas:
+                cell.material_clocks["decay:" + cell.gas_kind] = self.time
+                self._decay_hold.add(position)
+                due_table.pop(position, None)
+                continue
+            key = "decay:" + cell.gas_kind
+            period = definition.dissipation_period or interval
+            mark = cell.material_clocks.setdefault(key, self.time)
+            cell_steps = max(0, (self.time - mark) // period)
+            if not cell_steps:
+                due_table[position] = mark + period
+                heapq.heappush(heap, (mark + period, position))
+                continue
+            cell.material_clocks[key] = mark + cell_steps * period
+            dissipation = max(1, definition.dissipation)
+            if self.layer_modifier == "气密":
+                # 气密层：气体更「耐存」——每降一浓度所需时间加倍（消散减半）。
+                dissipation = max(1, dissipation // 2)
+            dissipation += floor_effect_for(cell).gas_dissipation_bonus
+            cell.gas = max(0, cell.gas - cell_steps * dissipation
+                           * self._gas_decay_multiplier(x, y))
+            if not cell.gas:
+                cell.gas_kind = ""
+            # 同步会按新时钟重排下一拍；气量归零时同时清掉排期。
+            self._sync_material_position(x, y)
+
     @staticmethod
     def _cell_is_flammable(cell: Cell, *, liquid_min: int = 1) -> bool:
         if plant_burns(cell.plant):
@@ -2724,3 +3378,6 @@ class MaterialSimMixin:
             facts=(("plant", int(code)), ("cause", str(cause))),
             layer_key="plant",
         )
+
+
+register_owned_boundary_methods(MaterialSimMixin)

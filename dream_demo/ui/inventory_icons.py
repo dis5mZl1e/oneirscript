@@ -77,6 +77,28 @@ def count_anchors(strips):
     return tuple(counts)
 
 
+def icon_row_areas(strips):
+    """Visible reservations, not inferred full icon bounds, own image pixels.
+
+    Scrolling removes inner rows but leaves the item's fixed description above
+    them. An anchor can reconstruct the full source image for correct cropping;
+    it cannot grant permission to paint those removed rows over the description.
+    """
+    from rich.cells import cell_len
+    areas = set()
+    for y, strip in enumerate(strips):
+        x = 0
+        for segment in strip:
+            meta = segment.style.meta if segment.style else {}
+            glyph = meta.get('inventory_icon') or meta.get('inventory_reservation')
+            if glyph and (glyph in segment.text or meta.get('inventory_reservation')):
+                dx, _dy = meta['inventory_icon_offset']
+                width, _height = meta['inventory_icon_size']
+                areas.add((x+dx, y, width, 1))
+            x += cell_len(segment.text)
+    return tuple(sorted(areas))
+
+
 def draw_counts(canvas, counts, sx, sy):
     """Paint only glyph ink, with transparent margins over the underlying icon."""
     from PIL import ImageDraw, ImageFont
@@ -230,7 +252,7 @@ class InventoryIconPlane:
         _ = compositor.cuts
         owners = compositor._wide_owners
         cells = set()
-        areas = [(x, y, w, h) for x, y, w, h, *_ in anchors]
+        areas = list(icon_row_areas(strips))
         areas.extend((x, y, 1, 1) for x, y, *_ in borders)
         from rich.cells import cell_len
         areas.extend((x, y, cell_len(text), 1) for x, y, text, *_ in counts)
@@ -256,7 +278,7 @@ class InventoryIconPlane:
         if not cells:
             self.hide()
             return
-        canvas = Image.new('RGB', (box[2]-box[0], box[3]-box[1]))
+        canvas = Image.new('RGBA', (box[2]-box[0], box[3]-box[1]))
         painted = set()
         from PIL import ImageDraw
         draw = ImageDraw.Draw(canvas)
@@ -279,6 +301,15 @@ class InventoryIconPlane:
         draw_counts(canvas, counts, sx, sy)
         # A missing outline never covers the native fallback with a blank tile.
         clips = clips_for(cells & painted)
+        # Commit visibility as pixel alpha in the same bitmap as the artwork.
+        # A separately updated native region can expose the preceding frame's
+        # icon locations over unpainted (black) pixels during a scroll.
+        mask = Image.new('L', canvas.size)
+        mask_draw = ImageDraw.Draw(mask)
+        for x, y, w, h in clips:
+            mask_draw.rectangle((x, y, x+w-1, y+h-1), fill=255)
+        canvas.putalpha(mask)
+        clips = ((0, 0, canvas.width, canvas.height),) if clips else ()
         if clips and self.plane.present(canvas, box, clips):
             self.key = key
         else:

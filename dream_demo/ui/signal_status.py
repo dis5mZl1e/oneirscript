@@ -689,11 +689,12 @@ class SignalStatusMixin:
         from .region_themes import theme_for_realm
         pane.styles.background = theme_for_realm(self.session.state.realm_id, self.session.state.depth).panel_bg
 
-    def begin_auto_walk(self, path):
+    def begin_auto_walk(self, path, *, unknown_passable=False):
         """自动寻路开始时离开凝听选取；设置路径本身不推进世界。"""
         if path and self.signal_detail_open:
             self.close_signal_detail()
         self.path = list(path)
+        self._path_replan_options = {'unknown_passable': bool(unknown_passable)}
 
     def select_signal_clue_line(self, line):
         """鼠标点中线索行：与数字键同样只改选中下标，零耗时。"""

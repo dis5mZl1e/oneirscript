@@ -766,6 +766,7 @@ def _fault_ring(state, cells) -> str:
         else:
             # §15.3 的档位口径同样适用于裂地环：一档就是 −1，负地势继续保留。
             cell.elevation -= 1
+            state._sync_material_position(x, y)
             ground += 1
     hurt = 0
     for entity in [state.player, *list(state.enemies)]:

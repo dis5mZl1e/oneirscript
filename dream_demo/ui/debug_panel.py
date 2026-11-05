@@ -16,6 +16,7 @@
 """
 
 from __future__ import annotations
+from .action_completion import after_action
 
 from rich.cells import cell_len
 from rich.text import Text
@@ -27,11 +28,9 @@ from ..core.content import (
     ITEM_DEFINITIONS,
     NPC_DEFINITIONS,
 )
-from ..core.constants import Material
 from ..i18n import tr
 from ..materials import (
     FLOOR_DEFINITIONS,
-    FEATURE_WALLS,
     GAS_DEFINITIONS,
     LIQUID_DEFINITIONS,
     PORTENT_DEFINITIONS,
@@ -157,7 +156,7 @@ class DebugPanelMixin:
         elif category == "自我增强":
             self._debug_boost(item)
         elif target is None:
-            self.session.state.messages.append(tr("没有可释放的目标格（移动鼠标或用观察 ? 指定）。"))
+            self.session.apply('ui_control', 'debug_notice', 'no_spawn_target')
         else:
             self._debug_spawn_at(target[0], target[1])
         self.refresh_view()
@@ -176,68 +175,13 @@ class DebugPanelMixin:
         self.refresh_view()
 
     def _debug_spawn_at(self, x: int, y: int) -> bool:
-        """把待释放物落到 (x, y)；位置不合法（如征兆落在空地）返回 False 不落地。"""
+        """Submit a placement to the session owner, preserving the UI selection."""
         if self.debug_pending is None:
             return False
         category, item = self.debug_pending
-        state = self.session.state
-        if not (0 <= x < state.width and 0 <= y < state.height):
-            return False
-        cell = state.cell(x, y)
-        if category == "征兆":
-            entity = state.entity_at(x, y)
-            if entity is None:
-                state.messages.append(tr("征兆只能释放在自己或意识体所在的格子。"))
-                return False
-            definition = portent_def(item)
-            entity.portents[item] = max(1, self.debug_portent_rounds)
-            if definition is not None and definition.stacks > 0:
-                entity.portent_stacks[item] = max(1, self.debug_portent_stacks)
-            state.messages.append(
-                tr("调试：{name} 获得{portent}（{rounds} 回合）。", name=tr(entity.label), portent=tr(definition.name if definition else item), rounds=self.debug_portent_rounds)
-            )
-            return True
-        if category == "地板":
-            cell.solid = False
-            cell.wall_kind = ""
-            cell.liquid, cell.liquid_kind = 0, ""
-            cell.gas, cell.gas_kind = 0, ""
-            cell.plant = 0
-            cell.floor = Material.PLAIN_AGGREGATE
-            cell.aggregate_variant = item
-            cell.flame = 0
-        elif category in ("墙体", "固体"):
-            state.configure_wall(cell, item)
-        elif category == "液体":
-            cell.solid = False
-            cell.wall_kind = ""
-            cell.liquid, cell.liquid_kind = 100, item
-        elif category == "气体":
-            cell.solid = False
-            cell.wall_kind = ""
-            cell.gas, cell.gas_kind = 100, item
-        elif category == "异象":
-            # 2026-09-19：同格已有意识体（异象/NPC）时拒绝放置。
-            if state.entity_at(x, y) is not None:
-                state.messages.append(tr("该格已有意识体，无法放置。"))
-                return False
-            cell.solid = False
-            cell.wall_kind = ""
-            state.add_defined_enemy(item, x, y)
-        elif category == "其他意识体":
-            if state.entity_at(x, y) is not None:
-                state.messages.append(tr("该格已有意识体，无法放置。"))
-                return False
-            cell.solid = False
-            cell.wall_kind = ""
-            state._add_npc(item, x, y)
-        else:  # 携带意象 / 其他物品 → 落地成掉落物
-            from ..core.entities import WorldItem
-
-            state.world_items.append(WorldItem(state._make_item(item), x, y))
-        state._material_index_ready = False
-        state.messages.append(tr("调试：在 ({x}, {y}) 释放了 {item}。", x=x, y=y, item=tr(item)))
-        return True
+        result = self.session.apply('ui_control', 'debug_spawn', category, item, x, y,
+                                    self.debug_portent_rounds, self.debug_portent_stacks)
+        return after_action(self, result, lambda actual: actual.changed)
 
     # ---- 移动（上下楼 / 传送，2026-09-21）----
 
@@ -256,163 +200,48 @@ class DebugPanelMixin:
             command = "descend" if item == "下潜" else "backtrack"
             # 走 _apply_floor_change：演出/视口重算/区域主题全都照正常上下楼走。
             result = self._apply_floor_change(command, ignore_dissolution=True)
-            if not result.changed:
-                self.session.state.messages.append(result.message)
-                return False
-            self.session.state.messages.append(tr("调试：已{item}。", item=tr(item)))
-            return True
+            def finish(result):
+                self.session.apply('ui_control', 'debug_notice', 'floor_result',
+                                   item, result.changed, result.message)
+                return result.changed
+            return after_action(self, result, finish)
         if item == "传送":
             if target is None:
-                self.session.state.messages.append(tr("没有可传送的目标格（移动鼠标或用观察 ? 指定）。"))
+                self.session.apply('ui_control', 'debug_notice', 'no_teleport_target')
                 return False
             return self._debug_teleport(target[0], target[1])
         # ---- 梦中梦各层 / 深层边界（2026-09-22 扩展）----
         return self._debug_jump(item)
 
     def _debug_jump(self, item: str) -> bool:
-        """「移动」扩展条目的执行体：梦中梦各层直跳 / 深层边界（28–30）。
-
-        - **梦中梦**：从主梦跳入时补齐 ``enter_realm`` 的入场登记（归档主层、
-          记入口层号与坐标、摘掉主梦修饰符）；已在梦中梦时只归档当前层再
-          直跳。落层后强制 ``realm_gate_open=True``——调试直达不应被守门人
-          解谜拦住。
-        - **深层边界**：若在梦中梦里先摘掉 realm 身份，再走主梦的
-          ``_restore_or_generate_layer``（≥28 层由它派发到结局层生成）。
-        """
-        state = self.session.state
-        from ..data.dreams import realm_def
-
-        realm_id, layer = "", 0
-        if item.startswith("门之回廊·"):
-            realm_id, layer = "door_corridor", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("玩具的回忆·"):
-            realm_id, layer = "toy_memories", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("余烬廊桥·"):
-            realm_id, layer = "ember_bridge", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("退潮厅·"):
-            realm_id, layer = "ebbing_hall", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("千禧园·"):
-            realm_id, layer = "millennium_garden", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("未尽藏书宫·"):
-            realm_id, layer = "library_palace", int(item.rsplit("第", 1)[1].rstrip("层"))
-        elif item.startswith("至白疗所·"):
-            realm_id, layer = "white_sanatorium", int(item.rsplit("第", 1)[1].rstrip("层"))
-        if realm_id:
-            definition = realm_def(realm_id)
-            if definition is None or not 1 <= layer <= definition.layer_count:
-                return False
-            state._archive_active_layer()
-            if not state.realm_id:
-                # 从主梦跳入：登记入口（层号与坐标），日后退出照常回到这里。
-                state.realm_id = realm_id
-                state.entry_depth = state.depth
-                state.entry_x, state.entry_y = state.player.x, state.player.y
-                state._entry_layer_modifier = state.layer_modifier
-                state.layer_modifier = ""
-            else:
-                state.realm_id = realm_id
-            state.realm_depth = layer
-            state._generate_realm_layer(definition, layer)
-            state.realm_gate_open = True  # 调试直达：不被守门人解谜拦住
-            state.messages.append(tr("调试：跳到梦中梦·{name} 第 {n} 层。",
-                                     name=tr(definition.name), n=layer))
-            return True
-        if item.startswith("深层边界·"):
-            target = int(item.rsplit("·", 1)[1])
-            if state.realm_id:
-                state.realm_id = ""
-                state.realm_depth = 0
-            state._archive_active_layer()
-            state.depth = target
-            state._restore_or_generate_layer(target)
-            state.messages.append(tr("调试：跳到深层边界第 {n} 层。", n=target))
-            return True
-        return False
+        """Jump/archive/generate entirely under the session's mutation lock."""
+        result = self.session.apply('ui_control', 'debug_jump', item)
+        return after_action(self, result, lambda actual: actual.changed)
 
     def _debug_boost(self, item: str) -> bool:
-        """「自我增强」执行体：前 4 项是开关（l 切换），后 3 项立即回满。
-
-        - **全图视野**：``debug_full_vision``（视野/可见性判定在 sight.py 放开）。
-        - **心智无敌**：``debug_mind_invincible``（``_lose_mind`` 统一入口直接归零）。
-        - **清醒无敌/想象无限**：扣减入口太多，由 ``state._advance`` 每刻末尾
-          回满——瞬时下降不累积。
-        - **回满三项**：立即把对应指标拉到上限。
-        """
-        state = self.session.state
-        toggles = {
-            "全图视野": "debug_full_vision",
-            "心智无敌": "debug_mind_invincible",
-            "清醒无敌": "debug_lucidity_invincible",
-            "想象无限": "debug_imagination_infinite",
-        }
-        if item in toggles:
-            attr = toggles[item]
-            value = not getattr(state, attr)
-            setattr(state, attr, value)
-            state.messages.append(
-                tr("调试：{item}已{state}。", item=tr(item), state=tr("开启") if value else tr("关闭")))
-            return True
-        refill = {
-            "回满心智": ("mind", "max_mind"),
-            "回满清醒": ("lucidity", "max_lucidity"),
-            "回满想象": ("imagination", "max_imagination"),
-        }
-        if item in refill:
-            value_attr, cap_attr = refill[item]
-            setattr(state, value_attr, getattr(state, cap_attr))
-            state.messages.append(
-                tr("调试：{item}（{n}）。", item=tr(item), n=getattr(state, cap_attr)))
-            return True
-        return False
+        result = self.session.apply('ui_control', 'debug_boost', item)
+        return after_action(self, result, lambda actual: actual.changed)
 
     def _debug_teleport(self, x: int, y: int) -> bool:
-        """把玩家挪到 (x, y)：只接受**空地**（界内 / 非实心 / 无其他意识体）。
-
-        纯位移：不结算落点（液体、火焰、踩踏、落体伤害一律不触发），也不推进
-        行动时间——调试瞬移只改坐标，落地之后由下一次正常行动照常处理。
-        视野缓存以玩家坐标为键，位移即失效，不需要额外作废。
-        """
-        state = self.session.state
-        if not (0 <= x < state.width and 0 <= y < state.height):
-            state.messages.append(tr("目标格 ({x}, {y}) 在地图之外，无法传送。", x=x, y=y))
-            return False
-        cell = state.cell(x, y)
-        if cell.solid:
-            state.messages.append(tr("目标格 ({x}, {y}) 是实心的，不是空地，无法传送。", x=x, y=y))
-            return False
-        occupant = state.entity_at(x, y)
-        if occupant is not None and occupant is not state.player:
-            state.messages.append(tr("目标格 ({x}, {y}) 已有意识体，无法传送。", x=x, y=y))
-            return False
-        state.player.x, state.player.y = x, y
-        state.messages.append(tr("调试：已传送至 ({x}, {y})。", x=x, y=y))
-        return True
+        result = self.session.apply('ui_control', 'debug_teleport', x, y)
+        return after_action(self, result, lambda actual: actual.changed)
 
     # ---- 确认选择 ----
 
     def _debug_confirm(self) -> None:
-        """Enter/左键确认右列当前条目：构想/洞察直接给自己，其余进入待释放态。"""
+        """Keep selection in the UI and send grants/feedback to the owner."""
         category = DEBUG_CATEGORIES[self.debug_category]
         items = debug_items_for(category)
         if not items:
             return
         item = items[min(self.debug_item, len(items) - 1)]
-        state = self.session.state
-        if category == "构想":
-            if item not in state.abilities:
-                state.abilities.append(item)
+        if category in ('构想', '洞察'):
             self.debug_pending = None
-            state.messages.append(tr("调试：直接习得构想 {name}。", name=tr(ABILITY_DEFINITIONS[item]["name"])))
-        elif category == "洞察":
-            self.debug_pending = None
-            state._grant_insight(item)
-        elif category in ("移动", "自我增强"):
-            # 与「释放类」同一个待执行槽：选中后按小写 l 执行（用户要求）。
-            self.debug_pending = (category, item)
-            state.messages.append(tr("调试：已选择 {item}，按 l 执行。", item=tr(item)))
+            self.session.apply('ui_control', 'debug_grant', category, item)
         else:
-            self.debug_pending = (category, item)
-            state.messages.append(tr("调试：已选择 {item}，按 l 在光标格释放。", item=tr(item)))
+            self.debug_pending = category, item
+            code = 'selected_execute' if category in ('移动', '自我增强') else 'selected_spawn'
+            self.session.apply('ui_control', 'debug_notice', code, item)
         self.refresh_view()
 
     # ---- 光标与滚动 ----
@@ -455,27 +284,7 @@ class DebugPanelMixin:
     # ---- 一键清空 ----
 
     def _debug_clear(self, which: int) -> None:
-        state = self.session.state
-        if which == 1:
-            state.insights.clear()
-            state.messages.append(tr("调试：已清空全部洞察。"))
-        elif which == 2:
-            state.abilities.clear()
-            state.ability_cooldowns.clear()
-            state.messages.append(tr("调试：已清空全部构想。"))
-        elif which == 3:
-            state.player.portents.clear()
-            state.player.portent_stacks.clear()
-            for enemy in state.enemies:
-                enemy.portents.clear()
-                enemy.portent_stacks.clear()
-            state.messages.append(tr("调试：已清空全部征兆。"))
-        elif which == 4:
-            state.inventory.clear()
-            state.board.clear()
-            state.equipment.invalidate()
-            state.hang_item_id = None
-            state.messages.append(tr("调试：已清空行囊。"))
+        self.session.apply('ui_control', 'debug_clear', which)
         self.refresh_view()
 
     # ---- 渲染 ----

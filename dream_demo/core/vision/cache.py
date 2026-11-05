@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from typing import Any
+from ..query_dependencies import VISION_FIELDS, material_dependency_cursor
 
 # 缓存挂在 GameState 上的属性名（值为 ``(签名, 可见集合)``）。
 CACHE_ATTRIBUTE = "_visible_cache"
@@ -31,7 +32,11 @@ def signature(state: Any) -> tuple:
     - ``_sight_revision``：材料索引被生产侧置脏时推进（气体／烟雾／火／墙变化都会
       经 ``_material_index_ready = False`` 触发），§10.5 气体／烟雾半边据此失效。
     """
+    # Direct/native commits affect the same field versions. Material clocks and
+    # unrelated bookkeeping do not force expensive sight/glow reconstruction.
+    material_cursor = material_dependency_cursor(state, VISION_FIELDS)
     return (
+        material_cursor,
         state.time,
         state.player.x,
         state.player.y,

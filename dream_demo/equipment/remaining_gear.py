@@ -233,6 +233,7 @@ def _terrain(s,item,n,p):
             return _no()
         if s.cell(*a).elevation-steps<-2 or s.cell(*b).elevation+steps>2:return _no()
         s.cell(*a).elevation-=steps;s.cell(*b).elevation+=steps
+        s._sync_material_position(*a);s._sync_material_position(*b)
         return _yes(item,soil_moved=steps)
     if n in {7,9,13,15}:
         a,b=map(tuple,p)
@@ -552,6 +553,7 @@ def _realm(s,item,n,p):
         fields=('wall_kind','solid','height','hardness','thickness','integrity','creation')
         for name in fields:setattr(dest,name,getattr(source,name))
         source.wall_kind='';source.solid=False;source.height=0;source.creation={}
+        s._sync_material_position(*a);s._sync_material_position(*b)
         _put(s,item,cart=list(a),layer=s.layer_key())
         s._visible_cache=None
         return _yes(item,moved=[list(a),list(b)])
@@ -911,8 +913,25 @@ def attachment_duration(s,duration):
     return duration
 
 
-def liquid_edge_allowed(s,a,b):
-    for key,record in s.equipment_marks.items():
+def liquid_edge_index(s):
+    """液体提案阶段只构建一次；记录仍引用活对象，击穿立即生效。"""
+    result = {}
+    layer = s.layer_key()
+    for key, record in s.equipment_marks.items():
+        if not key.startswith('remaining_gear:') or not isinstance(record, dict):
+            continue
+        edge = record.get('barrier')
+        if edge and record.get('layer') == layer:
+            a, b = tuple(edge[0]), tuple(edge[1])
+            result.setdefault((a, b) if a <= b else (b, a), []).append((key, record))
+    return result
+
+
+def liquid_edge_allowed(s,a,b,*,index=None):
+    a, b = tuple(a), tuple(b)
+    entries = (s.equipment_marks.items() if index is None
+               else index.get((a, b) if a <= b else (b, a), ()))
+    for key,record in entries:
         if not key.startswith('remaining_gear:') or not isinstance(record,dict):continue
         edge=record.get('barrier')
         if not edge or record.get('layer')!=s.layer_key():continue

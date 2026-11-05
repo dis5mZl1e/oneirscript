@@ -306,6 +306,12 @@ EN_UI: dict[str, str] = {
     "该意象此刻不在视野中。": "That anomaly is no longer in sight.",
     "状态": "State",
     "记忆槽": "Memory Slot",
+    "独立记忆界面": "Separate Memory page",
+    "开启后在构筑中单独显示记忆页，关闭则显示在联想盘右侧。":
+        "Show a separate Memory page in Gear when enabled; otherwise show memory slots to the right of the association board.",
+    "记忆槽 {n}": "Memory slot {n}",
+    "点击选中 · 右键详情": "Click to select · Right-click for details",
+    "回到装备页": "Back to Gear",
     "资料异常": "Data anomaly",
     "滚轮或 ↑↓ 滚动 · Q/Esc 关闭": "Wheel or ↑↓ to scroll · Q/Esc to close",
     "第 {a}-{b}/{c} 行 · 滚轮或 ↑↓ 滚动 · Q/Esc 关闭":

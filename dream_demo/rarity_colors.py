@@ -10,9 +10,12 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 _RARITY_STEPS: dict[str, float] = {"常见": 0.0, "少见": 0.14, "稀有": 0.28, "非常稀有": -0.18}
 
 
+@lru_cache(maxsize=4096)
 def _to_hex(base_color: str) -> str | None:
     """把 rich/textual 两套色名都解析成 #rrggbb；失败返回 None。"""
     from textual.color import Color
@@ -29,6 +32,7 @@ def _to_hex(base_color: str) -> str | None:
         return None
 
 
+@lru_cache(maxsize=4096)
 def apply_rarity(base_color: str, rarity: str) -> str:
     """按稀有度把物品本色沿亮度轴微调；未知档位或不可解析时原样返回。"""
     delta = _RARITY_STEPS.get(rarity)

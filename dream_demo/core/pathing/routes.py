@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from ...materials import DOOR_KINDS
 from .astar import find_path
+from ..query_dependencies import prepare_live_path_terrain
 
 
 class PathMixin:
@@ -69,6 +70,9 @@ class PathMixin:
         target = (target_x, target_y)
         # 局部化热点引用：寻路会问上千次可通行性（大图上尤其明显）。
         cells = self.cells
+        terrain_read = (prepare_live_path_terrain(self)
+                        if passable_override is None and passable_extra is None
+                        and step_cost is None else None)
         enlarged = "enlarged" in mover_portents
         # 玩家寻路默认使用三层信息口径；显式 start（异象/篡改演员）与内部
         # 资格检查保持全知口径，避免迷雾改变 AI 通路或任务资格。
@@ -97,6 +101,13 @@ class PathMixin:
             live_cell = cells[y][x]
             if passable_override is not None:
                 if not passable_override(x, y):
+                    return False
+            elif terrain_read is not None:
+                facts = terrain_read(x, y)
+                if facts is None:
+                    if live_cell.solid and live_cell.wall_kind not in DOOR_KINDS:
+                        return False
+                elif facts[0] and facts[1] not in DOOR_KINDS:
                     return False
             elif live_cell.solid and live_cell.wall_kind not in DOOR_KINDS:
                 return False
@@ -130,12 +141,7 @@ class PathMixin:
 
         # 障碍实体集合：玩家 + 存活异象。部分信息口径下只保留已知格上的——
         # 视野外默认无不可见物体（如生物），路径穿过那些格子不算违规。
-        positions = [(self.player.x, self.player.y)]
-        positions.extend((enemy.x, enemy.y) for enemy in self.enemies if enemy.integrity > 0)
-        if known_cells is None:
-            blocked = set(positions)
-        else:
-            blocked = {position for position in positions if position in known_cells}
+        blocked = self.occupied_positions(known_cells)
 
         diagonal = not (self.realm_id == "toy_memories" and self.realm_depth == 4)
         path = find_path(self.width, self.height, start, target, passable, blocked,

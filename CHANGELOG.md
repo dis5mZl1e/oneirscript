@@ -10,16 +10,42 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-提交粒度的完整开发历史由开发仓库维护；本仓库保留公开源码基线与发行文档。
+提交粒度的完整历史请直接阅读 [git log](https://github.com/dis5mZl1e/oneirscript/commits)（完整开发历史由开发仓库维护）。
 
 ### [Unreleased]
 
-无未发布改动；以下 0.1.1 条目均已进入发行版。 / No unreleased changes; the 0.1.1 entries below shipped in the release.
+无未发布改动；以下 0.1.2 条目已进入发行版。
+
+### [0.1.2] - 2026-11-05
+
+本次更新继续推进权威模拟与性能改造，并补充远程覆盖、侧栏/键鼠与多项稳定性修复。
+0.1.2 的发行范围：英文版提供 Windows / Linux / macOS（Apple Silicon、Intel）全平台包；中文版本次仅提供 Windows 包。对应源码包与校验清单随 Release 提供。
+
+#### 模拟与性能
+
+- 继续推进权威材料数组、变更记录、原生热阶段、独立模拟与显示、增量 UI/地图与图像传输等改造；默认规则、存档格式与既有开关保持兼容，未完成项与测量记录保留在开发仓库。
+- 材料结算、视野/发光、寻路与查询缓存增加版本依赖和保守回退；部分新路径仍为可选实验开关。
+- 地图与界面增量更新、日志排版与原生图像传输继续减少重复构建；不以局部计时替代完整验收。
+
+#### 玩法与内容
+
+- 新增结构化远程覆盖事件，覆盖节奏为 40 回合。
+- 补充零想象力/资源不足等边界回归，避免无效行动被静默接受。
+
+#### 界面与操作
+
+- 侧栏工作区、键鼠路由、上下文操作与设置页继续调整；改善任务、图鉴、行囊与提示的阅读和可达性。
+- 英文文案、键位表与界面残留文本继续补齐。
+
+#### 稳定性
+
+- 修复模拟/显示迁移过程中的若干崩溃与生命周期问题，补充运行期错误记录和回归测试。
+- 保持旧存档读取兼容；更新前仍建议备份存档。
 
 ### [0.1.1] - 2026-11-01
 
 本次更新重点改善桌面端的地图流畅度、行囊与战斗操作，并补充首次入梦介绍。
-0.1.1 于 2026-11-01 打包发行：Windows / Linux / macOS（Apple Silicon、Intel）中英共 8 个桌面包，另附对应源码包与校验清单。本仓库主分支源码同步至该版本，对应开发快照 `d553842a`；下载与校验见 [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)。
+0.1.1 于 2026-11-01 打包发行：Windows / Linux / macOS（Apple Silicon、Intel）中英共 8 个桌面包，另附对应源码包与校验清单。
 
 #### 首次入梦与玩法说明
 
@@ -57,16 +83,10 @@
 - 修复贴身攻击异象后移动可能引发的闪退，补充运行期错误记录与相关回归检查。
 - 优化地图移动与自动行走：减少重复字体校验、视野射线和视距计算，缓存帧内地形字形与可复用的隐藏/记忆地图格，减少无变化区域的重绘。
 - 缓存重复日志排版，减少植物照明查询与原生图形解码、传输中的重复复制；保持回合结算、可见信息和默认画质规则。
-- 本机真实 WezTerm 的固定 24 步对照样本中，动作结算加刷新中位耗时从 44.501 ms 降至 36.173 ms。此数值不是显示帧率或所有场景的性能保证；详细测量记录保留在开发仓库，不在本仓库重复分发。
+- 本机真实 WezTerm 的固定 24 步对照样本中，动作结算加刷新中位耗时从 44.501 ms 降至 36.173 ms。此数值不是显示帧率或所有场景的性能保证；测量范围见详细测量记录保留在开发仓库。
 - 修复英文模式资源条起点错位、旧存档植物空值导致回合中断、图像层首次初始化错误，以及容器盛装/倒出后右栏跳回默认页的问题。
 - 补记调整：少量清水喷雾为 3 单位、消耗 3 想象力，双胞胎吹风机仍为 6。
 - 更新回归检查与探针兼容性：Python 3.11 探针关闭可能引起解释器崩溃的分配采样，平台专属用例按平台跳过，并同步字形和滚动视窗断言。
-
-#### 其他改进
-
-- QoL 与键鼠可达性整改：Alt 修饰键全面替代 Ctrl（终端兼容）、统一瞄准事务、底部单行 UI、响应式侧栏。
-- 数值混乱化调优：地板/技能/蔓延/心理分档四组再平衡，跨档失控横幅。
-- 环境反应表第四批：液体/气体反应全覆盖。
 
 #### 网页端
 
@@ -110,7 +130,8 @@
 - 测试套件本地维护，不随仓库发布（见 CONTRIBUTING.md「关于测试」）
 - CI 提供字节码编译检查与无头冒烟（世界生成 → 渲染一帧 → 存档）
 
-[Unreleased]: https://github.com/dis5mZl1e/oneirscript/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/dis5mZl1e/oneirscript/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/dis5mZl1e/oneirscript/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dis5mZl1e/oneirscript/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.0
 
@@ -124,16 +145,42 @@
 
 All notable changes to this project are recorded here.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/). The detailed commit history is maintained in the development repository; this repository keeps the public source baseline and release documentation.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/). For the complete commit-level history, use `git log` (the existing Chinese record notes more than 280 commits using feat/fix/docs conventions).
 
 ### [Unreleased]
 
-No unreleased changes; the 0.1.1 entries below shipped in the release.
+No unreleased changes; the 0.1.2 entries below shipped in the release.
+
+### [0.1.2] - 2026-11-05
+
+This update continues the authoritative-simulation and performance work and adds remote overwrite events, sidebar/input updates and stability fixes.
+Release scope: the English build ships on Windows, Linux, macOS Apple Silicon and macOS Intel; the Chinese build is Windows-only for this release. A corresponding source archive and checksums accompany the Release.
+
+#### Simulation and performance
+
+- Continued work on authoritative material arrays, mutation records, native hot stages, separate simulation/presentation, incremental UI/map updates and image transport. Default rules, save format and existing switches remain compatible; unfinished items and measurements are documented in the development repository.
+- Material settlement, visibility/glow, pathfinding and query caches gained dependency versions and conservative fallbacks; some new paths remain optional experiments.
+- Incremental map/UI updates, log layout and native image transfer reduce repeated work; local timings are not presented as full acceptance.
+
+#### Gameplay
+
+- Added structured remote overwrite events with a 40-round cadence.
+- Added regressions for zero-imagination and insufficient-resource edges so invalid actions are not silently accepted.
+
+#### Interface and controls
+
+- Continued sidebar workspace, keyboard/mouse routing, context-action and settings updates; improved reading and reachability for tasks, codex, inventory and hints.
+- Continued English copy, key-table and residual-string coverage.
+
+#### Stability
+
+- Fixed crashes and lifecycle issues found during the simulation/presentation migration, with runtime error records and regression coverage.
+- Older saves remain readable; back up saves before updating.
 
 ### [0.1.1] - 2026-11-01
 
 This update improves desktop map responsiveness, inventory and combat controls, and adds a short introduction for new saves.
-0.1.1 was packaged on 2026-11-01: eight desktop packages (Windows / Linux / macOS Apple Silicon and Intel, Chinese and English), a corresponding source archive and checksums. The main branch source is synchronized to this version from development snapshot `d553842a`; see the [v0.1.1 Release](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1).
+0.1.1 was packaged on 2026-11-01: eight desktop packages (Windows / Linux / macOS Apple Silicon and Intel, Chinese and English), a corresponding source archive and checksums.
 
 #### Introduction and help
 
@@ -175,12 +222,6 @@ This update improves desktop map responsiveness, inventory and combat controls, 
 - Fix misaligned English resource bars, empty plant values interrupting turns in older saves, first-frame image-layer initialization, and the sidebar returning to its default page after container fill/pour actions.
 - Record an earlier adjustment: a small clean-water spray uses 3 units and costs 3 imagination; the twin hairdryer remains at 6.
 - Update regression and probe compatibility: disable allocation sampling that could crash Python 3.11 probes, skip platform-specific cases where appropriate, and update glyph and scrolling-viewport expectations.
-
-#### Other improvements
-
-- QoL and keyboard/mouse accessibility: Alt replaces Ctrl for terminal compatibility, a unified aiming transaction, a single-line footer and a responsive side panel.
-- Rebalancing toward less predictable situations: floor effects, skills, propagation and psychological resource bands, with instability banners when crossing bands.
-- Fourth batch of environmental reaction entries, covering all registered liquid and gas types.
 
 #### Web
 

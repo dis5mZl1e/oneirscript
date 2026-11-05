@@ -1,5 +1,6 @@
 """面板路由族：图鉴/历史/设置页的开关、滚动与行激活。"""
 from __future__ import annotations
+from ...core.tutorial_control import submit_tutorial
 
 import math
 import json
@@ -39,7 +40,6 @@ from ..debug_panel import DebugPanelMixin
 from ..floating_toast import FloatingToast, MapHints, MapHintText
 from ..sentence_writer import SentenceWriter
 from ..newgame_options import NewGameOptionsView, options_text, summary_text, detail_text
-from ..tutorial_card import TutorialCard
 from ..settlement import SettlementScreen
 from ..effects import (FXEngine, FxSnapshot, FxSource, FxHit, FxProjectile, FxCombatPulse, FxCast,
                       BORDER_EVENT_COLORS, RIPPLE_LIFE, RIPPLE_MAX_RADIUS,
@@ -50,7 +50,6 @@ from ..render import render_map
 from ...core.cast_fx import charging_casts
 from ...data.anomaly_skills import FX_PROFILES
 from ..transition import TOTAL, cell_off_time_a, cell_on_time_b, cell_segments, compose_frame
-from ...core.tutorial import tutorial_card_text, tutorial_pump, tutorial_target_cells
 
 try:
     # textual 0.89 的分区竖线（真正的 Rule 控件在私有模块 _rule 里）。
@@ -108,7 +107,7 @@ class PanelsMixin:
         if state.tutorial.get("active"):
             # 教程埋点：面板步需要「真正打开行囊」的证据（面板切换不耗回合，
             # 完成判定只能靠这里写旗标，由教程 pump 每帧评估）。
-            state.tutorial_events["panel_opened"] = mode
+            submit_tutorial(self.session, 'event', 'panel_opened', mode)
         # 再按一次同一页 = 收起；收起后的落点同样走默认页（左侧事件记录开启
         # 时是行囊，否则是事件记录）。manual=False 给教程等自动开页用，避免
         # 在锁定态把「锁定页」改掉。
@@ -313,66 +312,20 @@ class PanelsMixin:
         self.refresh_view()
 
     def _delete_history_stats(self) -> SettingChange:
-        """删除全部历史统计：图鉴文件 + 各存档局内的记录，一并清空（不可恢复）。
-
-        逐槽清空存档里的 ``state.catalog``（编码/解码往返由持久化层保证），
-        最后删除共享的 catalog.json；之后任何存档再保存也不会把旧统计合回来。
-        """
-        if not self.session.persistence_enabled:
-            return SettingChange(False, tr('教程中不修改正式记录。'))
-        self.session.state.catalog = {}
-        manager = self.session.manager
-        try:
-            if manager.catalog_file.exists():
-                manager.catalog_file.unlink()
-        except OSError:
-            pass
-        for slot in range(1, manager.SLOT_COUNT + 1):
-            slot_manager = manager.for_slot(slot)
-            if not (slot_manager.primary.exists() or slot_manager.backup.exists()):
-                continue
-            try:
-                slot_state = slot_manager.load()
-                slot_state.catalog = {}
-                slot_manager.save(slot_state)
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-        return SettingChange(True, tr("历史统计已删除。"))
+        return self._catalog_setting('clear')
 
     def _unlock_all_catalog(self) -> SettingChange:
-        """一键解锁全部图鉴：所有条目的遭遇/交互计数补到 1 并写入持久图鉴。
+        return self._catalog_setting('unlock')
 
-        只做「从无到有」的标记（已有计数取 max 不覆盖），不清除任何
-        现有记录；与「删除历史统计」互不影响。
-        """
-        if not self.session.persistence_enabled:
-            return SettingChange(False, tr('教程中不修改正式记录。'))
-        manager = self.session.manager
-        merged = manager.merge_catalogs(self.session.state.catalog, manager.load_catalog())
-        unlocked = 0
-        for definition in self.catalog_definitions.values():
-            entry = merged.setdefault(
-                definition.catalog_id,
-                {
-                    "name": definition.name,
-                    "category": definition.category.value,
-                    "encounters": 0,
-                    "interactions": 0,
-                    "kills": 0,
-                    "drops_seen": [],
-                    "details": [],
-                },
-            )
-            if definition.category is CatalogCategory.CONSCIOUSNESS:
-                if int(entry.get("encounters", 0)) == 0:
-                    entry["encounters"] = 1
-                    unlocked += 1
-            elif int(entry.get("interactions", 0)) == 0:
-                entry["interactions"] = 1
-                unlocked += 1
-        manager.save_catalog(merged)
-        self.session.state.catalog = merged
-        return SettingChange(True, tr("图鉴已全部解锁（新标记 {n} 条）。").format(n=unlocked))
+    def _catalog_setting(self, operation):
+        result = self.session.apply('catalog_control', operation)
+        if getattr(self.session, 'asynchronous', False):
+            def finish(actual):
+                self.settings_page.feedback = actual.message
+                self.refresh_view()
+            self._after_action(result, finish)
+            return SettingChange(False, '')
+        return SettingChange(result.changed, result.message)
 
     def _codex_viewport_rows(self) -> int:
         """列表可见行数；两列布局下每行放两条目。"""

@@ -163,6 +163,7 @@ class CircuitMixin:
                 if not desired or self.entity_at(x, y) is None:
                     cell.solid = desired
                 if cell.solid != before_solid:
+                    self._sync_material_position(x, y)
                     # 门态真实改变（开门/关门）才登记接收结果。
                     receiver_effects.append((key, x, y, bool(value), ((x, y),), str(kind)))
             elif value and not previous.get(key, False):

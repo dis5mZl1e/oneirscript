@@ -4,6 +4,7 @@ Business panel modes remain intact so existing left editors and action settlemen
 keep their contracts. No state in this module is persisted to a world save.
 """
 from __future__ import annotations
+from ..core.tutorial_control import submit_tutorial
 
 from dataclasses import dataclass
 
@@ -27,16 +28,15 @@ class SidebarRoute:
 
 
 # 六个工作区（2026-10-24 五区改六区）：主按钮 ID 沿用既有命名，environment
-# 为新增；末列是打开本区时落入的默认面板模式。tasks 默认 journal_log——
-# 显式浏览事件记录（Enter 交给面板、滚动锚定生效）；未锁定成功世界行动
-# 回跳的 world 模式由「记录」子路由承接，两种模式渲染同一份事件记录。
+# 为新增；末列是打开本区时落入的默认面板模式。任务区打开委托列表，
+# 事件记录由「记录」子页承接。
 WORKSPACES = (
     ('actions', '行动', 'Act', 'actions'),
     ('inventory', '行囊', 'Pack', 'inventory'),
     ('equipment', '构筑', 'Build', 'equipment'),
     ('portents', '自身', 'Self', 'portents'),
     ('environment', '环境', 'Env', 'nearby'),
-    ('tasks', '日志', 'Log', 'journal_log'),
+    ('tasks', '任务', 'Tasks', 'tasks'),
 )
 ROUTES = {
     'actions': (
@@ -87,12 +87,18 @@ class BrowsePosition:
     expanded_key: str | None = None
     details_expanded: bool = False
     message_count: int = 0
+    equipment_scroll: int = 0
 
 
 class SidebarWorkspacesMixin:
     @property
     def sidebar_workspace(self):
         return MODE_WORKSPACE.get(self.panel_mode, '')
+
+    def _sidebar_routes(self, workspace=None):
+        routes = ROUTES.get(workspace or self.sidebar_workspace, ())
+        return tuple(route for route in routes if route.key != 'equipment-memory'
+                     or self.config.get('standalone_memory_page'))
 
     def _sidebar_route_key(self):
         return self.panel_mode, self._panel_subpage_id()
@@ -111,7 +117,8 @@ class SidebarWorkspacesMixin:
             selected, selected_key, self.panel_scroll,
             self.memory_scroll, getattr(self, 'inventory_query', ''),
             getattr(self, 'inventory_sort', '原序'),
-            self.expanded_key, self.details_expanded, len(self.session.state.messages))
+            self.expanded_key, self.details_expanded, len(self.session.state.messages),
+            self.equipment_scroll)
         self.__dict__.setdefault('_sidebar_last_routes', {})[self.sidebar_workspace] = self._sidebar_route_key()
 
     def _sidebar_selection_candidates(self):
@@ -133,6 +140,7 @@ class SidebarWorkspacesMixin:
         if saved and self.panel_mode == 'journal_log' and saved.scroll:
             self.panel_scroll += max(0, len(self.session.state.messages) - saved.message_count)
         self.memory_scroll = saved.memory_scroll if saved else 0
+        self.equipment_scroll = saved.equipment_scroll if saved else 0
         self.expanded_key = saved.expanded_key if saved else None
         self.details_expanded = saved.details_expanded if saved else False
         if self.panel_mode == 'inventory':
@@ -161,13 +169,9 @@ class SidebarWorkspacesMixin:
         self._panel_mode_seen = self.panel_mode
 
     def _default_panel_mode(self) -> str:
-        """右侧面板的「默认页」。
-
-        左侧事件记录开启时默认页是行囊——事件流已经压在地图左下，右栏再显示
-        同一份记录就是重复；关闭时保持旧默认（事件记录 world）。所有「世界行动
-        完成后自动回跳」的入口都读这里，不要再写死 world。
-        """
-        return "inventory" if bool(self.config.get("left_event_log")) else "world"
+        """Initial/fallback page, independently of action-completion log routing."""
+        workspace = self.config.get('default_sidebar_workspace')
+        return next((row[3] for row in WORKSPACES if row[0] == workspace), 'inventory')
 
     # ---- 右侧固定（~ 锁定）的页面快照 -------------------------------------
     # 新语义（2026-10-26 玩家定稿）：~ 只负责「右栏当前页不许自动切换」。
@@ -278,16 +282,22 @@ class SidebarWorkspacesMixin:
         default = next((row[3] for row in WORKSPACES if row[0] == workspace), None)
         if default is None:
             return False
-        if self.sidebar_workspace == workspace:
+        if self.sidebar_workspace == workspace and workspace not in ('actions', 'tasks'):
             return True
         mode, subpage = self.__dict__.get('_sidebar_last_routes', {}).get(workspace, (default, None))
+        if workspace == 'actions':
+            mode, subpage = 'actions', self.config.get('default_action_page')
+        elif workspace == 'tasks':
+            mode, subpage = 'tasks', None
         state = self.session.state
         if state.tutorial.get('active'):
-            state.tutorial_events['panel_opened'] = mode
+            submit_tutorial(self.session, 'event', 'panel_opened', mode)
         self._sidebar_transition(mode, subpage=subpage, manual=manual)
         return True
 
     def open_sidebar_route(self, key, *, manual: bool = True):
+        if key == 'equipment-memory' and not self.config.get('standalone_memory_page'):
+            key = 'equipment-board'
         route = ROUTE_BY_KEY.get(key)
         if route is None or not self._sidebar_navigation_allowed():
             return False
@@ -298,12 +308,15 @@ class SidebarWorkspacesMixin:
             return True
         state = self.session.state
         if state.tutorial.get('active'):
-            state.tutorial_events['panel_opened'] = route.mode
+            submit_tutorial(self.session, 'event', 'panel_opened', route.mode)
         self._sidebar_transition(route.mode, subpage=route.subpage or None, focus=True,
                                  manual=manual)
         return True
 
     def _panel_text_build(self, state):
+        if not getattr(self, '_environment_scroll_reuse', False):
+            # Every normal render observes the current world and permissions.
+            self._environment_scroll_layout = None
         self._sync_sidebar_owner()
         if self.panel_mode in ('world', 'journal_log'):
             count = len(self._visible_game_messages(state))
@@ -371,7 +384,12 @@ class SidebarWorkspacesMixin:
                 self._apply_terrain_preview(state, self.query_one('#map'))
                 self._refresh_map_hints()
         else:
-            self.refresh_view()
+            reuse = getattr(self, '_environment_scroll_reuse', False)
+            self._environment_scroll_reuse = False
+            try:
+                self.refresh_view()
+            finally:
+                self._environment_scroll_reuse = reuse
 
     def _move_panel_selection(self, delta):
         if self.panel_mode not in DETAIL_MODES:
@@ -499,6 +517,17 @@ class SidebarWorkspacesMixin:
     def _sidebar_detail_text(self, state):
         from .panel_fields import stat_color
         width = max(8, self.query_one('#panel').content_size.width)
+        viewport = max(1, self.query_one('#panel').content_size.height)
+        layout_key = (id(state), state.time, state.player.x, state.player.y,
+                      self.panel_selection, self.expanded_key, self.details_expanded,
+                      width, viewport, get_language(),
+                      repr(getattr(self.config, 'values', self.config)), self._symbol_mode())
+        cached = getattr(self, '_environment_scroll_layout', None)
+        if (self.panel_mode == 'nearby' and getattr(self, '_environment_scroll_reuse', False)
+                and cached is not None and cached[0] == layout_key):
+            _, prepared, rows, entry_keys = cached
+            self._sidebar_rendered_entry_keys = entry_keys
+            return self._environment_layout_window(prepared, rows, viewport)
         lines, rows = [], []
 
         def add(text, index=-1):
@@ -604,6 +633,7 @@ class SidebarWorkspacesMixin:
                     left_rows.append(index)
 
             entries = self._sidebar_detail_entries()
+            self._sidebar_rendered_entry_keys = tuple(entry['key'] for entry in entries)
             terse_mode = terse.enabled(self.config)
             english = get_language() == 'en'
             def env_title(key: str) -> str:
@@ -654,11 +684,18 @@ class SidebarWorkspacesMixin:
                 right = right_lines[row] if row < len(right_lines) else Text()
                 add(two_zone_row(left, right, ZONE_ENV_ENTITIES, ZONE_ENV_SURVEY, left_w, right_w),
                     left_rows[row] if row < len(left_rows) else -1)
-        viewport = max(1, self.query_one('#panel').content_size.height)
+        if self.panel_mode == 'nearby':
+            self._environment_scroll_layout = (
+                layout_key, tuple(line.copy() for line in lines), tuple(rows),
+                self._sidebar_rendered_entry_keys)
+        return self._environment_layout_window(lines, rows, viewport)
+
+    def _environment_layout_window(self, lines, rows, viewport):
+        """Slice prepared content and its exact hit mapping together."""
         self.panel_scroll = min(self.panel_scroll, max(0, len(lines) - viewport))
-        self._sidebar_overview_rows = rows
+        self._sidebar_overview_rows = list(rows)
         self._sidebar_overview_line_count = len(lines)
-        self._panel_rows = rows[self.panel_scroll:self.panel_scroll + viewport]
+        self._panel_rows = list(rows[self.panel_scroll:self.panel_scroll + viewport])
         return Text('\n').join(lines[self.panel_scroll:self.panel_scroll + viewport])
 
 
@@ -846,7 +883,7 @@ class SidebarWorkspacesMixin:
             self._sidebar_positions = {}
             self._sidebar_last_routes = {}
             self._sidebar_stat_entries = []
-            self.panel_selection = self.panel_scroll = self.memory_scroll = 0
+            self.panel_selection = self.panel_scroll = self.memory_scroll = self.equipment_scroll = 0
             self.expanded_key = None
             self._panel_enter_mode = None
         self._sidebar_owner = owner

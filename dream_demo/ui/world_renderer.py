@@ -465,9 +465,12 @@ def _changed_span(previous: Strip, current: Strip, width: int):
 class WorldPainter:
     """Write unchanged-geometry world widgets without a Textual compositor pass."""
 
+    # 只有真正盖在地图画布上方、会遮住直写区域的层才列在这里。
+    # `#left-event-log` 自 2026-11-05 起是 #map-column 里 #map-pane 的下方兄弟，
+    # 不再与画布重叠；若仍算作 overlay，默认显示的消息栏会让直写永远不 eligible。
     _OVERLAYS = (
         "#map-overlay", "#tamper-overlay", "#settlement", "#debug-panel",
-        "#toast", "#map-mode-hint", "#left-event-log", "#tutorial-card",
+        "#toast", "#map-mode-hint", "#tutorial-card",
         "#self-pane", "#layer-info-pane", "#signal-detail", "#qol-confirm-dialog",
         "#controls-help", "#board-editor", "#pause-menu", "#codex-page",
         "#settings-page",

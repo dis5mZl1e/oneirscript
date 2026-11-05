@@ -1124,6 +1124,7 @@ class EnemySkillMixin:
             if family == "ember":
                 for x, y in cells:
                     self.cell(x, y).flame = 0
+                    self._sync_material_position(x, y)
             if field.get("note"):
                 self.messages.append(tr(field["note"]))
         self.enemy_skill_fields = survivors

@@ -642,6 +642,7 @@ class CombatActionsMixin:
             _spend()
             for xx, yy in plan:
                 self.cell(xx, yy).aggregate_variant = "书页地"
+                self._sync_material_position(xx, yy)
             return _done(tr("你把 {n} 格地板涂成了易燃的书页地。", n=len(plan)))
         if ability_id == "blink":
             nx, ny = point

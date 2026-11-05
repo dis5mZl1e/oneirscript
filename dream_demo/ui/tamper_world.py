@@ -7,6 +7,10 @@
 """
 
 from __future__ import annotations
+from ..core.tutorial_control import submit_tutorial
+from ..core.command_context import capture_command_context
+from ..core.world_tamper_control import capture_world_preview, capture_range_preview, submit_world_tamper
+from .action_completion import after_action
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -55,6 +59,8 @@ class WorldTamperEditor(presentation.TamperViewState):
     # 第六批：范围（这一处/全视野）与区域聚流落点；不入存档。
     range_mode: str = 'single'
     range_plan: Any = None
+    owner_preview: Any = None
+    owner_range_preview: Any = None
     gather_destination: tuple[int, int] | None = None
     # §15：当前预览的共用事实/输出契约；只读派生，不入存档。
     preview_contract: Any = field(default=None, repr=False, compare=False)
@@ -132,10 +138,12 @@ class TamperWorldUIMixin:
             return False
         self.world_tamper_editor = WorldTamperEditor(
             sentence=sentence,
+            owner_preview=capture_world_preview(self.session.state, sentence),
             word_ids=word_ids,
             host=host,
             side_available=host == 'side')
         self._course_tamper_started_at = (self.session.state.action_seq, self.session.state.time)
+        self._course_tamper_started_context = capture_command_context(self.session.state)
         self._capture_tamper_view(self.world_tamper_editor)
         self._world_tamper_select_slot(self.world_tamper_editor,0)
         # 2026-10-23 用户定稿：C 键只开左侧篡改浮层，不切换右侧面板。
@@ -198,8 +206,8 @@ class TamperWorldUIMixin:
         if editor is not None:
             state = self.session.state
             if not committed and getattr(self, '_course_tamper_started_at', None) == (state.action_seq, state.time):
-                from ..core.origin_course import note
-                note(state, 'tamper_cancelled')
+                submit_tutorial(self.session, 'cancel_tamper', *self._course_tamper_started_at,
+                                expected_context=getattr(self, '_course_tamper_started_context', ()))
             self._restore_tamper_view(editor)
         self.world_tamper_editor = None
         self._tamper_side_footer = None
@@ -240,6 +248,7 @@ class TamperWorldUIMixin:
             return
         editor = WorldTamperEditor(
             sentence=sentence,
+            owner_preview=capture_world_preview(self.session.state, sentence),
             word_ids=words,
             host='side',
             side_available=True)
@@ -480,34 +489,25 @@ class TamperWorldUIMixin:
                     and getattr(editor.slot, 'region_members', ())
                     and editor.gather_destination is not None):
                 editor.slot.gather_destination = editor.gather_destination
-            if editor.range_mode == 'vision':
-                from ..core.tamper_range import commit_range_tamper
-                plan = editor.range_plan
-                if plan is None:
-                    from ..core.tamper_range import build_plan
-                    plan = build_plan(self.session.state, editor.word_id,
-                                      condition_ids=editor.condition_ids)
-                if isinstance(plan, str):
-                    self.show_toast(plan, 3)
-                    return True
-                result = commit_range_tamper(
-                    self.session.state, editor.sentence, editor.word_id,
-                    condition_ids=editor.condition_ids, plan=plan)
-            else:
-                result = commit_world_tamper(self.session.state, editor.sentence,
-                                             editor.word_id, editor.slot_index,
-                                             condition_ids=editor.condition_ids)
-            if result.changed:
-                from ..core.origin_course import note
-                note(self.session.state,'tamper_committed')
-            if side and result.changed:
-                # 右栏这一页成功后保持完整编辑器：按提交后的世界重建句子/字词，
-                # 不关闭、更不回退到旧简版摘要页。
-                self._world_tamper_rebuild_side_after_commit()
-            else:
-                self.close_world_tamper_editor(committed=result.changed)
-                if not result.changed:
-                    self.show_toast(result.message, 4)
+            result = submit_world_tamper(
+                self.session, editor.owner_preview, editor.word_id, editor.slot_index,
+                condition_ids=editor.condition_ids,
+                gather_destination=editor.gather_destination,
+                range_mode=editor.range_mode,
+                range_preview=editor.owner_range_preview)
+            def finish(result):
+                if result.changed:
+                    submit_tutorial(self.session, 'facts', 'tamper_committed')
+                if side and result.changed:
+                    # 右栏这一页成功后保持完整编辑器：按提交后的世界重建句子/字词，
+                    # 不关闭、更不回退到旧简版摘要页。
+                    self._world_tamper_rebuild_side_after_commit()
+                else:
+                    self.close_world_tamper_editor(committed=result.changed)
+                    if not result.changed:
+                        self.show_toast(result.message, 4)
+                return True
+            after_action(self, result, finish)
             return True
         self._world_tamper_reconcile_condition(editor)
         self.refresh_view()
@@ -706,6 +706,7 @@ class TamperWorldUIMixin:
             else:
                 range_plan = built
                 editor.range_plan = built
+                editor.owner_range_preview = capture_range_preview(state, built)
                 # 全视野操作也保留原句语篇：改后句 = 原句 + 「按统一字词生效」。
                 from ..core.tamper_prose import compose_after
                 from ..core.tamper_views import language_of

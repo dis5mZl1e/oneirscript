@@ -219,6 +219,8 @@ class BoardEditorController:
     """编辑器的全部状态与规则。不依赖 Textual，可独立单测。"""
 
     def __init__(self, state):
+        from ..core.command_context import capture_command_context
+        self.owner_context = capture_command_context(state)
         self.state = state
         self.draft = state.board_draft()
         self.cursor: tuple[int, int] = (0, 0)
@@ -643,6 +645,8 @@ class BoardEditorController:
         """全盘确认：一次事务、一次行动。返回 ActionResult。"""
         if self.held is not None:
             self.cancel_held()
+        if session is not None and getattr(session, 'asynchronous', False):
+            return session.submit('commit_board', self.draft, expected_context=self.owner_context)
         return session.apply('commit_board', self.draft) if session is not None else self.state.commit_board(self.draft)
 
     def _selected_word(self):

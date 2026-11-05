@@ -104,4 +104,7 @@ def root_action(function):
             return result
         finally:
             state._equipment_root_frame = None
+            invalidate_ui = getattr(state, 'mark_ui_dirty', None)
+            if invalidate_ui is not None:
+                invalidate_ui()
     return wrapped

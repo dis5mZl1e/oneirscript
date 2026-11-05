@@ -90,6 +90,7 @@ def resolve(state,enemy,skill,pending):
         if target and not state.entity_at(*target) and not state.cell(*target).solid:
             from .generation import GenerationMixin
             GenerationMixin.configure_wall(state.cell(*target),'门')
+            state._sync_material_position(*target)
             st['library_door']={'pos':target,'left':2}
     elif key=='omit':
         pid=pending.get('meta',{}).get('pid')
@@ -112,6 +113,7 @@ def resolve(state,enemy,skill,pending):
             cell=state.cell(*target)
             cell.floor_fuel=max(0,cell.floor_fuel-3)
             if not cell.floor_fuel:cell.aggregate_variant='普通聚合物'
+            state._sync_material_position(*target)
             state._apply_direct_portent(enemy, 'sk_guard_fold', 2)
     elif key=='revision':
         ally=next((e for e in state.enemies if e.id==pending.get('meta',{}).get('ally') and e.integrity>0),None)
@@ -169,7 +171,9 @@ def tick(state,amount):
             door['left']-=amount
             if door['left']<=0:
                 from .generation import GenerationMixin
-                if state.cell(*door['pos']).wall_kind=='门':GenerationMixin.clear_wall(state.cell(*door['pos']))
+                if state.cell(*door['pos']).wall_kind=='门':
+                    GenerationMixin.clear_wall(state.cell(*door['pos']))
+                    state._sync_material_position(*door['pos'])
                 st.pop('library_door',None)
     # Summons expire without death drops; no recursive skill binding.
     for enemy in state.enemies:

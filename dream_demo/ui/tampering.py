@@ -9,6 +9,7 @@
 """
 
 from __future__ import annotations
+from .action_completion import after_action
 
 import time
 from dataclasses import dataclass, field
@@ -676,18 +677,20 @@ class TamperUIMixin(TamperHostMixin):
         if editor is None or editor.request is None:
             return
         result = self._apply("commit_tamper", editor.request)
-        self._tamper_pulse("commit" if bool(getattr(result, "changed", False)) else "deny",
-                           anim.COMMIT_PULSE if bool(getattr(result, "changed", False)) else anim.DENY_PULSE)
-        message = str(getattr(result, "message", "") or "")
-        if message:
-            self.show_toast(message)
-        if state.run_over:
-            self.close_tamper_editor(refresh=False)
+        def finish(result):
+            self._tamper_pulse("commit" if bool(getattr(result, "changed", False)) else "deny",
+                               anim.COMMIT_PULSE if bool(getattr(result, "changed", False)) else anim.DENY_PULSE)
+            message = str(getattr(result, "message", "") or "")
+            if message:
+                self.show_toast(message)
+            if state.run_over:
+                self.close_tamper_editor(refresh=False)
+                self.refresh_view()
+                return
+            self._tamper_rebuild(state)
             self.refresh_view()
-            return
-        self._tamper_rebuild(state)
-        self.refresh_view()
 
+        return after_action(self, result, finish)
     def _tamper_rebuild(self, state: Any) -> None:
         """提交后重算词表：这句话可能已经没有合法位置，也可能全用尽了。"""
         editor = self.tamper_editor

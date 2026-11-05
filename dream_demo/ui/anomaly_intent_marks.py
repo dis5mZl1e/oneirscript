@@ -108,8 +108,11 @@ def animated_cells(state, now: float | None = None,
     cells = intent_cells(state, now)
     if budget <= 0 or not cells:
         return set()
-    return set(sorted(cells,
-                      key=lambda cell: _urgency(state, cell, cells[cell][0]))[:budget])
+    return _animated_from_cells(state, cells, budget)
+
+
+def _animated_from_cells(state, cells, budget):
+    return set(sorted(cells, key=lambda cell: _urgency(state, cell, cells[cell][0]))[:max(0, budget)])
 
 
 def intent_marks(state, now: float | None = None, *,
@@ -122,13 +125,13 @@ def intent_marks(state, now: float | None = None, *,
     地图上不再显示它的「!」小角标；保留其余小角标。``include_chase`` 仅给
     测试/诊断保留旧口径，产品 UI 传 False。
     """
-    cells = intent_cells(state, now)
+    clock = monotonic() if now is None else now
+    cells = intent_cells(state, clock)
+    ramping = _animated_from_cells(state, cells, budget) if animated else set()
     if not include_chase:
         cells = {cell: row for cell, row in cells.items() if row[0] != "chase"}
     if not cells:
         return {}
-    clock = monotonic() if now is None else now
-    ramping = (animated_cells(state, clock, budget) if animated else set())
     if not include_chase:
         ramping = {cell for cell in ramping if cell in cells}
     return {cell: (kind, intent_icon(kind), COLORS[kind],

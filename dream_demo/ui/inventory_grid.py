@@ -11,6 +11,7 @@ cell_width = 1.18，line_height = 1.0，所以一格宽（列）× 0.59 ≈ 方�
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import OrderedDict
 
 from rich.cells import cell_len
 from rich.style import Style
@@ -40,10 +41,10 @@ def _item_frame(item) -> Style:
                  bgcolor=_slot_background(item), bold=True, italic=False,
                  meta={'font_role': 'serif'})
 
-_SELECTED_TOP = Style(color="#ac8056", bgcolor="#33271f", bold=True)
-_SELECTED_SIDE = Style(color="#956b47", bgcolor="#33271f", bold=True)
-_SELECTED_CORNER = Style(color="#714b32", bgcolor="#33271f", bold=True)
-_WOOD_GRAIN = Style(color="#846044", bgcolor="#33271f", bold=True)
+_SELECTED_TOP = Style(color="#ffd166", bgcolor="#33271f", bold=True)
+_SELECTED_SIDE = Style(color="#ffd166", bgcolor="#33271f", bold=True)
+_SELECTED_CORNER = Style(color="#ffd166", bgcolor="#33271f", bold=True)
+_WOOD_GRAIN = Style(color="#ffd166", bgcolor="#33271f", bold=True)
 _EMPTY_SIDE = Style(color="#998673", bgcolor=ZONE_BODY, meta={'font_role': 'serif'})
 _EMPTY_TOP = _EMPTY_SIDE
 _EMPTY_CORNER = _EMPTY_SIDE
@@ -103,7 +104,64 @@ def slot_count(inventory_count: int, capacity: int) -> int:
     return ((total + GRID_COLUMNS - 1) // GRID_COLUMNS) * GRID_COLUMNS
 
 
+# A few recently used layouts cover selection/size changes without retaining items
+# or app instances. Cached Text never escapes: callers append and stylize rows.
+_GRID_CACHE: OrderedDict[tuple, GridRender] = OrderedDict()
+_GRID_CACHE_LIMIT = 4
+
+
+def _copy_grid(grid: GridRender) -> GridRender:
+    return GridRender([line.copy() for line in grid.lines], list(grid.cell_hits),
+                      grid.metrics, grid.grid_rows, grid.slots)
+
+
 def build_grid(
+    inventory: list,
+    indices: list[int],
+    capacity: int,
+    panel_width: int,
+    selection: int,
+    mode: str,
+    equipped_ids: set[str] | frozenset[str] = frozenset(),
+    *, border_style: str = 'creased', icon_style: str = 'outline',
+) -> GridRender:
+    """Reuse stable layout by its rendered content, including mutable item fields."""
+    from ..i18n import get_language
+
+    mode = 'themed' if mode == 'unicode' else mode
+    # Resolve glyphs/colors rather than keying on item identity: both depend on
+    # mutable content registries and character/font fallback configuration.
+    contents = []
+    for index in indices:
+        item = inventory[index] if 0 <= index < len(inventory) else None
+        if item is None:
+            contents.append(None)
+            continue
+        contents.append((getattr(item, 'instance_id', None),
+                         getattr(item, 'name', ''),
+                         int(getattr(item, 'quantity', 1) or 1),
+                         drop_glyph(item, mode),
+                         panel_color(item_name_color(item), _slot_background(item)),
+                         _item_frame(item)))
+    key = (len(inventory), tuple(indices), tuple(contents), int(capacity),
+           int(panel_width), selection, mode, frozenset(equipped_ids),
+           border_style, icon_style, get_language(), ZONE_BODY, FC['count'], FC['effect'],
+           _SELECTED_TOP, _SELECTED_SIDE, _SELECTED_CORNER, _WOOD_GRAIN,
+           _EMPTY_SIDE, _EMPTY_TOP, _EMPTY_CORNER)
+    cached = _GRID_CACHE.get(key)
+    if cached is None:
+        cached = _build_grid(inventory, indices, capacity, panel_width, selection,
+                             mode, equipped_ids, border_style=border_style,
+                             icon_style=icon_style)
+        _GRID_CACHE[key] = cached
+        if len(_GRID_CACHE) > _GRID_CACHE_LIMIT:
+            _GRID_CACHE.popitem(last=False)
+    else:
+        _GRID_CACHE.move_to_end(key)
+    return _copy_grid(cached)
+
+
+def _build_grid(
     inventory: list,
     indices: list[int],
     capacity: int,
@@ -210,7 +268,7 @@ def build_grid(
                 for key in ('inventory_icon', 'inventory_reservation', 'inventory_icon_offset', 'inventory_icon_size'):
                     meta.pop(key, None)
             spans.append(Span(span.start, span.end, Style(
-                color='#70523c' if corner else style.color, bgcolor=style.bgcolor,
+                color='#70523c' if corner and 'selected:' not in part else style.color, bgcolor=style.bgcolor,
                 bold=style.bold, italic=style.italic, meta=meta)))
         line.spans = spans
     return GridRender(lines, cell_hits, metrics, grid_rows, slots)

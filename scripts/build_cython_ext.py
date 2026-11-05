@@ -40,6 +40,8 @@ MODULES = (
     "dream_demo.core.save_kernel",
     "dream_demo.core.vision.sight_kernel",
     "dream_demo.core.gas_kernel",
+    # 方案 1（2026-11-04）：materials_kernel 实测无收益，移出默认构建；
+    # 源码、纯 Python 回退与 ONEIRSCRIPT_CY_KERNEL_PHASE/RECIPE 开关保留。
     "dream_demo.ui.app.fx_kernel",
     # frame_geometry：cell_ranges A/B 实测纯 1.97–2.31ms → compiled 1.24–1.30ms
     # （−0.7~1.0ms/步），低于 ≥1ms 保留线；compose_fx 无收益（Rich Text.stylize
@@ -57,7 +59,9 @@ MODULES = (
 
 
 def _module_source(name: str) -> Path:
-    return ROOT.joinpath(*name.split(".")).with_suffix(".py")
+    base = ROOT.joinpath(*name.split("."))
+    pyx = base.with_suffix('.pyx')
+    return pyx if pyx.is_file() else base.with_suffix('.py')
 
 
 def _extension_suffixes() -> tuple[str, ...]:
@@ -91,14 +95,15 @@ def _load_manifest() -> dict[str, list[str]]:
         return {}
 
 
-def build() -> int:
+def build(material_numeric=False) -> int:
     try:
         from Cython.Build import cythonize
         from setuptools import Distribution, Extension
     except ImportError as error:
         print(f"缺少 Cython/setuptools：{error}")
         return 2
-    sources = [(name, _module_source(name)) for name in MODULES]
+    selected = ('dream_demo.core._material_numeric',) if material_numeric else MODULES
+    sources = [(name, _module_source(name)) for name in selected]
     missing = [str(path) for _name, path in sources if not path.is_file()]
     if missing:
         print("源文件缺失：", ", ".join(missing))
@@ -122,8 +127,8 @@ def build() -> int:
     command.inplace = True
     command.ensure_finalized()
     command.run()
-    manifest = {}
-    for name in MODULES:
+    manifest = _load_manifest()
+    for name in selected:
         paths = _extensions(name)
         if not paths:
             print(f"警告：{name} 未生成扩展")
@@ -214,17 +219,21 @@ def verify() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", action="store_true", help="编译扩展")
+    parser.add_argument('--material-numeric', action='store_true',
+                        help='with --build: compile only the opt-in P5 numeric kernel')
     parser.add_argument("--clean", action="store_true", help="删除扩展与中间产物")
     parser.add_argument("--disable", action="store_true", help="改名禁用扩展")
     parser.add_argument("--enable", action="store_true", help="恢复扩展")
     parser.add_argument("--verify", action="store_true", help="检查当前导入的是否为扩展")
     args = parser.parse_args()
+    if args.material_numeric and not args.build:
+        parser.error('--material-numeric requires --build')
     actions = [args.build, args.clean, args.disable, args.enable, args.verify]
     if sum(bool(item) for item in actions) != 1:
         parser.print_help()
         return 2
     if args.build:
-        return build()
+        return build(args.material_numeric)
     if args.clean:
         return clean()
     if args.disable:

@@ -131,14 +131,14 @@ details in a public issue.
 
 ## Source and release correspondence
 
-`DESKTOP-SOURCE.json` records the current v0.1.1 desktop source baseline, imported
-from development commit `d553842a`. The `desktop-source-v0.1.1` tag preserves that
+`DESKTOP-SOURCE.json` records the current v0.1.2 desktop source baseline, imported
+from development commit `0df1867c`. The `desktop-source-v0.1.2` tag preserves that
 baseline; the Release also provides the corresponding source ZIP, desktop packages
 and checksums. This branch adds installed-Python asset lookup
 (`dream_demo/resource_paths.py`) and a writable-data CLI entry point
 (`dream_demo/cli.py`) on top of the desktop source; neither changes desktop runtime
 behavior. Rebuild local binaries from this checkout with the commands below; the
-published 0.1.1 desktop packages were built from the same development snapshot.
+published 0.1.2 desktop packages were built from the same development snapshot.
 
 To rebuild a native desktop package from a source checkout, install the runtime
 requirements and `requirements-build.txt`, prepare the platform terminal with

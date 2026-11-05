@@ -7,10 +7,10 @@ from ..data.icon_glyphs import game_icon
 from .sidebar_workspaces import WORKSPACES
 
 
-_SYMBOLS = {'actions': '✔', 'inventory': '▣', 'equipment': '▼', 'portents': '◈',
-            'environment': '⌖', 'tasks': '☷'}
-_ASCII_SYMBOLS = {'actions': '>', 'inventory': '#', 'equipment': '^', 'portents': '@',
-                  'environment': '+', 'tasks': '='}
+from ..data.navigation_icons import (
+    NAVIGATION_SYMBOLS as _SYMBOLS, NAVIGATION_ASCII as _ASCII_SYMBOLS,
+    navigation_icon_key,
+)
 
 
 def navigation_labels(width, mode='themed', terse=False):
@@ -27,7 +27,7 @@ def navigation_labels(width, mode='themed', terse=False):
     entries = []
     for key, label, english, default in WORKSPACES:
         title = english if get_language() == 'en' else tr(label)
-        private = game_icon('nav.catalog' if key == 'environment' else 'nav.' + key) if mode != 'ascii' else None
+        private = game_icon(navigation_icon_key(key)) if mode != 'ascii' else None
         symbol = private or set_cell_size((_ASCII_SYMBOLS if mode == 'ascii' else _SYMBOLS)[key], 2)
         entries.append(('#nav-' + key, symbol, '' if terse else title))
     # 六区后窄栏可能连「符号+标题」的最小宽度都放不下（80 列紧凑右栏 32 列，

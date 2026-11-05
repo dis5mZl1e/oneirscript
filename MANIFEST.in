@@ -1,5 +1,5 @@
 include LICENSE LICENSING.md THIRD-PARTY-NOTICES.md DESKTOP-SOURCE.json
-include README*.md TECHNICAL*.md CONTRIBUTING*.md CHANGELOG.md
+include README*.md TECHNICAL*.md CONTRIBUTING*.md CHANGELOG.md RELEASE-NOTES*.md
 recursive-include docs *.md
 include run_demo.py launch_game.py build.py setup.py requirements*.txt
 recursive-include assets/data *

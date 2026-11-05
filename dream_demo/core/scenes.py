@@ -247,6 +247,9 @@ def set_floor_variant(state: Any, x: int, y: int, variant: str,
         state.world_ledger.mark_terrain(
             state.layer_key(), x, y,
             aggregate_variant=definition.variant, floor_fuel=cell.floor_fuel)
+    # 生成期保持索引惰性建立；运行期已建立的索引必须立即跟上地形变化。
+    if persist or getattr(state, '_material_index_ready', False):
+        state._sync_material_position(x, y)
     return True
 
 
@@ -273,6 +276,7 @@ def seal_opening(state: Any, x: int, y: int) -> bool:
     cell.gas = 0
     cell.gas_kind = ""
     cell.flame = 0
+    state._sync_material_position(x, y)
     state.world_ledger.mark_terrain(
         state.layer_key(), x, y, solid=True, wall_kind="",
         floor=cell.floor.value, height=cell.height, hardness=cell.hardness,
@@ -287,6 +291,7 @@ def unseal_opening(state: Any, x: int, y: int) -> bool:
     if not entry.get("solid") or not cell.solid or cell.wall_kind:
         return False
     state._open_door(cell)
+    state._sync_material_position(x, y)
     state._sound_pulse(x, y, 2, category="mechanical",
                        source=tr("门"), announce=False)
     state.world_ledger.mark_terrain(

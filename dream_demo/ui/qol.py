@@ -7,7 +7,7 @@ from textual.geometry import Region
 
 from ..controls import panel_for_key
 from ..core.entities import ActionResult
-from ..i18n import tr
+from ..i18n import tr, get_language
 
 
 class QoLUIMixin:
@@ -240,6 +240,11 @@ class QoLUIMixin:
     def _inventory_visible_indices(self):
         state = self.session.state
         query = self.inventory_query.strip().casefold()
+        key = (tuple((item.name, item.category, item.definition_id) for item in state.inventory),
+               query, self.inventory_filter, self.inventory_sort, get_language())
+        cached = getattr(self, '_inventory_filter_cache', None)
+        if cached is not None and cached[0] == key:
+            return list(cached[1])
         indices = [i for i, item in enumerate(state.inventory)
                    if (self.inventory_filter == '全部' or item.category == self.inventory_filter)
                    and (not query or query in (item.name + ' ' + tr(item.name) + ' ' + item.definition_id).casefold())]
@@ -247,6 +252,7 @@ class QoLUIMixin:
             indices.sort(key=lambda i: (tr(state.inventory[i].name), i))
         elif self.inventory_sort == '类别':
             indices.sort(key=lambda i: (state.inventory[i].category, tr(state.inventory[i].name), i))
+        self._inventory_filter_cache = (key, tuple(indices))
         return indices
 
     def _qol_reselect_inventory(self, *, focus=True, reset_scroll=True):
@@ -303,7 +309,7 @@ class QoLUIMixin:
                              if state.width * max(1, round(2*z)) <= view.content_size.width
                              and state.height * max(1, round(z)) <= view.content_size.height), default=min(MAP_ZOOM_LEVELS))
         else:
-            view.zoom = 1.0
+            view.zoom = float(self.config.get('default_zoom') or 100) / 100
         self.refresh_view()
 
     def _qol_button(self, button_id):

@@ -3,6 +3,7 @@ from .root_facts import root_action
 from .runtime import condition_matches
 from ..data.items import ITEM_DEFINITIONS
 from ..core.entities import ActionResult
+from ..core.metadata_versions import OwnedList
 from ..core.constants import ActionKind
 from ..i18n import tr
 from ..core.cast_fx import animate_hospital_tool
@@ -79,7 +80,7 @@ class HospitalEquipmentMixin:
             options.append({'label':tr('{item}：{material} ×{n}',item=tr(source.name),material=tr(kind),n=source.contents[kind]),'hospital_load':{'needle':needle.instance_id,'container':source.instance_id}})
         if not options:return medical_result(False,'没有可装载的真实液体样本，或针已满。')
         event=WorldEvent('hospital.lancet_choice',tr('装载空心针'),self.player.x,self.player.y,tr('选择真实液体容器；取消不消耗。'),kind='compound',dialogue=(tr('最多装载6单位一种液体，注入真实消耗。'),),options=tuple(options),dissolution_reward=0)
-        self.events=[e for e in self.events if e.event_id!='hospital.lancet_choice']
+        self.events=OwnedList(e for e in self.events if e.event_id!='hospital.lancet_choice')
         self.events.append(event);self.pending_event_id=event.event_id
         return medical_result(True,'选择装载样本。',{'open_event_dialog':True})
 

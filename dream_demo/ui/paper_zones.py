@@ -40,6 +40,7 @@ from .styles import (
     BAR_IMAGINATION_STYLES,
     BAR_LUCIDITY_STYLES,
     BAR_MIND_STYLES,
+    CARRIED_IMAGE_STYLE,
     PANEL_MAGENTA,
     PANEL_TEXT,
     PORTENT_HINT_STYLE,
@@ -72,12 +73,16 @@ ZONE_ENV_ENTITIES = '#292b23'   # 环境页·左（异象清单）：橄榄纸�
 ZONE_ENV_SURVEY = '#2b261f'     # 环境页·右（环境概述）：暖褐纸（hue≈35°）
 ZONE_CAST_LIST = '#252c2b'      # 构想页·构想列表块：灰青纸（hue≈171°）
 ZONE_CAST_PREVIEW = '#2b2630'   # 构想页·使用预览块：灰紫纸（hue≈270°）
+# 装备页·底部「携带意象」独立滚动区：比正文纸略深的暖褐纸（hue≈51°）。
+# 亮度 0.021（正文 0.025），只靠明度/饱和度轻声分层，不抢上方联想盘。
+ZONE_LOADOUT = '#2b2818'
 
 SIBLING_ZONES = {
     'ZONE_ENV_ENTITIES': ZONE_ENV_ENTITIES,
     'ZONE_ENV_SURVEY': ZONE_ENV_SURVEY,
     'ZONE_CAST_LIST': ZONE_CAST_LIST,
     'ZONE_CAST_PREVIEW': ZONE_CAST_PREVIEW,
+    'ZONE_LOADOUT': ZONE_LOADOUT,
 }
 
 # 分栏细竖线：缝不是字——track 灰按第十九节 §10.4 的空轨豁免，不进对比集合。
@@ -137,4 +142,9 @@ ZONE_TEXT_COLORS = {
     'ZONE_ENV_SURVEY': (PANEL_TEXT, *(c for k, c in FIELD_COLORS.items() if k != 'track')),
     'ZONE_CAST_LIST': (PANEL_TEXT, *(c for k, c in FIELD_COLORS.items() if k != 'track')),
     'ZONE_CAST_PREVIEW': (PANEL_TEXT, *(c for k, c in FIELD_COLORS.items() if k != 'track')),
+    # 携带意象底部区：条目名走携带意象黄，次要说明走 muted（另外收全部注册表色）。
+    'ZONE_LOADOUT': (
+        PANEL_TEXT, *(c for k, c in FIELD_COLORS.items() if k != 'track'),
+        CARRIED_IMAGE_STYLE,
+    ),
 }

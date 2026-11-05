@@ -26,6 +26,11 @@ class EquipmentView:
         self._compiled: CompiledBoard | None = None
         self._formation_signature: object = None
         self._formation = None
+        # P2（性能方案 §3）：一次界面刷新内状态是冻结的，`compiled()` 会被状态栏、
+        # 面板与视野链反复调用；同一帧内共享一次 project 结果即可，不跨帧保留
+        # 活条件（与 `compiled()` 原有的「几何可缓存、活条件不可」口径一致）。
+        self._frame_token: object = None
+        self._frame_compiled: CompiledBoard | None = None
 
     # ---- 编译缓存 ----
 
@@ -33,17 +38,32 @@ class EquipmentView:
     def board(self) -> EquipmentBoard:
         return self._state.board
 
+    def begin_frame(self, token: object) -> None:
+        self._frame_token = token
+        self._frame_compiled = None
+
+    def end_frame(self, token: object) -> None:
+        if self._frame_token is token:
+            self._frame_token = None
+            self._frame_compiled = None
+
     def compiled(self) -> CompiledBoard:
         from .projection import project
         # Geometry is cached, live conditions are not. Time/target predicates
         # cannot retain yesterday's eligibility in a board-only cache.
-        return project(self.formation(), self._state)
+        if self._frame_token is not None and self._frame_compiled is not None:
+            return self._frame_compiled
+        value = project(self.formation(), self._state)
+        if self._frame_token is not None:
+            self._frame_compiled = value
+        return value
 
     def invalidate(self) -> None:
         self._signature = None
         self._compiled = None
         self._formation_signature = None
         self._formation = None
+        self._frame_compiled = None
         # 装备变化可能改变视距（vision_up / 灯塔透镜）——顺手失效视野缓存
         # （性能 P0，2026-10-10；覆盖测试/调试绕过 apply 的直改）。
         self._state.invalidate_sight_radius()

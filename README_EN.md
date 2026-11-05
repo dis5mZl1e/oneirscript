@@ -24,7 +24,7 @@
 - [Feedback and contributions](#en-contribute)
 - [License](#en-license)
 - [AI-assisted development, forks, and contribution review](#en-ai-policy)
-- [English 0.1.1 changelog](CHANGELOG_EN.md)
+- [English 0.1.2 changelog](CHANGELOG_EN.md)
 
 <a id="en-overview"></a>
 
@@ -89,18 +89,18 @@ Mind, lucidity, and imagination serve different purposes. Portents, noise, and c
 
 ## Downloads
 
-**Download v0.1.1:** choose your platform and processor below.
+**Download v0.1.2:** choose your platform and processor below.
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Windows-x86_64-en.zip) |
-| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Linux-x86_64-en.tar.gz) |
-| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-arm64-en.zip) |
-| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-Intel-en.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Windows-x86_64-en.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Linux-x86_64-en.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-arm64-en.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-Intel-en.zip) |
 
-[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)
 
-Extract the entire archive. Desktop packages include their terminal and fonts; Python is not required. macOS packages are unsigned and not notarized. If blocked, use System Settings → Privacy & Security → Open Anyway. Linux requires a graphical desktop.
+The Chinese build is Windows-only for this release. Extract the entire archive. Desktop packages include their terminal and fonts; Python is not required. macOS packages are unsigned and not notarized. If blocked, use System Settings → Privacy & Security → Open Anyway. Linux requires a graphical desktop.
 
 [Back to contents](#en) · [简体中文](README_CN.md#zh-download)
 
@@ -186,11 +186,11 @@ For code navigation and development checks, read [TECHNICAL_EN.md](TECHNICAL_EN.
 
 ### Install the Python distribution
 
-The v0.1.1 Release also provides a wheel and source distribution for Python 3.11+.
-Download `oneirscript-0.1.1-py3-none-any.whl`, install it with your virtual environment's pip, then launch:
+The v0.1.2 Release also provides a wheel and source distribution for Python 3.11+.
+Download `oneirscript-0.1.2-py3-none-any.whl`, install it with your virtual environment's pip, then launch:
 
 ```sh
-python -m pip install oneirscript-0.1.1-py3-none-any.whl
+python -m pip install oneirscript-0.1.2-py3-none-any.whl
 oneirscript
 ```
 

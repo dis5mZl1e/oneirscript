@@ -5,6 +5,7 @@
 
 
 from __future__ import annotations
+from ..core.presentation_control import submit_presentation
 
 
 
@@ -51,6 +52,15 @@ _WRAP_CONSOLE = Console(legacy_windows=False)
 
 
 MEMORY_FOOTER_ITEM_ROWS = 3
+
+
+
+# 装备盘页底部「行囊中的携带意象」独立滚动区：整块固定 8 行（含标题行），
+# 条目只能在内部滚动，不占用上方联想盘的滚动。滚轮/键盘跟随共用这两个数。
+EQUIPMENT_REGION_ROWS = 8
+
+
+EQUIPMENT_ITEM_ROWS = EQUIPMENT_REGION_ROWS - 1
 
 
 
@@ -280,6 +290,7 @@ from .paper_zones import (
     SPLIT_DIVIDER_STYLE,
     ZONE_CAST_LIST,
     ZONE_CAST_PREVIEW,
+    ZONE_LOADOUT,
     ZONE_STRIP,
 )
 
@@ -1002,13 +1013,6 @@ class PanelViewMixin:
             result.append(glyph, style=panel_color(color))
         return result
 
-    @staticmethod
-    def _hover_cell_entry_line(x: int, y: int, terse_mode: bool) -> Text:
-        """悬停读数末尾的「当前所在格详情」点击入口。"""
-        if terse_mode:
-            return Text(terse.current_cell_entry(), style=FC['muted'])
-        return Text(f"▸ {tr('当前格')} ({x},{y}) · {tr('点击查看')}", style=FC['muted'])
-
     def _terse_terrain_layers(self, state, cell, *, visible: bool, concealed: bool,
                               mode: str) -> tuple[list, list, list]:
         """少字四层地形：地板/表面/高处/空中各只留图标（'?' 表示视野外未知）。"""
@@ -1158,6 +1162,12 @@ class PanelViewMixin:
 
 
                 viewport = max(1, viewport - len(strip_lines))
+
+
+            if self._equipment_list_inline():
+                viewport += 1
+            elif self.panel_mode == 'equipment' and self._panel_subpage_id() != 'memory':
+                viewport = max(1, viewport - EQUIPMENT_REGION_ROWS)
 
 
             footer = self._panel_footer(self.session.state)
@@ -1386,7 +1396,8 @@ class PanelViewMixin:
             cell = state.cell(x, y)
         except Exception:
             return lines
-        if state.is_visible(x, y):
+        visible = state.is_visible(x, y)
+        if visible:
             from ..core.construct_environments import active
             from ..core.construct_environments import residue_name
             # 标签取自来源构想登记表，十种场全部有名，不再按字典缺键报错。
@@ -1402,7 +1413,7 @@ class PanelViewMixin:
                     lines.append(self._hover_field_line(
                         residue, ((name, FC['word']), (remaining_chunk, FC['duration']),
                                   (facing_chunk, FC['position']))))
-        if cell.gas>0 and cell.gas_kind and state.is_visible(x,y):
+        if cell.gas>0 and cell.gas_kind and visible:
             from .gas_status import gas_contact_text
             # §4：浓度与触发最低浓度同属浓度族。
             lines.append(Text(gas_contact_text(state,cell,detail=True),
@@ -1412,7 +1423,7 @@ class PanelViewMixin:
         if hint:
             # §4：机关提示／侦查所得线索用线索色，不跟整片信息一起压成灰。
             lines.append(Text(tr(hint), style=FC['grammar']))
-        if cell.light_radius>0 and state.is_visible(x,y):
+        if cell.light_radius>0 and visible:
             # §12 F：三种设施的「能怎么操作」不一样，不能一律写「可切换」。
             from ..materials import FLAME_FIXTURE_KINDS, POWERED_FIXTURE_KINDS
             if cell.wall_kind in FLAME_FIXTURE_KINDS:
@@ -1432,12 +1443,6 @@ class PanelViewMixin:
             lines.extend(state.circuit_details(x, y))
         if state.insight_active("机关嗅觉"):
             lines.extend(state.trigger_insight_details(x, y))
-        if cell.solid and cell.wall_kind not in ("", "门", "机关门"):
-            if state.insight_active("wall_sense") or state._effect_power("wall_sense") > 0:
-                for enemy in state.enemies:
-                    if enemy.integrity > 0 and max(abs(enemy.x - x), abs(enemy.y - y)) <= 1:
-                        lines.append(tr("墙后传来轻微的心跳声……"))
-                        break
         if not cell.solid and state._effect_power("measure") > 0:
             path = state.path_to(x, y)
             if path:
@@ -1453,7 +1458,7 @@ class PanelViewMixin:
             lines.append(self._hover_field_line(line, ((label, f"bold {COLORS[switched[0]]}"),)))
         for enemy in state.enemies:
             if (enemy.integrity > 0 and enemy.communicates and enemy.x == x
-                    and enemy.y == y and state.is_visible(x, y)
+                    and enemy.y == y and visible
                     and state.insight_active("读唇")):
                 intent = {"追踪": "向你扑来", "警戒": "正在犹豫", "未察觉": "尚未察觉你"}.get(
                     enemy.alert_state, "徘徊")
@@ -1470,7 +1475,6 @@ class PanelViewMixin:
         if ((x, y) != (state.player.x, state.player.y)
                 and step['radius'] > 0 and (cell.aggregate_variant or cell.liquid)):
             lines.append(Text(tr("踩踏会发声（半径 {n}）", n=step['radius']), style=FC['range']))
-        lines.extend(self._echo_pulse_hover_lines(state, (x, y)))
         return [line if isinstance(line, Text) else Text(line, style=PANEL_MUTED)
                 for line in lines]
 
@@ -1572,7 +1576,7 @@ class PanelViewMixin:
             hovered = False
         x, y = self.hover_cell if hovered else (state.player.x, state.player.y)
         cell = state.cell(x, y)
-        state.hover_target = (x, y)
+        submit_presentation(self.session, state, 'hover', x, y)
         visible = state.is_visible(x, y)
         # 显影格：液流留下的永久显影——即使视野外也公开完整环境信息。
         if not visible and (x, y) in state.developed_for_depth():
@@ -1613,7 +1617,6 @@ class PanelViewMixin:
             ground_style = item_name_color(ground_item)
             ground_label = (terse.abbrev("地上") + ":") if terse_mode else tr('地上:')
             text.append(f" {ground_label}{drop_glyph(ground_item, symbol_mode)}{shown_item}", style=ground_style)
-        text.append("\n")
         # 四层结构：地板（初始生成，与墙体无关）→ 表面（低层）→ 高处（中层）→ 空中（高层）。
         # 中墙（height=2）占表面与高处，阻碍液体、可共存气体；
         # 高墙（height>=3）占满三层，液体气体都被阻挡。
@@ -1744,34 +1747,76 @@ class PanelViewMixin:
             if proximity:
                 tokens.append(field_text('贴近：', tr('、').join(tr(p) for p in proximity),
                                          field='condition', separator=''))
-        used = 0
-        for content in tokens:
-            for chunk in rich_lines(content, width):
-                cost = cell_len(chunk.plain)
-                if used and used + 1 + cost > width:
-                    text.append('\n')
-                    used = 0
-                if used:
-                    text.append(' ')
-                    used += 1
-                text.append_text(chunk)
-                used += cost
+        environment = Text()
+        for index, content in enumerate(tokens):
+            if index:
+                environment.append(' ')
+            environment.append_text(content)
         extra_lines = self._hover_extra_lines(state, x, y)
         if terse_mode:
             extra_lines = [terse.compress(line, symbol_mode) for line in extra_lines]
+        gas_and_step = []
+        details = []
         for line in extra_lines:
-            for chunk in self._split_text_by_width(line, width):
-                text.append("\n")
-                text.append_text(chunk)
+            if '吸入门槛' in line.plain or 'Inhalation threshold' in line.plain or '踩踏会发声' in line.plain or 'Footsteps make sound' in line.plain:
+                gas_and_step.append(line)
+            else:
+                details.append(line)
         if not terse_mode and get_language() == "en":
-            # 英文普通模式：悬停读数里的长单词缩写；入口行另行翻译，不参与。
             text = terse.compact_english(text)
-        # 末尾点击入口：当前所在格详情（少字模式只留语义图标）。
-        # 与正文同一条折行口径，极窄宽度下也不超宽。
-        for chunk in self._split_text_by_width(self._hover_cell_entry_line(state.player.x, state.player.y, terse_mode), width):
-            text.append("\n")
-            text.append_text(chunk)
-        return text
+            environment = terse.compact_english(environment)
+            gas_and_step = [terse.compact_english(line) for line in gas_and_step]
+            details = [terse.compact_english(line) for line in details]
+        return self._fixed_hover_summary(
+            [text, environment, self._join_hover_lines(gas_and_step),
+             self._join_hover_lines(details)], width)
+
+    @staticmethod
+    def _join_hover_lines(lines: list[Text]) -> Text:
+        result = Text()
+        for line in lines:
+            if result.plain:
+                result.append(' · ', style=FC['label'])
+            result.append_text(line)
+        return result
+
+    def _fixed_hover_summary(self, lines: list[Text], width: int) -> Text:
+        """Keep the hover note at four rows: fill sections in order, wrap by width,
+        and only ellipsize the last row when content would exceed the four rows."""
+        width = max(1, int(width))
+        rows: list[Text] = []
+        overflow = False
+        sections = [section for section in lines if section.plain]
+        for index, section in enumerate(sections):
+            rows.extend(self._split_text_by_width(section, width))
+            if len(rows) >= 4:
+                overflow = len(rows) > 4 or index < len(sections) - 1
+                rows = rows[:4]
+                break
+        while len(rows) < 4:
+            rows.append(Text())
+        if overflow:
+            line = rows[3]
+            ellipsis = '.' * min(3, width)
+            budget = width - len(ellipsis)
+            used = 0
+            cut = 0
+            for cut, char in enumerate(line.plain):
+                char_width = cell_len(char)
+                if used + char_width > budget:
+                    break
+                used += char_width
+            else:
+                cut = len(line.plain)
+            trimmed = line[:cut]
+            trimmed.append(ellipsis, style=FC['muted'])
+            rows[3] = trimmed
+        result = Text()
+        for index, row in enumerate(rows):
+            if index:
+                result.append('\n')
+            result.append_text(row)
+        return result
 
 
 
@@ -1894,7 +1939,6 @@ class PanelViewMixin:
             f"{position_label}({state.player.x},{state.player.y}) {coord_label}({x},{y})",
             style=FC['text'],
         )
-        text.append("\n")
         tokens: list[tuple[str, str]] = []
         terse_tokens: list[Text] = []
         if info.status == "unknown":
@@ -1951,50 +1995,30 @@ class PanelViewMixin:
                     tokens.append((tr("表面:") + "?", PANEL_MUTED))
                 tokens.append((tr("高处:") + "?", PANEL_MUTED))
                 tokens.append((tr("空中:") + "?", PANEL_MUTED))
-        used = 0
+        environment = Text()
         if terse_mode:
             for content in terse_tokens:
-                for chunk in self._split_text_by_width(content, width):
-                    cost = cell_len(chunk.plain)
-                    if used > 0 and used + 1 + cost > width:
-                        text.append("\n")
-                        used = 0
-                    if used > 0:
-                        text.append(" ")
-                        used += 1
-                    text.append_text(chunk)
-                    used += cost
+                if environment.plain:
+                    environment.append(' ')
+                environment.append_text(content)
         else:
             for content, style in tokens:
-                for chunk in self._split_by_width(content, width):
-                    cost = cell_len(chunk)
-                    if used > 0 and used + 1 + cost > width:
-                        text.append("\n")
-                        used = 0
-                    if used > 0:
-                        text.append(" ")
-                        used += 1
-                    text.append(chunk, style=style)
-                    used += cost
+                if environment.plain:
+                    environment.append(' ')
+                environment.append(content, style=style)
+        hazard_line = Text()
         if info.status != "unknown":
             # 记忆／全图地形／恒显格保留地形记忆洞察（视野外的最近一次确认快照）。
             hazard = self._hazard_memory_line(state, x, y, info.status)
-            for chunk in self._split_by_width(hazard, width) if hazard else ():
-                text.append("\n")
-                text.append(chunk, style=PANEL_MUTED)
+            if hazard:
+                hazard_line.append(hazard, style=PANEL_MUTED)
         if terse_mode:
-            # 视野外读数里的「未探索 / 液态记忆 / 弥散印象 / 始终可见」等
-            # 文字在少字模式下换成符号/缩写；入口行保持纯符号，不参与压缩。
             text = terse.compress(text, mode)
+            environment = terse.compress(environment, mode)
         elif get_language() == "en":
-            # 英文普通模式：知识权限读数里的长单词缩写。
             text = terse.compact_english(text)
-        # 末尾点击入口：当前所在格详情（少字模式只留语义图标）。
-        # 与正文同一条折行口径，极窄宽度下也不超宽。
-        for chunk in self._split_text_by_width(self._hover_cell_entry_line(state.player.x, state.player.y, terse_mode), width):
-            text.append("\n")
-            text.append_text(chunk)
-        return text
+            environment = terse.compact_english(environment)
+        return self._fixed_hover_summary([text, environment, Text(), hazard_line], width)
 
 
 
@@ -2229,39 +2253,22 @@ class PanelViewMixin:
 
 
     def _panel_text(self, state: GameState) -> Text:
-
-
-        """面板正文 + 行映射快照（点击定位用，见 _panel_rows/_panel_row_keys）。"""
-
-
+        self._sidebar_rendered_entry_keys = None
         text = self._panel_text_build(state)
-
-
-        # 行 → 条目键，与 _panel_rows **逐行对齐、渲染时定格**。
-
-
-        # 点击必须查这张快照而不是重算：操作界面的「目标操作」条数会随目标格
-
-
-        # 变化（异象走开/死亡就少一条），渲染与点击之间对不上时旧写法会让构想
-
-
-        # 行解析不出键、整段静默 return——「左键构想无效」的根因。
-
-
-        self._panel_row_keys = [
-
-
-            self._panel_entry_key(index) if index >= 0 else None
-
-
-            for index in self._panel_rows
-
-
-        ]
-
-
+        self._refresh_hitmap()
         return text
+
+    def _refresh_hitmap(self):
+        """Publish keys from the same render as row/cell maps; resolve each index once."""
+        entry_keys = self._sidebar_rendered_entry_keys if self.panel_mode == 'nearby' else None
+        if entry_keys is not None:
+            self._panel_row_keys = [entry_keys[index] if 0 <= index < len(entry_keys) else None
+                                    for index in self._panel_rows]
+        else:
+            keys = {index: self._panel_entry_key(index)
+                    for index in set(self._panel_rows) if index >= 0}
+            self._panel_row_keys = [keys.get(index) for index in self._panel_rows]
+
 
 
 
@@ -2273,7 +2280,10 @@ class PanelViewMixin:
 
     def _panel_subpage_ids(self, mode: str | None = None) -> tuple[str, ...]:
         from .styles import PANEL_SUBPAGES
-        return PANEL_SUBPAGES.get(mode or self.panel_mode, ())
+        mode = mode or self.panel_mode
+        if mode == 'equipment' and not self.config.get('standalone_memory_page'):
+            return ('board',)
+        return PANEL_SUBPAGES.get(mode, ())
 
     def _panel_subpage_id(self, mode: str | None = None) -> str:
         mode = mode or self.panel_mode
@@ -2396,13 +2406,14 @@ class PanelViewMixin:
 
 
         if getattr(self, "_panel_mode_seen", None) != self.panel_mode:
-
-
             self._panel_mode_seen = self.panel_mode
-
-
             self.panel_scroll = 0
-
+            # 直接改 panel_mode（不经路由切换）时，旧页面的选中位置对新页
+            # 往往不存在（例如空行囊的 -1）；留成 -1 会让 Enter/左键静默
+            # 失效，这里落回新页的第一条可选行。
+            candidates = self._sidebar_selection_candidates()
+            if candidates and self.panel_selection < 0:
+                self.panel_selection = candidates[0]
 
         # 2026-10-23：地图篡改浮层不再占用右侧面板；只有事件内篡改仍借用
         # 右侧显示观察读数（它本来就属于对话流程的一部分）。
@@ -7697,6 +7708,14 @@ class PanelViewMixin:
 
 
 
+    def _pickup_help_text(self, width: int) -> str:
+        """窄浮层里用短键位提示，避免它多折一行把「捡起所选」挤出可视区。"""
+        long_hint = tr("空格勾选 · A 全选 · Enter 捡起 · Esc/Q 关闭")
+        if len(Text(long_hint).wrap(_WRAP_CONSOLE, max(1, width))) <= 1:
+            return long_hint
+        return tr("空格勾选 · Enter 捡起 · Esc 关闭")
+
+
     def _pickup_viewport_rows(self) -> int:
 
 
@@ -7724,6 +7743,17 @@ class PanelViewMixin:
             height=max(1,pane.content_size.height-2-overlay.styles.gutter.height)
 
 
+            # auto-height 浮层在窄地图里可能已被钳到更矮：以小尺寸实测为准，
+            # 否则会按「整块地图」估算，把最后一行操作提示挤出可视区。
+            actual=int(overlay.content_size.height or 0)
+
+
+            if actual:
+
+
+                height=min(height,actual)
+
+
         except Exception:
 
 
@@ -7745,7 +7775,7 @@ class PanelViewMixin:
         header=rows(tr('拾取')+f'  ({x},{y}) · '+tr('共 {n} 件').format(n=len(entries)))
 
 
-        help_rows=rows(tr('空格勾选 · A 全选 · Enter 捡起 · Esc/Q 关闭'))
+        help_rows=rows(self._pickup_help_text(width))
 
 
         footer=rows(tr('捡起所选')+'    '+tr('关闭'))
@@ -7775,7 +7805,64 @@ class PanelViewMixin:
         # One further line is reserved for the scroll-position indicator.
 
 
-        return min(12,max(1,(height-header-help_rows-footer-selected-1)//max(1,item_rows)))
+        fixed=header+footer+selected
+
+
+        # 优先补齐「带帮助行」；放不下全部条目时先砍帮助行，再砍滚动提示。
+        # 「捡起所选」是唯一必须在鼠标下可达的操作，永远保留。
+        candidates=[]
+
+
+        for hint_rows, scroll_hint in ((help_rows,1),(0,1),(0,0)):
+
+
+            available=height-fixed-hint_rows-scroll_hint
+
+
+            if available>=item_rows:
+
+
+                candidates.append((min(12,max(1,available//max(1,item_rows))),
+                                   hint_rows,scroll_hint))
+
+
+        for viewport, hint_rows, scroll_hint in candidates:
+
+
+            if len(entries)<=viewport or scroll_hint==0:
+
+
+                self._pickup_help_rows=hint_rows
+
+
+                self._pickup_scroll_hint=scroll_hint
+
+
+                return viewport
+
+
+        if candidates:
+
+
+            viewport, hint_rows, scroll_hint=candidates[-1]
+
+
+            self._pickup_help_rows=hint_rows
+
+
+            self._pickup_scroll_hint=scroll_hint
+
+
+            return viewport
+
+
+        self._pickup_help_rows=0
+
+
+        self._pickup_scroll_hint=0
+
+
+        return 1
 
 
 
@@ -7925,12 +8012,6 @@ class PanelViewMixin:
         text.append(" · " + tr("共 {n} 件").format(n=len(entries)), style=PANEL_MUTED)
 
 
-        text.append("\n")
-
-
-        text.append(tr("空格勾选 · A 全选 · Enter 捡起 · Esc/Q 关闭"), style=PORTENT_HINT_STYLE)
-
-
         if not entries:
 
 
@@ -7943,7 +8024,22 @@ class PanelViewMixin:
             return text
 
 
+        self._pickup_help_rows=1
+
+
+        self._pickup_scroll_hint=1
+
+
         viewport = self._pickup_viewport_rows()
+
+
+        if self._pickup_help_rows:
+
+
+            text.append("\n")
+
+
+            text.append(self._pickup_help_text(width), style=PORTENT_HINT_STYLE)
 
 
         start = min(self.pickup_scroll, max(0, len(entries) - viewport))
@@ -8018,7 +8114,7 @@ class PanelViewMixin:
             text.stylize(Style(meta={'pickup_index':index}),row_start,len(text))
 
 
-        if len(entries) > viewport:
+        if self._pickup_scroll_hint and len(entries) > viewport:
 
 
             text.append("\n")
@@ -9341,11 +9437,7 @@ class PanelViewMixin:
 
 
     def _scrolled_panel_text(self, state: GameState) -> Text:
-        """行囊/携带意象/洞察/记忆碎片共用的「首行偏移 + 视窗切片」渲染。
-
-        顶部页签行与本页标题钉住不滚动，条目按 ``panel_scroll`` 切片。装备盘的
-        记忆碎片已独立成「记忆碎片」分层页，不再钉在列表底部。
-        """
+        """标题钉住，正文按首行偏移切片；短窗书签模式将携带意象并入正文。"""
         lines, row_indices, header = self._panel_lines(state)
         footer = self._panel_footer(state)
         footer_rows = (footer.plain.count("\n") + 1) if footer is not None else 0
@@ -9353,6 +9445,15 @@ class PanelViewMixin:
         strip_lines = self._panel_subtabs_lines()
         if strip_lines:
             viewport = max(1, viewport - len(strip_lines))
+        inline_equipment = self._equipment_list_inline()
+        if inline_equipment:
+            viewport += 1
+        equipment_region = (self.panel_mode == 'equipment'
+                            and self._panel_subpage_id() != 'memory'
+                            and not inline_equipment)
+        if equipment_region:
+            # 底部携带意象区固定占 8 行，上方只滚剩下的视窗。
+            viewport = max(1, viewport - EQUIPMENT_REGION_ROWS)
         if footer_rows:
             viewport = max(1, viewport - footer_rows)
             if self.panel_mode == 'inventory':
@@ -9368,6 +9469,8 @@ class PanelViewMixin:
             text.append("\n")
             rows.append(-3)
             cell_rows.append(())
+        if self.panel_mode == 'equipment' and not self.config.get('standalone_memory_page'):
+            header.truncate(self._portent_panel_width(), overflow='ellipsis')
         header.stylize("bold underline")
         text.append_text(paper_pad(header, ZONE_STRIP, self._portent_panel_width()))
         self._inventory_layout_hit = None
@@ -9400,12 +9503,31 @@ class PanelViewMixin:
             rows.append(row_indices[offset])
             hits = self._inventory_cell_rows[offset] if offset < len(self._inventory_cell_rows) else None
             cell_rows.append(hits or ())
-        if len(lines) > viewport:
+        if len(lines) > viewport and not equipment_region and not inline_equipment:
             last = min(len(lines), start + viewport)
             text.append(self._panel_scroll_hint(start + 1, last, len(lines)),
                         style=SCROLL_HINT_STYLE)
             rows.append(-1)
             cell_rows.append(())
+        self._equipment_region_start = None
+        if equipment_region:
+            region_header, region_rows = self._equipment_region(state)
+            width = max(8, self._portent_panel_width())
+            self._equipment_region_start = len(rows)
+            text.append("\n")
+            text.append_text(region_header)
+            rows.append(-1)
+            cell_rows.append(())
+            for line, index in region_rows:
+                text.append("\n")
+                text.append_text(paper_pad(line, ZONE_LOADOUT, width))
+                rows.append(index)
+                cell_rows.append(())
+            for _ in range(EQUIPMENT_ITEM_ROWS - len(region_rows)):
+                text.append("\n")
+                text.append_text(paper_pad(Text(""), ZONE_LOADOUT, width))
+                rows.append(-1)
+                cell_rows.append(())
         if footer is not None and self.panel_mode != 'inventory':
             append_detail()
         self._panel_rows = rows
@@ -9451,10 +9573,17 @@ class PanelViewMixin:
                 detail.append_text(line)
             opened = getattr(self, 'inventory_intro_open', True)
             detail.append('\n')
+            header_plain = tr(item.category) + '  ·  ' + tr(item.rarity)
             detail.append(tr(item.category), style=FC['muted'])
             detail.append('  ·  ', style=FC['muted'])
             detail.append(tr(item.rarity), style=item_name_color(item))
-            detail.append(('    ▾' if opened else '    ▸') + '  [\\]', style=FC['muted'])
+            marker = ('    ▾' if opened else '    ▸') + '  [\\]'
+            # 英文分类名更长：两者拼在一行会超宽，宁可把开合标记挪到下一行，
+            # 也不让终端软换行破坏「行号 ↔ 条目」映射。
+            if cell_len(header_plain) + cell_len(marker) > width:
+                detail.append('\n' + marker.lstrip(), style=FC['muted'])
+            else:
+                detail.append(marker, style=FC['muted'])
             if opened:
                 description = (tr('无念黑渊吞掉了记忆，你想不起这些东西的用法。')
                                if 'oblivion_strong' in state.portents else _item_description(item, state))
@@ -9842,6 +9971,58 @@ class PanelViewMixin:
         add(Text(tr('碎片槽满时拾到新碎片，会自动弹出替换界面。'), style=PANEL_MUTED))
         return lines, rows, header
 
+    def _equipment_entry_rows(self, state: GameState) -> list[tuple[Text, int]]:
+        """携带意象底部区的全部物理行，每行带真实行囊下标（点击/右键按它定位）。
+
+        每条恰好一行（超宽截断）；展开的说明/音效行缩进续排、行数可变，
+        由 ``_equipment_region`` 在固定视窗里滚动。
+        """
+        width = max(8, self._portent_panel_width())
+        amnesia = "oblivion_strong" in state.portents
+        indices = [index for index, item in enumerate(state.inventory) if item.slot]
+        rows: list[tuple[Text, int]] = []
+        for position, index in enumerate(indices):
+            item = state.inventory[index]
+            selected = (position == self.panel_selection
+                        and getattr(self, '_memory_bookmark_selection', None) is None)
+            shown = "？？？" if amnesia else tr(item.name)
+            # 已装备的带 ★ 标记（与行囊页同一口径），玩家一眼分辨
+            # 「在行囊里」和「已挂在栏位上」。
+            equipped = " ★" if (state.board.placement(item.instance_id) is not None
+                                or item.instance_id in state.equipped.values()) else ""
+            line = Text(f"{'▶ ' if selected else '  '}{shown}{equipped}",
+                        style=CARRIED_IMAGE_STYLE + (" bold underline" if selected else ""))
+            line.truncate(width, overflow="ellipsis")
+            rows.append((line, index))
+            if not amnesia and self._entry_expanded(item.instance_id):
+                for chunk in self._split_by_width(_item_description(item, state), width - 4):
+                    rows.append((Text("    " + chunk, style=PANEL_MUTED), index))
+                for sound_line in _item_sound_lines(state, item):
+                    for chunk in self._split_by_width(sound_line, width - 4):
+                        rows.append((Text("    " + chunk, style=PANEL_MUTED), index))
+        return rows
+
+    def _equipment_region(self, state: GameState) -> tuple[Text, list[tuple[Text, int]]]:
+        """装备盘页底部固定 8 行区域的（标题条, 7 行条目视窗）。
+
+        标题钉在区首；条目用 ``equipment_scroll`` 在 7 行视窗内滚动，
+        与上方联想盘的 ``panel_scroll`` 完全独立。调用方负责把条目行
+        铺满 ZONE_LOADOUT 底并补足行数。
+        """
+        rows = self._equipment_entry_rows(state)
+        total = len(rows)
+        max_scroll = max(0, total - EQUIPMENT_ITEM_ROWS)
+        self.equipment_scroll = min(max(0, int(getattr(self, 'equipment_scroll', 0))), max_scroll)
+        start = self.equipment_scroll
+        end = min(total, start + EQUIPMENT_ITEM_ROWS)
+        title = tr("行囊中的携带意象：")
+        if max_scroll:
+            title += "  " + tr("第 {a}-{b}/{c} 条").format(a=start + 1, b=end, c=total)
+        header = zone_strip(title, max(8, self._portent_panel_width()), color=FC["condition"])
+        if not rows:
+            return header, [(Text(tr("（无）"), style=PANEL_MUTED), -1)]
+        return header, rows[start:end]
+
     def _panel_lines(
 
 
@@ -9942,11 +10123,8 @@ class PanelViewMixin:
                     (tr(self.inventory_sort),FC['position'])))
 
 
-            if getattr(self, 'inventory_query', ''):
-                add(Text(tr('结果：{n}', n=len(visible)), style=FC['count']))
             if not visible:
-                add(Text(tr('没有匹配物品；按 Alt+F 修改搜索，或切换分类。')
-                         if getattr(self, 'inventory_query', '') else tr('（空）'), style=PANEL_MUTED))
+                add(Text(tr('（空）'), style=PANEL_MUTED))
 
 
             from .inventory_grid import build_grid
@@ -10076,7 +10254,7 @@ class PanelViewMixin:
                 broken = sum(1 for s in compiled.sentences if s.status == UNFORMED)
 
 
-                for row in board_glyphs():
+                for row in self._equipment_memory_board_rows(board_glyphs()):
 
 
                     # -4 = 盘面示意图：鼠标左键点它直接进入联想盘编辑器
@@ -10210,76 +10388,10 @@ class PanelViewMixin:
                     add(line)
 
 
-            equipment_indices = [index for index, item in enumerate(state.inventory) if item.slot]
-
-
-            add(zone_strip(tr("行囊中的携带意象："), width+4, color=FC["condition"]))
-
-
-            if not equipment_indices:
-
-
-                add(Text(tr("（无）"), style=PANEL_MUTED))
-
-
-            for position, index in enumerate(equipment_indices):
-
-
-                item = state.inventory[index]
-
-
-                selected = position == self.panel_selection
-
-
-                shown = "？？？" if amnesia else tr(item.name)
-
-
-                # 已装备的带 * 标记（与行囊页同一口径），玩家一眼分辨
-
-
-                # 「在行囊里」和「已挂在栏位上」。
-
-
-                equipped = " ★" if (state.board.placement(item.instance_id) is not None or item.instance_id in state.equipped.values()) else ""
-
-
-                # 行映射存真实行囊下标（口径见函数文档）：右键菜单/左键使用都按行囊定位。
-
-
-                add(
-
-
-                    Text(f"{'▶ ' if selected else '  '}{shown}{equipped}", style=CARRIED_IMAGE_STYLE + (" bold underline" if selected else "")),
-
-
-                    index,
-
-
-                )
-
-
-                if not amnesia and self._entry_expanded(item.instance_id):
-
-
-                    for chunk in self._split_by_width(_item_description(item, state), width):
-
-
-                        add(Text("    " + chunk, style=PANEL_MUTED))
-
-
-                    for line in _item_sound_lines(state, item):
-
-
-                        for chunk in self._split_by_width(line, width):
-
-
-                            add(Text("    " + chunk, style=PANEL_MUTED))
-
-
-            # 记忆槽不在这里排——2026-10-23 起它是装备按钮内的独立分层页
-
-
-            # （_memory_page_lines），与装备盘彻底分开。
+            if self._equipment_list_inline():
+                add(self._equipment_region(state)[0])
+                for line, index in self._equipment_entry_rows(state):
+                    add(paper_pad(line, ZONE_LOADOUT, self._portent_panel_width()), index)
 
 
         else:  # insights

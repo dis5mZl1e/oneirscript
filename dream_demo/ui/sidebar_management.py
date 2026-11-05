@@ -4,15 +4,17 @@ All actions delegate to existing controllers or validated core transactions.
 Browsing and preferences never consume world time or alter the world save.
 """
 from __future__ import annotations
+from .action_completion import after_action
 import json
 from pathlib import Path
 from rich.console import Console
+from rich.style import Style
 from rich.text import Text
 from ..i18n import tr, get_language
 from ..core.content import ABILITY_DEFINITIONS, ITEM_DEFINITIONS, INSIGHT_DEFINITIONS, MEMORY_FRAGMENT_EFFECTS
 from ..data.semantic_icons import icon_label
 from .panel_fields import FIELD_COLORS as C
-from .panels import kv_grid, paper_pad, zone_strip
+from .panels import EQUIPMENT_REGION_ROWS, kv_grid, paper_pad, zone_strip
 from .paper_zones import ZONE_CAST_LIST, ZONE_CAST_PREVIEW
 from .sidebar_models import item_by_id, item_facts, comparison, task_items
 from .styles import RIGHT_PANEL_MODES
@@ -161,6 +163,7 @@ class SidebarManagementMixin:
         if previous != context:
             self._sidebar_back_stack = []
             self._sidebar_live_identity = None
+            self._memory_bookmark_selection = None
             if self.panel_mode == _DETAIL:
                 self.panel_mode = self._default_panel_mode()
             self._sidebar_detail_ref = {}
@@ -171,6 +174,9 @@ class SidebarManagementMixin:
 
     def _sidebar_before_refresh(self):
         self._sync_sidebar_owner()
+        selected_memory = getattr(self, '_memory_bookmark_selection', None)
+        if isinstance(selected_memory, str) and selected_memory not in self.session.state.memory_fragments:
+            self._memory_bookmark_selection = None
         parked = getattr(self, '_locked_aim_sidebar', None)
         if parked:
             context, snapshot = parked
@@ -202,45 +208,50 @@ class SidebarManagementMixin:
         state = self.session.state
         layer = state.layer_key()
         locked = self.panel_locked
-        snapshot = self._sidebar_snapshot() if locked and self.sidebar_workspace else None
+        preserve = locked or not self.config.get('auto_event_log')
+        snapshot = self._sidebar_snapshot() if preserve and self.sidebar_workspace else None
         reload_in_firing = (command == 'reload_weapon_step' and self.panel_mode == 'actions'
                             and self._panel_subpage_id() == 'fire')
         # Direct use and the item menu's primary action both belong to the bag.
         use_in_inventory = (self.panel_mode == 'inventory'
                             and command in ('use', 'toggle_equip'))
         result = super()._apply(command, *args, **flags)
-        # Modal conversations, aiming and layer transitions keep their original
-        # controllers. Only a completed world action changes the ordinary sidebar.
-        if (result.changed and state is self.session.state
-                and state.layer_key() == layer and not state.run_over
-                and not self.home_mode
-                and (self.sidebar_workspace or self.panel_mode in RIGHT_PANEL_MODES
-                     or self.panel_mode == "world")
-                and not self._inspection_active()
-                # 左侧容器浮层开着时（盛装/倒出）右栏必须留在行囊页：这两个是
-                # 「面板上下文动作」，不是世界行动；回跳默认页会把玩家刚打开的
-                # 行囊顶掉（2026-10-28 平台复测：盛装后 panel_mode 由 inventory
-                # 变 world，Esc 收起浮层也回不去）。
-                and getattr(self, "container_index", None) is None
-                and self.board_editor is None and self._active_tamper_editor() is None):
-            if locked and snapshot is not None:
-                mode, page, ref, zone, enter = snapshot
-                self.panel_mode = mode
-                self._sidebar_detail_ref = ref
-                if page: self.panel_subpages[mode] = page
-                self._restore_sidebar_position()
-                self.cursor_zone, self._panel_enter_mode = zone, enter
-                self._locked_panel_page = (mode, page, dict(ref))
-            # 未锁定：成功世界行动回跳到「默认页」。2026-10-26 起默认页由
-            # _default_panel_mode() 决定——左侧事件记录开启时回到行囊，否则
-            # 保持原来的事件记录（world）。锁定态不回跳（玩家要求右栏固定）。
-            elif (self.panel_mode != self._default_panel_mode()
-                  and not reload_in_firing and not use_in_inventory):
-                self._sidebar_transition(self._default_panel_mode(),
-                                         refresh=False, manual=False)
-            if locked:
-                self.refresh_view()
-        return result
+        def finish(result):
+            # Modal conversations, aiming and layer transitions keep their original
+            # controllers. Only a completed world action changes the ordinary sidebar.
+            if (result.changed and state is self.session.state
+                    and state.layer_key() == layer and not state.run_over
+                    and not self.home_mode
+                    and (self.sidebar_workspace or self.panel_mode in RIGHT_PANEL_MODES
+                         or self.panel_mode == "world")
+                    and not self._inspection_active()
+                    # 左侧容器浮层开着时（盛装/倒出）右栏必须留在行囊页：这两个是
+                    # 「面板上下文动作」，不是世界行动；回跳默认页会把玩家刚打开的
+                    # 行囊顶掉（2026-10-28 平台复测：盛装后 panel_mode 由 inventory
+                    # 变 world，Esc 收起浮层也回不去）。
+                    and getattr(self, "container_index", None) is None
+                    and self.board_editor is None and self._active_tamper_editor() is None):
+                if preserve and snapshot is not None:
+                    mode, page, ref, zone, enter = snapshot
+                    self.panel_mode = mode
+                    self._sidebar_detail_ref = ref
+                    if page: self.panel_subpages[mode] = page
+                    self._restore_sidebar_position()
+                    self.cursor_zone, self._panel_enter_mode = zone, enter
+                    if locked:
+                        self._locked_panel_page = (mode, page, dict(ref))
+                # Automatic log navigation is opt-in; locking always preserves the page.
+                elif (not preserve and self.panel_mode != 'world'
+                      and not reload_in_firing and not use_in_inventory):
+                    self._sidebar_transition('world',
+                                             refresh=False, manual=False)
+                if locked:
+                    if command == 'move':
+                        self.request_ui_refresh()
+                    else:
+                        self.refresh_view()
+            return result
+        return after_action(self, result, finish)
     def _sidebar_after_refresh(self):
         token = (self.panel_mode, self._panel_subpage_id())
         candidates = dict(self._sidebar_inventory_choices())
@@ -332,7 +343,6 @@ class SidebarManagementMixin:
                               style=C['identity'] + (' bold underline' if selected else '')), offset)
 
         add_left(Text('—— ABL ——' if compact else tr('—— 主动构想 ——'), style='bold ' + C['word']))
-        add_left(Text(f'RES: {len(visible)}' if compact else tr('结果：{n}', n=len(visible)), style=C['count']))
         for ordinal in visible:
             key = ids[ordinal]
             definition = ABILITY_DEFINITIONS[key]
@@ -361,8 +371,6 @@ class SidebarManagementMixin:
             add_left(release, row)
             card_backgrounds[len(left_lines)-1] = category.background
             add_left(Text(''))
-        if not visible:
-            add_left(Text(tr('没有匹配的构想；可清除搜索或切换全部。'), style=C['muted']))
 
         if identity:
             add_left(Text('—— ID ——' if compact else tr('—— 身份能力 ——'), style='bold ' + C['identity']))
@@ -472,6 +480,101 @@ class SidebarManagementMixin:
         if kind == '其他': return [e for e in entries if e['kind'] not in ('正面', '负面')]
         return [e for e in entries if e['kind'] == kind]
 
+    def _equipment_list_inline(self):
+        if (self.panel_mode != 'equipment' or self._panel_subpage_id() != 'board'
+                or self.config.get('standalone_memory_page')):
+            return False
+        from ..core.content import MEMORY_LIMIT
+        state = self.session.state
+        slots = max(MEMORY_LIMIT + state._memory_slot_bonus(), len(state.memory_fragments))
+        return self._portent_viewport_rows() < slots * 3 + EQUIPMENT_REGION_ROWS
+
+    def _equipment_memory_board_rows(self, board_rows):
+        if self.config.get('standalone_memory_page'):
+            return board_rows
+        state = self.session.state
+        board_width = max(row.cell_len for row in board_rows)
+        width = max(8, self._portent_panel_width() - board_width - 2)
+        from .paper_zones import ZONE_BODY
+        from ..core.content import MEMORY_LIMIT
+        slots = max(MEMORY_LIMIT + state._memory_slot_bonus(), len(state.memory_fragments))
+        cards = []
+        for slot in range(slots):
+            fragment = state.memory_fragments[slot] if slot < len(state.memory_fragments) else ''
+            selected = getattr(self, '_memory_bookmark_selection', None) == (fragment or slot)
+            background = '#3b3047' if selected else '#302838'
+            metadata = {'memory_bookmark': slot, 'memory_fragment': fragment}
+            definition = ITEM_DEFINITIONS.get(fragment, {})
+            effect_key = definition.get('memory_effect', '')
+            effect = MEMORY_FRAGMENT_EFFECTS.get(effect_key, {})
+            name = (icon_label('memory.' + effect_key, tr(definition['name']), C['memory'])
+                    if definition else Text(tr('记忆槽 {n}', n=slot + 1), style=C['muted']))
+            button = Text('[' + tr('卸下') + ']', style=Style(
+                color=C['condition'], bold=True, meta={'memory_unequip': fragment})) if fragment else Text()
+            name.truncate(max(1, width - button.cell_len - 3), overflow='ellipsis')
+            title = Text('▎' if selected else ' ', style=C['memory']) + name
+            title.append(' ' * max(1, width - title.cell_len - button.cell_len - 1))
+            title.append_text(button)
+            title.append(' ')
+            title.stylize(Style(bold=selected))
+            summary = Text(tr(effect.get('short') or definition.get('description', ''))
+                           if fragment else tr('（空）'), style=C['text'])
+            summary.truncate(width - 2, overflow='ellipsis')
+            for line in (title, Text(' ') + summary):
+                line.truncate(width, pad=True)
+                line.stylize_before(Style(bgcolor=background, meta=metadata))
+                cards.append(line)
+            notch = (width - 2) // 2
+            tail = Text('▀' * notch + '╲╱' + '▀' * (width - notch - 2),
+                        style=Style(color=background, bgcolor=ZONE_BODY, meta=metadata))
+            cards.append(tail)
+        combined = []
+        for index in range(max(len(board_rows), len(cards))):
+            left = board_rows[index].copy() if index < len(board_rows) else Text()
+            left.truncate(board_width + 2, pad=True)
+            if index < len(cards):
+                left.append_text(cards[index])
+            combined.append(left)
+        return combined
+
+    def _handle_memory_bookmark_mouse(self, event):
+        if (self.panel_mode != 'equipment' or self._panel_subpage_id() != 'board'
+                or self.config.get('standalone_memory_page')):
+            return False
+        metadata = event.style.meta
+        slot = metadata.get('memory_bookmark')
+        if slot is None:
+            if event.button == 1:
+                self._memory_bookmark_selection = None
+            return False
+        event.stop()
+        if not self._sidebar_navigation_allowed():
+            return True
+        fragment = metadata.get('memory_fragment', '')
+        if fragment and fragment not in self.session.state.memory_fragments:
+            return True
+        self._memory_bookmark_selection = fragment or slot
+        self._panel_enter_mode = 'equipment'
+        inspect_only = bool(getattr(event, 'shift', False) or getattr(self, '_bracket_armed', False))
+        if event.button == 1:
+            self._bracket_armed = False
+        if event.button == 3:
+            if fragment:
+                self.open_sidebar_detail('memory', fragment, 'equipment')
+        elif (event.button == 1 and not inspect_only and fragment
+              and metadata.get('memory_unequip') == fragment):
+            result = self._apply('unequip_memory', fragment)
+            def finish(result):
+                if result.changed:
+                    self._memory_bookmark_selection = None
+                self.show_toast(result.message, 3)
+                self.refresh_view()
+                return result
+            after_action(self, result, finish)
+        else:
+            self._refresh_navigation_selection()
+        return True
+
     def _memory_page_lines(self, state):
         from ..core.content import MEMORY_LIMIT
         header = Text(tr('记忆槽：')+f'{len(state.memory_fragments)}/{MEMORY_LIMIT+state._memory_slot_bonus()}', style=C['memory'])
@@ -515,6 +618,16 @@ class SidebarManagementMixin:
             self._sidebar_action_active = previous
 
     def _activate_sidebar_selection(self, key_hint=None):
+        if (self.panel_mode == 'equipment' and self._panel_subpage_id() == 'board'
+                and not self.config.get('standalone_memory_page')
+                and getattr(self, '_memory_bookmark_selection', None) is not None):
+            fragment = self._memory_bookmark_selection
+            if fragment in self.session.state.memory_fragments:
+                self.open_sidebar_detail('memory', fragment, 'equipment')
+                return
+            if isinstance(fragment, int):
+                return
+            self._memory_bookmark_selection = None
         if self.panel_mode == _DETAIL:
             key = key_hint or self._panel_entry_key(self.panel_selection)
             action = next((a for a in self._management_contents()[1] if a['key'] == key), None)
@@ -528,6 +641,37 @@ class SidebarManagementMixin:
         return super()._activate_panel_selection(key_hint=key_hint)
 
     def _move_panel_selection(self, delta):
+        if (self.panel_mode == 'equipment' and self._panel_subpage_id() == 'board'
+                and not self.config.get('standalone_memory_page')):
+            from ..core.content import MEMORY_LIMIT
+            state = self.session.state
+            fragments = state.memory_fragments
+            slots = max(MEMORY_LIMIT + state._memory_slot_bonus(), len(fragments))
+            gear_count = self._panel_item_count()
+            current = getattr(self, '_memory_bookmark_selection', None)
+            if isinstance(current, str) and current in fragments:
+                position = gear_count + fragments.index(current)
+            elif isinstance(current, int):
+                position = gear_count + current
+            else:
+                position = self.panel_selection if gear_count else -1
+            target = (position + delta) % (gear_count + slots)
+            self._panel_enter_mode = 'equipment'
+            if target < gear_count:
+                self._memory_bookmark_selection = None
+                self.panel_selection = target
+                self._follow_list_selection()
+            else:
+                slot = target - gear_count
+                self._memory_bookmark_selection = fragments[slot] if slot < len(fragments) else slot
+                viewport = self._portent_viewport_rows()
+                viewport = viewport + 1 if self._equipment_list_inline() else max(1, viewport - EQUIPMENT_REGION_ROWS)
+                top, bottom = slot * 3, (slot + 1) * 3
+                self.panel_scroll = min(self.panel_scroll, top)
+                self.panel_scroll = max(self.panel_scroll, bottom - viewport)
+            self._refresh_navigation_selection()
+            return
+        self._memory_bookmark_selection = None
         if self.panel_mode == _DETAIL or (self.panel_mode == 'equipment' and self._panel_subpage_id() == 'memory'):
             count = self._panel_item_count()
             if count: self.panel_selection = (self.panel_selection+delta) % count
@@ -606,7 +750,7 @@ class SidebarManagementMixin:
             key = repr((command, *args))
             actions.append(dict(key=key, command=command, args=args))
             body.append((Text(label, style=C['condition']), len(actions)-1))
-        action(tr('回到记忆页'), 'memory_home')
+        action(tr('回到记忆页') if self.config.get('standalone_memory_page') else tr('回到装备页'), 'memory_home')
         action(tr('返回原条目'), 'back')
         add(tr('详情与操作'), 'heading')
         if kind == 'item':
@@ -727,8 +871,11 @@ class SidebarManagementMixin:
             if item: self._open_item_menu(self.session.state.inventory.index(item))
         elif command in ('equip_memory', 'unequip_memory'):
             result = self._apply(command, *args)
-            self.show_toast(result.message, 3)
-            if result.changed: self._sidebar_back()
+            def finish(result):
+                self.show_toast(result.message, 3)
+                if result.changed: self._sidebar_back()
+                return result
+            return after_action(self, result, finish)
 
     def _sidebar_execute_item(self, identity, command):
         if not self._sidebar_navigation_allowed(): return False
@@ -742,8 +889,7 @@ class SidebarManagementMixin:
         if command == 'toggle_equip' and item.effect == 'container':
             index = state.inventory.index(item)
             result = self._apply('use', index)
-            if result.data.get('container_menu') is not None:
-                self._open_container_overlay(result.data['container_menu'])
+            self._action_container(result)
             return True
         old_target = self.item_menu_target
         self.item_menu_target = identity
@@ -801,7 +947,9 @@ class SidebarManagementMixin:
     def _management_open_selected(self):
         mode, state = self.panel_mode, self.session.state
         if mode in ('inventory','equipment'):
-            if mode == 'equipment' and self._panel_subpage_id() == 'memory':
+            if mode == 'equipment' and (self._panel_subpage_id() == 'memory'
+                    or (not self.config.get('standalone_memory_page')
+                        and getattr(self, '_memory_bookmark_selection', None) is not None)):
                 self._activate_panel_selection(); return
             choices = dict(self._sidebar_inventory_choices())
             identity = choices.get(self.panel_selection)

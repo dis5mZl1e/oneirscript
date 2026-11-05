@@ -151,6 +151,7 @@ def _restore_practice_cell(state, x, y):
     cell.height = 0
     cell.integrity = 100
     cell.wire = 0
+    state._sync_material_position(x, y)
 
 
 def _clear_practice_sites(state):
@@ -172,10 +173,11 @@ def _clear_practice_sites(state):
         cell = state.cell(x, y)
         cell.liquid = 0
         cell.liquid_kind = ''
+        state._sync_material_position(x, y)
     for (x, y) in (_PRACTICE_CIRCUIT[0], _PRACTICE_CIRCUIT[1], _PRACTICE_TRAP):
         _restore_practice_cell(state, x, y)
     state.trap_scenarios.pop('%d,%d' % _PRACTICE_TRAP, None)
-    for key in ('plant_setup', 'mint_before', 'drug_baseline', 'drug_seen',
+    for key in ('plant_setup', 'mint_before', 'plant_reward_id', 'plant_reward_before', 'drug_baseline', 'drug_seen',
                 'magazine_item', 'construct_seen', 'circuit_armed', 'trap_armed',
                 'reaction_ready', 'spark_ready', 'drug_ready'):
         state.tutorial.pop(key, None)
@@ -310,11 +312,13 @@ def pump(state):
     if state.tutorial.get('plant_setup'):
         if any(state.cell(x,y).plant != 2 for x,y in _PRACTICE_PLANT_TALL):
             facts.add('plant_trampled')
-    mint_before=state.tutorial.get('mint_before')
-    if mint_before is not None:
-        mint_now=sum(item.quantity for item in state.inventory
-                     if item.definition_id=='mint_dew')
-        if mint_now>mint_before: facts.add('plant_uprooted')
+    reward_before=state.tutorial.get('plant_reward_before',state.tutorial.get('mint_before'))
+    if reward_before is not None:
+        # Existing saved practice worlds retain their original mint ledger.
+        reward_id=state.tutorial.get('plant_reward_id','mint_dew')
+        reward_now=sum(item.quantity for item in state.inventory
+                       if item.definition_id==reward_id)
+        if reward_now>reward_before: facts.add('plant_uprooted')
     if state.tutorial.get('reaction_ready'):
         if state.cell(*_PRACTICE_REACTION_INK).liquid_kind=='稀墨':
             facts.add('reaction_seen')
@@ -582,7 +586,9 @@ def control(state,operation):
         cell.aggregate_variant='灼热聚合物'
         state.tutorial['phase_before']=[cell.liquid,cell.gas]
         sample=state.cell(29,28)
-        sample.liquid=12; sample.liquid_kind='稀释记忆'; sample.aggregate_variant='粗糙聚合物'
+        # A finite sample must survive the two paid approach moves with enough
+        # remaining stock for its normal eight-unit contact threshold.
+        sample.liquid=100; sample.liquid_kind='稀释记忆'; sample.aggregate_variant='粗糙聚合物'
         state._reset_material_index()
         from .vision.cache import invalidate
         invalidate(state)
@@ -601,13 +607,17 @@ def control(state,operation):
         return ActionResult(True,tr('事件练习已备好：A 区出现一处异常地点；相邻回应后读完选项再决定。'))
     if operation=='plants':
         from ..materials.plants import PLANT_KINDS
-        mint=next(plant.code for plant in PLANT_KINDS if plant.key=='plant.mint')
+        # Mint is crushed by a normal paid step, so it cannot teach standing
+        # on a specimen and then uprooting it. Wax bloom survives approach and
+        # supplies its existing real reward without changing plant physics.
+        specimen=next(plant for plant in PLANT_KINDS if plant.key=='plant.wax_bloom')
         state.set_plant(*_PRACTICE_PLANT_TALL[0],2)
         state.set_plant(*_PRACTICE_PLANT_TALL[1],2)
-        state.set_plant(*_PRACTICE_PLANT_RARE,mint)
+        state.set_plant(*_PRACTICE_PLANT_RARE,specimen.code)
         state.tutorial['plant_setup']={f'{x},{y}':2 for x,y in _PRACTICE_PLANT_TALL}
-        state.tutorial['mint_before']=sum(item.quantity for item in state.inventory
-                                          if item.definition_id=='mint_dew')
+        state.tutorial['plant_reward_id']=specimen.uproot_item
+        state.tutorial['plant_reward_before']=sum(item.quantity for item in state.inventory
+                                                  if item.definition_id==specimen.uproot_item)
         return ActionResult(True,tr('植物练习已备好：E 区有高丛与一株稀有植株，走过去踩踏或站上去拔起。'))
     if operation=='reaction':
         water=state.cell(*_PRACTICE_REACTION_WATER)
@@ -706,66 +716,65 @@ def control(state,operation):
     return ActionResult(False,tr('没有这项练习操作。'))
 
 
-def observe_ui(app):
+def observe_ui(state, view):
     """Sample visible, read-only UI state. No simulated actions or key counters."""
-    state=app.session.state
-    if not is_course(state) or app.home_mode: return
+    if not is_course(state) or view.home_mode: return
     facts=[]
-    if app.panel_mode in ('inventory','equipment','portents','insights','catalog','actions','tasks'):
+    if view.panel_mode in ('inventory','equipment','portents','insights','catalog','actions','tasks'):
         facts.append('panel_opened')
-    if app.panel_mode=='tasks':
+    if view.panel_mode=='tasks':
         facts.append('exit_read')
         if state.tutorial['practice_quest']=='active': facts.append('practice_log_seen')
-    if app.panel_mode=='insights': facts.append('insight_seen')
-    if (app.panel_mode == 'equipment' and getattr(app, '_panel_subpage_id', lambda: '')() == 'memory'
+    if view.panel_mode=='insights': facts.append('insight_seen')
+    if (view.panel_mode == 'equipment' and view.memory_page
             and 'lighthouse_keeper_memory' in state.memory_fragments):
         facts.append('memory_seen')
-    if app.panel_mode=='event_dialog' and state.pending_event() is not None:
+    if view.panel_mode=='event_dialog' and state.pending_event() is not None:
         facts.append('event_dialog_seen')
-    if app.panel_mode in ('pause_settings','home_settings'): facts.append('settings_opened')
-    if app.controls_help_open: facts.append('help_opened')
-    if app._self_audit_visible():
+    if view.panel_mode in ('pause_settings','home_settings'): facts.append('settings_opened')
+    if view.controls_help_open: facts.append('help_opened')
+    if view.self_visible:
         facts.append('self_opened')
-        if app._sa_expanded: facts.append('self_expanded')
-        if app._sa_category=='sources':
-            rows=app._sa_last_sections.get('sources',())
-            if any(row.get('source_kind')=='memory' and row.get('source_id') in state.memory_fragments
+        if view.self_expanded: facts.append('self_expanded')
+        if view.self_category=='sources':
+            rows=view.self_sources
+            if any(row[0]=='memory' and row[1] in state.memory_fragments
                    for row in rows): facts.append('memory_seen')
             live={item.instance_id for item in state.equipment.items()}
-            if any(row.get('source_kind')=='equipment' and row.get('source_id') in live for row in rows):
+            if any(row[0]=='equipment' and row[1] in live for row in rows):
                 facts.append('equipment_source_seen')
-    if app.signal_detail_open:
+    if view.signal_detail_open:
         facts.append('signals_opened')
         if 'tamper_committed' in state.tutorial['facts']: facts.append('chaos_after_tamper_seen')
     uid=state.tutorial.get('hearing_opponent')
     source=next((e for e in state.enemies if e.id==uid and e.integrity>0),None) if uid else None
-    if app.signal_detail_open and source is not None and 'heard_hidden' in state.tutorial['facts']:
+    if view.signal_detail_open and source is not None and 'heard_hidden' in state.tutorial['facts']:
         if any(not c.get('known') and (c.get('x'),c.get('y'))==(source.x,source.y)
                and state.time-int(c.get('time',0))<state._clue_retention()
                for c in state.heard_sound_clues): facts.append('heard_detail_seen')
     if source is not None and state.is_visible(source.x,source.y): facts.append('hearing_source_seen')
-    if app.cell_detail_target is not None:
+    if view.cell_detail_target is not None:
         facts.append('cell_detail_opened')
-        x,y=app.cell_detail_target
+        x,y=view.cell_detail_target
         if (state.is_visible(x,y) and state.entity_at(x,y) is not None
                 and any((e.x,e.y)==(x,y) for e in state.world_items) and state.cell(x,y).liquid>0):
             facts.append('layered_detail_seen')
         if state.is_visible(x,y) and state.cell(x,y).flame>0: facts.append('fire_observed')
         if state.is_visible(x,y) and 33<=x<=35 and 28<=y<=30 and 'phase_changed' in state.tutorial['facts']:
             facts.append('phase_detail_seen')
-    if app.anomaly_detail_target is not None:
+    if view.anomaly_detail_target:
         facts.append('enemy_detail_opened')
         facts.append('anomaly_detail_seen')
-    if app.item_menu_target is not None: facts.append('item_detail_opened')
-    if app.qol_searching: facts.append('searched')
-    if app.inventory_filter!='全部': facts.append('filtered')
-    if app.inventory_sort!='原序': facts.append('sorted')
-    if app.panel_mode=='portents' and state.player.portents: facts.append('portent_seen')
-    if app.board_editor is not None: facts.append('board_sentence_seen')
-    if getattr(app,'_aim_assist_pos',None) is not None: facts.append('aim_assisted')
-    if getattr(app,'_aim_free_cursor',None) is not None: facts.append('aim_free')
-    target=getattr(app,'_aim_free_cursor',None) or getattr(app,'_aim_assist_pos',None)
-    if app.aiming and target is not None and state.inside_board(*target):
+    if view.item_menu_target: facts.append('item_detail_opened')
+    if view.qol_searching: facts.append('searched')
+    if view.inventory_filter!='全部': facts.append('filtered')
+    if view.inventory_sort!='原序': facts.append('sorted')
+    if view.panel_mode=='portents' and state.player.portents: facts.append('portent_seen')
+    if view.board_editor: facts.append('board_sentence_seen')
+    if view.aim_assist is not None: facts.append('aim_assisted')
+    if view.aim_free is not None: facts.append('aim_free')
+    target=view.aim_free or view.aim_assist
+    if view.aiming and target is not None and state.inside_board(*target):
         from .throwing import flight_path
         path=flight_path((state.player.x,state.player.y),target)
         if any(state.is_visible(x,y) and state.cell(x,y).solid for x,y in path): facts.append('blocked_aim')
@@ -774,37 +783,37 @@ def observe_ui(app):
             if row.condition and row.condition.kind=='conductive' and row.status=='ready':
                 matches=condition_matches(row.condition,state,cell=target)
                 facts.append('condition_on' if matches else 'condition_off')
-    editor=app.world_tamper_editor
-    if editor is not None:
+    editor=view.editor_open
+    if editor:
         facts.append('degree_seen')
-        if editor.focus=='condition' or editor.condition_ids: facts.append('conditions_seen')
-        if editor.slot.region_members: facts.append('tamper_regions_seen')
-    if app.observe_mode and app.observe_cursor is not None:
+        if view.editor_condition: facts.append('conditions_seen')
+        if view.editor_regions: facts.append('tamper_regions_seen')
+    if view.observe_mode and view.observe_cursor is not None:
         facts.append('observed')
-        if state.cell_knowledge(*app.observe_cursor).sources==('tutorial_chart',): facts.append('chart_observed')
+        if state.cell_knowledge(*view.observe_cursor).sources==('tutorial_chart',): facts.append('chart_observed')
     if 4<=state.player.x<=15 and state.player.y==28: facts.append('noisy_preview')
     if 4<=state.player.x<=15 and state.player.y==30: facts.append('quiet_preview')
-    previous=getattr(app,'_course_ui_previous',None)
-    current=(id(state),app.aiming,bool(app.path),editor is not None,app.cursor_zone,
-             app.layer_observation is not None,state.action_seq,bool(editor and editor.map_preview),
-             app.throw_item_index is not None)
-    if previous and previous[0]==id(state):
-        if previous[1] and not current[1] and previous[6]==current[6]: facts.append('aim_cancelled')
-        if previous[2] and not current[2] and previous[6]==current[6]: facts.append('path_cancelled')
-        if previous[3] and not current[3] and previous[6]==current[6]: facts.append('tamper_cancelled')
+    previous=view.previous
+    current=(view.session_token,view.aiming,view.path,editor,view.cursor_zone,
+             view.layer is not None,state.action_seq,view.editor_map,
+             view.throwing,state.time)
+    if previous and previous[0]==view.session_token:
+        same_action=previous[6]==current[6] and previous[9]==current[9]
+        if previous[1] and not current[1] and same_action: facts.append('aim_cancelled')
+        if previous[2] and not current[2] and same_action: facts.append('path_cancelled')
+        if previous[3] and not current[3] and same_action: facts.append('tamper_cancelled')
         if previous[4]!=current[4]: facts.append('focus_switched')
         if previous[5] and not current[5]: facts.append('layers_closed')
-        if previous[7] and not current[7] and editor is not None: facts.append('tamper_map_returned')
-        if len(previous)>8 and previous[8] and not current[8] and previous[6]==current[6]:
+        if previous[7] and not current[7] and editor: facts.append('tamper_map_returned')
+        if previous[8] and not current[8] and same_action:
             facts.append('throw_cancelled')
     if current[5]: facts.append('layers_opened')
-    if app.layer_observation is not None and app.layer_observation.layer=='elevation': facts.append('elevation_seen')
-    if app.layer_observation is not None:
-        if app.layer_observation.layer in ('low','middle','high'):
-            facts.append('layer_'+app.layer_observation.layer+'_seen')
-        if app.cell_detail_target is not None:
+    if view.layer is not None and view.layer=='elevation': facts.append('elevation_seen')
+    if view.layer is not None:
+        if view.layer in ('low','middle','high'):
+            facts.append('layer_'+view.layer+'_seen')
+        if view.cell_detail_target is not None:
             facts.append('layer_detail_seen')
-    app._course_ui_previous=current
     if facts: note(state,*facts)
 
 

@@ -597,6 +597,7 @@ def _soil_shift(state, x: int, y: int, delta: int) -> bool:
     if value < SOIL_FLOOR or value > SOIL_CEILING:
         return False
     cell.elevation = value
+    state._sync_material_position(x, y)
     state.world_ledger.mark_terrain(state.layer_key(), x, y, elevation=value)
     return True
 

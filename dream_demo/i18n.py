@@ -212,6 +212,10 @@ EN: dict[str, str] = {
     # ---- 拾取面板 ----
     "共 {n} 件": "{n} items",
     "空格勾选 · A 全选 · Enter 捡起 · Esc/Q 关闭": "Space select · A select all · Enter pick up · Esc/Q close",
+    "空格勾选 · Enter 捡起 · Esc 关闭": "Space select · Enter pick up · Esc close",
+    # ---- 存档 / 模拟失败提示 ----
+    "模拟或保存失败：{reason}": "Simulation or save failed: {reason}",
+    "保存失败：{reason}": "Save failed: {reason}",
     "这里没有可拾取的显化物。": "Nothing here can be picked up.",
     "第 {a}-{b}/{c} 件 · 滚轮或 ↑↓ 滚动": "Items {a}-{b}/{c} · wheel or ↑↓ to scroll",
     "已选 {n} 件 · ": "{n} selected · ",
@@ -292,6 +296,11 @@ EN: dict[str, str] = {
         "advances per action; 30Hz sampling only serves animation and effects, with "
         "no pixel-level interpolation. Off by default.",
     "左侧事件记录": "Left Event Log",
+    "在地图下方、键位表上方显示可滚动的最近消息。":
+        "Show scrollable recent messages below the map and above the key bar.",
+    "行动后切换消息记录": "Open Event Log After Actions",
+    "行动完成后自动将右侧面板切换到消息记录；关闭时保留当前页面。":
+        "Switch the right pane to the event log after actions; keep the current page when disabled.",
     "在地图左下叠加透明事件记录；开启后右侧默认页改为行囊。":
         "Overlay a transparent event log on the map's bottom left; "
         "the right pane then opens on the bag by default.",
@@ -1706,6 +1715,9 @@ STATUS_TIERS: tuple[str, str, str, str] = ("健康", "受损", "危险", "紧急
 EN.update(EN_UNCONSCIOUS)
 
 EN.update({
+    '默认缩放': 'Default zoom',
+    '默认右侧界面': 'Default sidebar',
+    '行动界面默认项': 'Default action tab',
     # ---- 拾取文本：携带意象 ----
     "拾取携带意象：{item}。": "Picked up a carried image: {item}.",
     "从台面上取走携带意象：{item}。": "Taken from the platform (carried image): {item}.",

@@ -30,12 +30,35 @@ class GraphicsMixin:
         return Path(__file__).resolve().parents[2]
 
     def _graphics_restart(self, executable: Path | None) -> None:
+        if getattr(self.session, 'navigation_barrier', False) is True:
+            return
         if not self.home_mode and not self.session.state.run_over and not getattr(self,'save_disabled',False):
             try:
-                self.session.save_and_exit()
+                saved = self.session.save_and_exit()
             except OSError as error:
                 self.show_toast(tr('保存失败，未重启：{reason}',reason=str(error)),4)
                 return
+            from concurrent.futures import Future
+            if isinstance(saved, Future):
+                session = self.session
+                session.navigation_barrier = True
+                def after_save():
+                    if not saved.done():
+                        self.set_timer(.025, after_save)
+                        return
+                    try:
+                        saved.result()  # completion checked; never blocks UI
+                    except BaseException as error:
+                        session.navigation_barrier = False
+                        self.show_toast(tr('保存失败，未重启：{reason}',reason=str(error)),4)
+                        return
+                    self._graphics_launch(executable)
+                    session.navigation_barrier = False
+                self.set_timer(.025, after_save)
+                return
+        self._graphics_launch(executable)
+
+    def _graphics_launch(self, executable: Path | None) -> None:
         try:
             launched = launch(self._graphics_base_dir(), child_command())
         except (OSError,ValueError) as error:

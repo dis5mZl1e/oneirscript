@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .constants import Material
+from .metadata_versions import (MetadataRecord, OwnedDict, OwnedList,
+                                assigned as _metadata_assigned,
+                                deleted as _metadata_deleted,
+                                register as _register_metadata)
 
 
 @dataclass
@@ -48,6 +52,113 @@ class Cell:
     plant_state: dict = field(default_factory=dict)
 
 
+    def __deepcopy__(self, memo):
+        from copy import deepcopy
+        from dataclasses import fields
+        clone_type = getattr(type(self), "_unbound_cell_type", type(self))
+        clone = clone_type.__new__(clone_type)
+        memo[id(self)] = clone
+        for definition in fields(self):
+            setattr(clone, definition.name, deepcopy(getattr(self, definition.name), memo))
+        for name, value in self.__dict__.items():
+            if name != '_material_binding' and name not in self.__dataclass_fields__:
+                setattr(clone, name, deepcopy(value, memo))
+        return clone
+
+
+# Only owned instances use descriptors; ordinary Cells keep Python's normal
+# attribute fast path even when the optional ownership implementation is loaded.
+from .material_store import CellField as _CellField
+
+
+class _OwnedCellClass:
+    """Expose the original class to existing equality/type-schema policies.
+
+    Actual type() stays the owned subclass for descriptor dispatch. Delegate
+    class writes to Python's built-in slot so bind/detach keep normal behavior.
+    """
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return type(instance)._unbound_cell_type
+
+    def __set__(self, instance, new_type):
+        object.__dict__['__class__'].__set__(instance, new_type)
+
+
+def _owned_cell_equal(self, other):
+    # Preserve the original generated, inherited or authored equality function,
+    # including compare=False fields and its own NotImplemented policy.
+    return type(self)._unbound_cell_type.__eq__(self, other)
+
+
+def _new_unbound_cell(cell_type, *args):
+    return cell_type.__new__(cell_type, *args)
+
+
+def _new_unbound_cell_ex(cell_type, args, kwargs):
+    return cell_type.__new__(cell_type, *args, **kwargs)
+
+
+def _owned_cell_identity(cell):
+    return cell
+
+
+def _reduce_owned_cell(self, protocol):
+    # A generated owned subclass and its weak subscriptions are runtime-only.
+    # Keep pickle's ordinary state phase so shared nested values and cycles
+    # retain their identities instead of copying each field independently.
+    from dataclasses import fields
+    from copyreg import __newobj__, __newobj_ex__
+    cell_type = type(self)._unbound_cell_type
+    state = object.__getstate__(self)
+    attributes, slots = state if isinstance(state, tuple) else (state, None)
+    attributes = dict(attributes or {})
+    attributes.pop('_material_binding', None)
+    attributes.update((definition.name, getattr(self, definition.name))
+                      for definition in fields(self))
+    detached = object.__new__(cell_type)
+    detached.__dict__.update(attributes)
+    for name, value in (slots or {}).items():
+        setattr(detached, name, value)
+    # Evaluate authored policies on the complete original-class value view.
+    reduction = cell_type.__reduce_ex__(detached, protocol)
+    if not isinstance(reduction, tuple):
+        return reduction
+    # The Pickler memoizes the actual Cell before visiting its state/items.
+    # Any policy-introduced reference to the view can therefore resolve through
+    # that memo. Do not traverse/copy/rewrite the policy's output graph: even
+    # immutable containers may have mutable cyclic backedges or external aliases.
+    def reduce_policy_view(view, view_protocol):
+        return _owned_cell_identity, (self,)
+
+    view_type = type('_CellPickleView', (cell_type,), {
+        '__slots__': (), '__reduce_ex__': reduce_policy_view,
+    })
+    object.__dict__['__class__'].__set__(detached, view_type)
+    if reduction[0] in (__newobj__, __newobj_ex__):
+        constructor = (_new_unbound_cell if reduction[0] is __newobj__
+                       else _new_unbound_cell_ex)
+        reduction = (constructor, *reduction[1:])
+    return reduction
+
+
+_owned_cell_types = {}
+
+
+def _bound_cell_type(unbound_type):
+    owned = _owned_cell_types.get(unbound_type)
+    if owned is None:
+        attributes = {name: _CellField(name) for name in Cell.__dataclass_fields__}
+        attributes.update(_unbound_cell_type=unbound_type, __eq__=_owned_cell_equal,
+                          __reduce_ex__=_reduce_owned_cell,
+                          __class__=_OwnedCellClass(),
+                          __module__=__name__)
+        owned = type('Owned' + unbound_type.__name__, (unbound_type,), attributes)
+        _owned_cell_types[unbound_type] = owned
+    return owned
+
+
 @dataclass
 class Entity:
     id: str
@@ -81,31 +192,31 @@ class Entity:
     # 内容扩展：行为钩子与瞬时状态（序列化兼容——旧存档缺省即可）。
     trait: str = ""  # clock_pulse / mirror_step / liquid_swimmer / cutpurse / disguise / patrol / split_main / phantom / choir / staircase / lighthouse
     biological_tags: tuple[str, ...] = ()
-    hospital_state: dict = field(default_factory=dict)
+    hospital_state: dict = field(default_factory=OwnedDict)
     pulse_clock: float = 0.0
     frozen_turns: float = 0.0
     blind_turns: float = 0.0
     slow_turns: float = 0.0
-    route: list[tuple[int, int]] = field(default_factory=list)
+    route: list[tuple[int, int]] = field(default_factory=OwnedList)
     route_index: int = 0
     main_id: str | None = None
     # 征兆：其他生物同样会被液体/气体赋予持续状态（portent_id -> 剩余回合）。
-    portents: dict[str, int] = field(default_factory=dict)
-    portent_debt: dict[str, float] = field(default_factory=dict)
+    portents: dict[str, int] = field(default_factory=OwnedDict)
+    portent_debt: dict[str, float] = field(default_factory=OwnedDict)
     # 征兆的「层」计数（portent_id -> 剩余层数/使用次数）：与 portents（回合）
     # 独立。回合走完只降层（PortentDef.duration_drop），层归零才移除征兆。
     # 挂在实体上而不是 GameState 上——每个生物各自记账。
-    portent_stacks: dict[str, int] = field(default_factory=dict)
+    portent_stacks: dict[str, int] = field(default_factory=OwnedDict)
     # 材料「附着」计时（2026-10-07，portent_id -> 剩余附着回合）：材料征兆被赋予时
     # 挂上，离开来源材料后附着期内征兆**全额续效且不计衰减**（黏在身上），
     # 附着耗尽才开始走 portents 回合时钟；站在材料中会补满。仅对带 material 的
     # 征兆有意义。旧存档缺省为空 = 无附着（老征兆按原时钟自然衰减）。
-    portent_attach: dict[str, float] = field(default_factory=dict)
+    portent_attach: dict[str, float] = field(default_factory=OwnedDict)
     # 第十九节 §17：一次成功获得后的单轮硬结束边界（portent_id -> 世界时间）。
     # 持续接触可以保留本轮表现，但不能越过这个边界继续续期。
-    portent_deadlines: dict[str, int] = field(default_factory=dict)
+    portent_deadlines: dict[str, int] = field(default_factory=OwnedDict)
     # 真正结束后的隐藏保护（portent_id -> 世界时间）；在此之前不能再次获得同一 ID。
-    portent_protection: dict[str, int] = field(default_factory=dict)
+    portent_protection: dict[str, int] = field(default_factory=OwnedDict)
     # 稳定意识的固定货架下标：付费交易抽 2–3 项，其余交互不占交易名额。
     # 空元组代表旧档缺失，按稳定实例身份补抽，不能退回整张交易表。
     npc_options: tuple[int, ...] = ()
@@ -141,13 +252,13 @@ class Entity:
     last_reported_time: int = -1
     # 调查任务（§22 B）：按地点／来源去重的静态声源与传信点。
     # 每项：x/y、source、category、time、expires、tried、unreachable。
-    investigation_tasks: list[dict] = field(default_factory=list)
+    investigation_tasks: list[dict] = field(default_factory=OwnedList)
     # 追踪规划（core/pathing/pursuit.py）：看见玩家时以玩家当前位置实时规划的
     # 最短路径（不含所在格）；丢失视野后沿剩余路径继续走向最后一次目击处；
     # 走到终点仍没发现目标就转入游荡（wandering），直到重新看见玩家。
     # plan_index 指向 path_plan 里下一步要走的格子；wander_nonce 只用来给
     # 游荡目标的确定性随机换种子。旧存档缺省即「无计划、未游荡」。
-    path_plan: list[tuple[int, int]] = field(default_factory=list)
+    path_plan: list[tuple[int, int]] = field(default_factory=OwnedList)
     plan_index: int = 0
     wandering: bool = False
     wander_nonce: int = 0
@@ -155,8 +266,8 @@ class Entity:
     # （避免 A→B→A 往返）、当前被同伴占住的计划步，以及是否已经为
     # 「正在离开的同伴」等过一回合。旧存档缺省即无记录。
     nav_stall: int = 0
-    nav_recent: list = field(default_factory=list)
-    nav_blocked: list = field(default_factory=list)
+    nav_recent: list = field(default_factory=OwnedList)
+    nav_blocked: list = field(default_factory=OwnedList)
     nav_waited: bool = False
     # §5.3 相向卡门：开始为对方让路的世界时间（-1 = 当前没有等待）。
     nav_wait_since: int = -1
@@ -170,14 +281,14 @@ class Entity:
     # aoe_charge > 0 表示范围技能蓄力中（剩余回合），锚点 (aoe_tx, aoe_ty)，
     # 渲染层据此画出预警范围（state.skill_telegraphs）。
     # 旧存档缺省即可（asdict 全量落档，Entity(**payload) 兼容缺键）。
-    skill_clocks: dict[str, float] = field(default_factory=dict)
+    skill_clocks: dict[str, float] = field(default_factory=OwnedDict)
     aoe_charge: float = 0.0
     aoe_tx: int = -1
     aoe_ty: int = -1
     # 异象主动技能（2026-10-08）：运行期状态（pending 蓄力/恢复/治疗预算/
     # 阶段/召唤寿命）。冷却仍用稳定技能 ID 记在 skill_clocks。
     # 旧存档缺省为空（读档走 persistence._decode_entity 的类型恢复）。
-    active_skill_state: dict = field(default_factory=dict)
+    active_skill_state: dict = field(default_factory=OwnedDict)
     # 反伤：两套互相独立的机制，可同时挂在同一个异象上。
     #   反击 —— 只认玩家的「攻击行动」次数（一次多段攻击仍算 1 次）；
     #   荆棘 —— 只认一次攻击的「段数」（每段各触发一次），与回合、行动计数无关。
@@ -196,8 +307,53 @@ class Entity:
     spawn_wave: int = 0
 
 
+    def __setattr__(self, name, value):
+        object.__setattr__(self, name, value)
+        _metadata_assigned(self, name)
+        if name in ('x', 'y', 'integrity'):
+            for watcher in tuple(self.__dict__.get('_spatial_watchers', {}).values()):
+                index = watcher()
+                if index is not None:
+                    index.actor_changed(self)
+
+    def __getstate__(self):
+        # Python's default state includes all inherited slots, including private
+        # name-mangled ones. Runtime weak subscriptions are the only exclusion.
+        state = object.__getstate__(self)
+        if isinstance(state, tuple):
+            dictionary, slots = state
+            dictionary = dict(dictionary or {})
+            dictionary.pop('_spatial_watchers', None)
+            return dictionary, slots
+        return {name: value for name, value in state.items()
+                if name != '_spatial_watchers'}
+
+    def __delattr__(self, name):
+        object.__delattr__(self, name)
+        _metadata_deleted(self, name)
+        if name in ('x', 'y', 'integrity'):
+            for watcher in tuple(self.__dict__.get('_spatial_watchers', {}).values()):
+                index = watcher()
+                if index is not None:
+                    index.actor_changed(self)
+
+    def __setstate__(self, state):
+        dictionary, slots = state if isinstance(state, tuple) else (state, {})
+        self.__dict__.update(dictionary or {})
+        for name, value in slots.items():
+            object.__setattr__(self, name, value)
+
+    def __deepcopy__(self, memo):
+        from copy import deepcopy
+        clone = type(self).__new__(type(self))
+        memo[id(self)] = clone
+        # Dispatch authored get/setstate policies instead of flattening them.
+        clone.__setstate__(deepcopy(self.__getstate__(), memo))
+        return clone
+
+
 @dataclass
-class Item:
+class Item(MetadataRecord):
     definition_id: str
     instance_id: str
     name: str
@@ -215,11 +371,11 @@ class Item:
     explosion_radius: int = 0
     projectile_template: str = "直线弹体"
     # 容器类物品的内部存储：{材料名: 数量}（玻璃瓶/试管/气球/理想气体容器）。
-    contents: dict = field(default_factory=dict)
+    contents: dict = field(default_factory=OwnedDict)
     # 稀有度（常见/少见/稀有/非常稀有）；记忆碎片、交互道具等无稀有度条目为 ""。
     rarity: str = ""
     # 已消耗的气体消散周期余量；封存在物品内时暂停，释放后续算。
-    gas_decay_age: dict[str, int] = field(default_factory=dict)
+    gas_decay_age: dict[str, int] = field(default_factory=OwnedDict)
     # 2026-10-21 统一发射源：逐物理实例的弹匣；None = 该物品没有弹匣。
     magazine: int | None = None
     magazine_capacity: int = 0
@@ -246,7 +402,7 @@ class Item:
 
 
 @dataclass
-class WorldItem:
+class WorldItem(MetadataRecord):
     item: Item
     x: int
     y: int
@@ -262,7 +418,7 @@ class WorldItem:
 
 
 @dataclass
-class WorldEvent:
+class WorldEvent(MetadataRecord):
     event_id: str
     name: str
     x: int
@@ -295,7 +451,7 @@ class WorldEvent:
 
 
 @dataclass
-class LayerSnapshot:
+class LayerSnapshot(MetadataRecord):
     depth: int
     seed: int
     cells: list[list[Cell]]
@@ -312,16 +468,16 @@ class LayerSnapshot:
     height: int = 0
     # 逻辑固体（内容扩展包 v1）："x,y" → 陷阱场景名 / 灌注阀储备材料。
     # 盖章时确定性抽定并随层保存——读档后陷阱种类不变。
-    logic_scenarios: dict = field(default_factory=dict)
-    logic_valves: dict = field(default_factory=dict)
-    logic_boards: list = field(default_factory=list)
-    logic_fences: dict = field(default_factory=dict)
+    logic_scenarios: dict = field(default_factory=OwnedDict)
+    logic_valves: dict = field(default_factory=OwnedDict)
+    logic_boards: list = field(default_factory=OwnedList)
+    logic_fences: dict = field(default_factory=OwnedDict)
     # 异象主动技能（2026-10-08）：本层的效果场（来源/寿命/实际格/渠道/每拍
     # 伤害/叠加族）。随层快照保存与还原；旧存档缺省为空。
-    enemy_skill_fields: list = field(default_factory=list)
-    realm_bg_zones: list = field(default_factory=list)
+    enemy_skill_fields: list = field(default_factory=OwnedList)
+    realm_bg_zones: list = field(default_factory=OwnedList)
     material_time: int = 0
-    realm_features: dict = field(default_factory=dict)
+    realm_features: dict = field(default_factory=OwnedDict)
 
 
 @dataclass
@@ -329,3 +485,8 @@ class ActionResult:
     changed: bool
     message: str = ""
     data: dict[str, Any] = field(default_factory=dict)
+
+
+for _metadata_type in (Entity, Item, WorldItem, WorldEvent):
+    _register_metadata(_metadata_type)
+_register_metadata(LayerSnapshot, excluded=('cells',))

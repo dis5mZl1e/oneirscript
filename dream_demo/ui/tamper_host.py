@@ -1,4 +1,5 @@
 """One map-bounded editor host and read-only map preview for both controllers."""
+from ..core.presentation_control import submit_presentation
 from rich.text import Text
 from textual.geometry import Region
 
@@ -68,7 +69,9 @@ class TamperHostMixin:
                                   and self._panel_subpage_id() == 'tamper'))
         for name, value in editor.return_context.items():
             if name == 'hover_target':
-                state.hover_target = value
+                submit_presentation(self.session, state,
+                                    'clear_hover' if value is None else 'hover',
+                                    *(() if value is None else value))
             elif navigated_away and name in ('panel_mode', 'panel_scroll', 'panel_selection'):
                 continue
             elif name != 'panel_mode' or not (self.home_mode or state.run_over):

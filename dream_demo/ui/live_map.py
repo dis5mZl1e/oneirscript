@@ -566,9 +566,12 @@ class LiveMapMixin:
         # 原生图像层高于终端文字：提示气泡出现/换角时，不能仅依赖
         # 合成器的上一拍逐点命中顺序。按气泡本体（非透明宿主）另留孔洞，
         # 同时把几何放进缓存键，移动、折行和收起都即时更新裁切。
+        from textual.widgets import Tooltip
+        from .floating_toast import FloatingToast, MapHintText
         bubbles = tuple(box.intersection(clip)
                         for widget, (box, clip) in self.screen._compositor.visible_widgets.items()
-                        if getattr(widget, 'id', None) in ('toast', 'map-mode-hint')
+                        if (isinstance(widget, (Tooltip, FloatingToast, MapHintText))
+                            or getattr(widget, 'id', None) in ('toast', 'map-mode-hint'))
                         and widget.visible and widget.display)
         if signature is not None:
             signature = (*signature, ('bubble-regions', bubbles))
@@ -599,41 +602,6 @@ class LiveMapMixin:
         except Exception:
             pass
         return False
-
-    def _event_log_image_layer(self, view, image, region, columns, rows):
-        try:
-            log = self.query_one('#left-event-log')
-        except Exception:
-            return None
-        if not log.display or not log.renderable.plain:
-            return None
-        content = log.renderable
-        scene = view.shared_scene
-        full_columns = scene.viewport[2] * view.cell_w
-        full_rows = scene.viewport[3] * view.cell_h
-        if getattr(view, 'fractional_image_zoom', False):
-            full_columns, full_rows = view.image_extent()
-        key = (log.region, region, image.size, full_columns, full_rows,
-               content.plain, tuple(content.spans))
-        cached = getattr(self, '_event_log_raster_cache', None)
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        from .left_event_log import raster_event_log
-        layer = raster_event_log(log, image, region, full_columns, full_rows)
-        self._event_log_raster_cache = (key, layer)
-        return layer
-
-    def _map_with_event_log(self, image, layer):
-        if layer is None:
-            return image
-        cached = getattr(self, '_event_log_image_cache', None)
-        if cached is not None and cached[0] is image and cached[1] is layer:
-            return cached[2]
-        composed = image.convert('RGBA')
-        composed.alpha_composite(layer)
-        composed = composed.convert('RGB')
-        self._event_log_image_cache = (image, layer, composed)
-        return composed
 
     @staticmethod
     def _map_packet_for_write(packet):
@@ -707,6 +675,12 @@ class LiveMapMixin:
         """
         return _image_present_timer_enabled() and self.smooth_patch_routes_enabled()
 
+    def _map_world_view_active(self) -> bool:
+        live = getattr(self, '_world_view_live', None)
+        if live is not None:
+            return bool(live())
+        return getattr(self, 'panel_mode', 'world') == 'world'
+
     def _map_smooth_motion_active(self, view=None) -> bool:
         """M3：本帧是否处于平滑移动的「纯采样帧」窗口。
 
@@ -726,7 +700,7 @@ class LiveMapMixin:
                 return False
         except (AttributeError, KeyError, TypeError):
             return False
-        if (getattr(self, 'panel_mode', 'world') != 'world'
+        if (not self._map_world_view_active()
                 or getattr(self, 'aiming', False)
                 or getattr(self, 'observe_mode', False)
                 or getattr(self, 'layer_observation', None) is not None):
@@ -1082,7 +1056,7 @@ class LiveMapMixin:
             return False
         if self._driver is None or self.is_headless or self.home_mode:
             return False
-        if getattr(self, 'panel_mode', 'world') != 'world':
+        if not self._map_world_view_active():
             return False
         if (getattr(self, 'observe_mode', False) or getattr(self, 'aiming', False)
                 or getattr(self, 'layer_observation', None) is not None):
@@ -1147,11 +1121,6 @@ class LiveMapMixin:
             return False
         if not _image_smooth_mini_enabled():
             return False
-        try:
-            if self.query_one('#left-event-log').display:
-                return False
-        except Exception:
-            pass
         if self._image_output_error or getattr(self, '_floor_transition', None) is not None:
             return False
         if self._driver is None or self.home_mode or self.session.state.run_over:
@@ -1311,7 +1280,8 @@ class LiveMapMixin:
             self._native_map_disabled = True
             return None
 
-    def _present_native_map(self, plane, view, image, region, columns, rows, rectangles, text_layer=None):
+    def _present_native_map(self, plane, view, image, region, columns, rows, rectangles, *,
+                            _owned_packet=None):
         import ctypes
         import win32gui
         started = time.perf_counter_ns()
@@ -1335,16 +1305,15 @@ class LiveMapMixin:
                        round((x+w-region.x)*sx)-round((x-region.x)*sx),
                        round((y+h-region.y)*sy)-round((y-region.y)*sy))
                       for x, y, w, h in rectangles)
-        key = (id(image), id(text_layer), box, clips, id(self.screen))
-        if key == getattr(self, '_native_map_key', None):
+        key = (id(image), box, clips, id(self.screen))
+        exposed = view._public_image_was_exposed(image)
+        if key == getattr(self, '_native_map_key', None) and not exposed:
             return True
         from ._native_map_scene import _build_native_packet
-        packet = (None if getattr(self, '_map_overview_zoom', None) is not None
-                  else _build_native_packet(view, image))
-        if packet is not None and text_layer is not None:
-            packet['text_overlay'] = text_layer
-        presented = self._map_with_event_log(image, text_layer) if packet is None else image
-        if not plane.present(presented, box, clips, scene=packet):
+        packet = (_owned_packet if _owned_packet is not None else
+                  None if getattr(self, '_map_overview_zoom', None) is not None else
+                  _build_native_packet(view, image))
+        if not plane.present(image, box, clips, scene=packet):
             self._native_map_error = plane.error
             self._native_plane_hide()
             self._map_force_repaint = True
@@ -1411,27 +1380,32 @@ class LiveMapMixin:
             self._native_plane_hide()
             return
         native_plane = self._get_native_plane()
-        image = view.image_frame()
-        text_layer = self._event_log_image_layer(view, image, region, columns, rows)
+        owned_packet = None
+        if native_plane is not None:
+            from ._native_map_scene import _prepare_native_frame
+            image, owned_packet = _prepare_native_frame(view, overview=overview)
+        else:
+            image = view.image_frame()
         if native_plane is not None:
             try:
-                if self._present_native_map(native_plane, view, image, region, columns, rows, rectangles, text_layer):
+                if self._present_native_map(native_plane, view, image, region, columns, rows, rectangles,
+                                            _owned_packet=owned_packet):
                     return True
             except Exception as error:
                 self._native_map_error = repr(error)
                 self._native_plane_hide()
                 self._map_force_repaint = True
-        image = self._map_with_event_log(image, text_layer)
-        # 增量补丁以原始地图图像为参照，不包含播报字形；显示播报时走完整帧。
-        if text_layer is not None:
-            dirty_allowed = False
+            if owned_packet is not None:
+                # The immutable geometry handle has no pixels for the terminal
+                # fallback when the OS/native publication route is unavailable.
+                image = view._native_image_frame()
         if getattr(self, '_map_overview_zoom', None) is not None or fractional_zoom:
             sx, sy = image.width/columns, image.height/rows
         else:
             sx, sy = image.width/(scene.viewport[2]*view.cell_w), image.height/(scene.viewport[3]*view.cell_h)
         geometry = (region.x,region.y,columns,rows,tuple(rectangles))
         key = (id(image), geometry)
-        patches_enabled = image_patches_enabled() and text_layer is None and not (overview or fractional_zoom)
+        patches_enabled = image_patches_enabled() and not (overview or fractional_zoom)
         dirty_packets = None
         if dirty_allowed and not patches_enabled:
             try:

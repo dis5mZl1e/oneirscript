@@ -1,5 +1,7 @@
 """会话生命周期：构造、compose、挂载/卸载、语言/音乐同步与游戏帧刷新。"""
 from __future__ import annotations
+from ...core.presentation_control import submit_presentation
+from ..presentation_events import display_next_ticker, presentation_events
 
 import gc
 import math
@@ -7,6 +9,7 @@ import json
 import os
 import random
 import time
+import weakref
 from pathlib import Path
 
 from rich.text import Text
@@ -15,6 +18,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.geometry import Region
+from textual.message import Message
 from textual.widgets import Button, Footer, Header, Input, Static
 
 from ...audio import sfx
@@ -148,8 +152,98 @@ def _idle_frame_divisor() -> int:
     return value if value >= 1 else 1
 
 
+# ---------------------------------------------------------------------------
+# C10（2026-11-05）：空闲动画调度。
+# ---------------------------------------------------------------------------
+# C9 只跳过了「地图 update_state」，但两个定时器仍按 30Hz / 20Hz 唤醒：
+# 2026-11-05 的空闲剖析（build/tmp 临时探针，2s 窗口）显示，暂停
+# `_game_frame_timer` 后空闲单核从 10.2% 降到 6.3%，再暂停 `_fx_timer` 到
+# 5.5%，两个都停到 1.6%——大头是这两个定时器的回调与它们引发的整屏合成，
+# 而不是回调里的 Python 计算。
+#
+# 因此空闲时不再靠「每帧算完再跳过」，而是直接换用低频率定时器：
+# 真实键鼠输入后 2s 内保持全速（C9 的确定性分频不动），2s 无输入且确认
+# 没有任何动态来源（自动寻路/长按/瞄准/瞬时 FX/演出/结算）时切到
+# UI_IDLE_FRAME_HZ / UI_IDLE_FX_HZ；任何输入（`_note_activity`）立即切回。
+# 只改变采样疏密，不改变时钟语义：FX 时钟仍按墙钟推进、动画顺序/相位不变。
+# ONEIRSCRIPT_UI_IDLE_THROTTLE=0 整体回退（排障/录屏/A-B）；
+# ONEIRSCRIPT_UI_IDLE_FRAME_HZ / UI_IDLE_FX_HZ 可覆盖两个频率（>0 浮点）。
+UI_IDLE_ENTER_SECONDS = 2.0
+UI_IDLE_FRAME_HZ = 5.0
+UI_IDLE_FX_HZ = 5.0
+# 空闲期环境光采样频率：正常档位的 ambient 采样是 4Hz（app._fx_paint 的
+# ambient_key），空闲时压到 1Hz——呼吸光在静止画面里不需要 4Hz 的采样，
+# 而每一次环境光写回都会触发一次整屏合成。ONEIRSCRIPT_UI_IDLE_LIGHT_HZ 可覆盖。
+UI_IDLE_LIGHT_HZ = 1.0
+
+
+def _idle_animation_hz(name: str, default: float) -> float:
+    raw = env_get(name, "")
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _idle_animation_enabled() -> bool:
+    return str(env_get("UI_IDLE_THROTTLE", "1")).strip().lower() not in (
+        "0", "off", "false", "no")
+
+
+class LegacyCompletionReady(Message):
+    """Immutable wake identity only; owner facts remain in the session FIFO."""
+    def __init__(self, session, generation):
+        super().__init__()
+        self.session = weakref.ref(session)
+        self.generation = generation
+
+
 class SessionMixin:
-    """会话生命周期：构造、compose、挂载/卸载、语言/音乐同步与游戏帧刷新。"""
+    """会话生命周期：构造、挂载/卸载、语言/音乐同步与游戏帧刷新。"""
+    @property
+    def session(self):
+        return self._session
+
+    @session.setter
+    def session(self, value):
+        previous = getattr(self, '_session', None)
+        if previous is value:
+            return
+        detach = getattr(previous, 'set_completion_wakeup', None)
+        if callable(detach):
+            detach(None)
+        self._session = value
+        attach = getattr(value, 'set_completion_wakeup', None)
+        if getattr(self, '_legacy_wakeup_mounted', False) and callable(attach):
+            attach(self._post_legacy_completion)
+
+    def _post_legacy_completion(self, session, generation):
+        # Textual post_message is thread-safe and nonblocking. This callback
+        # never reads or mutates display facts from a completion/owner thread.
+        return self.post_message(LegacyCompletionReady(session, generation))
+
+    def on_legacy_completion_ready(self, message):
+        source = message.session()
+        if (not self.is_running or not getattr(self, '_legacy_wakeup_mounted', False) or source is not self.session
+                or not source.acknowledge_completion_wakeup(message.generation)):
+            return
+        self._drain_legacy_owner()
+
+    def _drain_legacy_owner(self):
+        session = self.session
+        if not self.is_running or not getattr(session, 'asynchronous', False) or not self.query('#equipment-sentence').results():
+            return
+        count = session.drain()
+        if self.session is not session:
+            return
+        if getattr(session, 'display_changed', bool(count)):
+            session.state.mark_ui_dirty()
+            self.refresh_view()
+        error = session.error
+        if error is not None and error is not getattr(self, '_owner_displayed_error', None):
+            self._owner_displayed_error = error
+            self.show_toast(tr('模拟或保存失败：{reason}', reason=str(error)), 6)
 
     def __init__(self, session: GameSession, start_at_home: bool = True):
         # 鼠标驱动按平台分发（ui/_native.select_mouse_driver）：Windows=原生记录翻译层，
@@ -158,6 +252,11 @@ class SessionMixin:
         from ...terminal_keys import install_alt_sequences
         install_alt_sequences()
         super().__init__(driver_class=select_mouse_driver())
+        from ...env_compat import flag
+        self._independent_session = flag('SIMULATION_LEGACY_PROCESS', False)
+        if self._independent_session:
+            from ...legacy_session import independent_session
+            session = independent_session(session, entered=not start_at_home)
         self.session = session
         # 主页三张存档槽永远归属**普通存档目录**：调试模式（save-test/）虽然
         # 会把 session 换成它的 SaveManager，但主页的读档/删档/槽位状态显示
@@ -305,13 +404,15 @@ class SessionMixin:
         self.settings_page.unlock_catalog_callback = self._unlock_all_catalog
         self.settings_page.game_intro_callback = self.open_game_intro
         self.facing = (1, 0)
-        # 右侧默认页：左侧事件记录开启时是行囊，否则保持事件记录（world）。
+        # Initial sidebar page follows the independent automatic-log preference.
         self.panel_mode = self._default_panel_mode()
         self.panel_scroll = 0
         # ~ 锁定（右侧固定）时的页面快照：见 sidebar_workspaces._enforce_locked_panel_page。
         self._locked_panel_page = None
         # 携带意象页底部「记忆碎片独立滚动区」的滚动偏移（2026-10-14）。
         self.memory_scroll = 0
+        # 装备盘页底部「行囊中的携带意象」固定 8 行区的内部滚动偏移。
+        self.equipment_scroll = 0
         self.hover_cell: tuple[int, int] | None = None
         # 悬停坐标所属的梦层：换层即作废悬停/固定/上下文目标（层尺寸会变）。
         self._hover_depth = session.state.depth
@@ -432,6 +533,7 @@ class SessionMixin:
         # 行囊页直接复用物品分类筛选值。切换按钮不丢各按钮自己的页。
         from ..styles import PANEL_SUBPAGE_DEFAULTS as _subpage_defaults
         self.panel_subpages = dict(_subpage_defaults)
+        self.panel_subpages['actions'] = self.config.get('default_action_page')
         self._panel_subtab_hits: list[tuple[int, int, str]] = []
         # 2026-10-27：#status 第 1 行最右 2 列锁图标的点击列区 (start, end)，
         # 每次 _refresh_world_view 按当前宽度/panel_locked 重算；None = 本帧
@@ -664,26 +766,25 @@ class SessionMixin:
                 # 不再常驻一格气泡遮挡地图。
                 yield MapHintText(id="map-mode-hint")
                 yield FloatingToast(id="toast")
-            # 左侧透明事件记录（2026-10-26）：默认关闭，开启时叠在地图显示框
-            # 左下/左上，只有文字、无背景无边框、鼠标穿透。
-            yield LeftEventLog(id="left-event-log")
-            with OrnamentPane(id="map-pane"):
-                # 提示层是 layout 的兄弟节点，贴边时不会被地图内边距裁剪。
-                yield MapView(id="map")
-                yield LayerStrip(id="layer-strip")
-                yield LayerStatus(id="layer-status")
-                yield TutorialCard(id="tutorial-card")
-                yield MapOverlayPanel(id="map-overlay")
-                # 自我察觉（个人菜单）：地图内居中悬浮层（独立 layer，不挤压地图）。
-                yield TamperOverlayPanel(id="tamper-overlay")
-                yield SettlementScreen(id="settlement")
-                with Horizontal(id="debug-panel"):
-                    yield DebugListWidget(id="debug-left")
-                    if Rule is not None:
-                        yield Rule(orientation="vertical", id="debug-divider")
-                    else:  # pragma: no cover - Rule 不可用时退化为静态竖线
-                        yield Static("│", id="debug-divider")
-                    yield DebugListWidget(id="debug-right")
+            with Vertical(id="map-column"):
+                with OrnamentPane(id="map-pane"):
+                    # 提示层是 layout 的兄弟节点，贴边时不会被地图内边距裁剪。
+                    yield MapView(id="map", zoom=float(self.config.get('default_zoom'))/100)
+                    yield LayerStrip(id="layer-strip")
+                    yield LayerStatus(id="layer-status")
+                    yield TutorialCard(id="tutorial-card")
+                    yield MapOverlayPanel(id="map-overlay")
+                    # 自我察觉（个人菜单）：地图内居中悬浮层（独立 layer，不挤压地图）。
+                    yield TamperOverlayPanel(id="tamper-overlay")
+                    yield SettlementScreen(id="settlement")
+                    with Horizontal(id="debug-panel"):
+                        yield DebugListWidget(id="debug-left")
+                        if Rule is not None:
+                            yield Rule(orientation="vertical", id="debug-divider")
+                        else:  # pragma: no cover - Rule 不可用时退化为静态竖线
+                            yield Static("│", id="debug-divider")
+                        yield DebugListWidget(id="debug-right")
+                yield LeftEventLog(id="left-event-log")
             with OrnamentPane(id="side-pane"):
                 yield ClickableStatus(id="status")
                 yield SignalStatusLink(id='signal-status')
@@ -859,6 +960,10 @@ class SessionMixin:
         yield I18nFooter(show_command_palette=False)
 
     def on_mount(self) -> None:
+        self._legacy_wakeup_mounted = True
+        attach = getattr(self.session, 'set_completion_wakeup', None)
+        if callable(attach):
+            attach(self._post_legacy_completion)
         from ..sidebar_workspaces import WORKSPACES, ROUTES
         for key, label, english, mode in WORKSPACES:
             button = self.query_one('#nav-' + key, Button)
@@ -892,8 +997,27 @@ class SessionMixin:
         self._presentation_timer = self.set_interval(
             PRESENTATION_TICK_SECONDS, self._presentation_tick, pause=True)
         self._audio_timer = self.set_interval(1 / 20, sfx.tick)
+        self._gc_idle_enabled = self._ui_idle_gc_enabled()
+        self._gc_idle_pending = False
+        self._gc_last_full = time.monotonic()
+        self._gc_activity_at = time.monotonic()
+        self._gc_idle_timer = (
+            self.set_interval(1.0, self._gc_idle_tick) if self._gc_idle_enabled else None)
+        # C10：空闲动画定时器（默认暂停）。进入空闲时换用它们，输入即刻切回。
+        self._idle_animation_on = _idle_animation_enabled()
+        self._idle_frame_hz = _idle_animation_hz("UI_IDLE_FRAME_HZ", UI_IDLE_FRAME_HZ)
+        self._idle_fx_hz = _idle_animation_hz("UI_IDLE_FX_HZ", UI_IDLE_FX_HZ)
+        self._idle_light_hz = _idle_animation_hz("UI_IDLE_LIGHT_HZ", UI_IDLE_LIGHT_HZ)
+        self._idle_mode = False
+        self._game_frame_idle_timer = (
+            self.set_interval(1 / self._idle_frame_hz, self._refresh_game_frame, pause=True)
+            if self._idle_animation_on else None)
+        self._fx_idle_timer = (
+            self.set_interval(1 / self._idle_fx_hz, self._fx_tick, pause=True)
+            if self._idle_animation_on else None)
         self._set_qol_layout_classes()
         self._ensure_world_painter()
+        self._ensure_side_tamper_on_route(self.panel_mode)
         self.refresh_view()
         self.call_after_refresh(self._freeze_gc_once)
         self.call_after_refresh(self._graphics_startup_notice)
@@ -1003,6 +1127,38 @@ class SessionMixin:
             gc.set_threshold(*GC_TUNED_THRESHOLD)
         except Exception:
             return
+        if self._ui_idle_gc_enabled():
+            # P2 专项：把 gen1/gen2 推迟到空闲期。连续移动时 gen2 每 ~1s
+            # 一次、单次 20–80ms，gen1 也会带来 2–14ms 的尖峰，直接决定
+            # refresh p95；抬高阈值后由 _gc_idle_tick 在停手 / 暂停时补一次。
+            try:
+                gc.set_threshold(1000, 1000, 1000)
+            except Exception:
+                pass
+
+    def _ui_idle_gc_enabled(self) -> bool:
+        """空闲 GC 与域级增量刷新成对：增量默认开启时它默认开启，可单独关闭。"""
+        default = "1" if self._incremental_ui_enabled() else "0"
+        return env_get("UI_IDLE_GC", default) == "1"
+
+    def _gc_idle_tick(self) -> None:
+        """停手后补一次完整回收；连跑时最多每 30 秒兜底一次。"""
+        state = getattr(getattr(self, "session", None), "state", None)
+        paused = (not self._world_view_live()
+                  or bool(getattr(state, "run_over", False)))
+        settled = time.monotonic() - getattr(self, "_gc_activity_at", 0.0) >= 1.0
+        overdue = time.monotonic() - getattr(self, "_gc_last_full", 0.0) >= 30.0
+        if not overdue:
+            if not getattr(self, "_gc_idle_pending", False):
+                return
+            if not settled and not paused:
+                return
+        self._gc_idle_pending = False
+        self._gc_last_full = time.monotonic()
+        try:
+            gc.collect(2)
+        except Exception:
+            pass
 
     def _set_qol_layout_classes(self) -> None:
         width = self.size.width
@@ -1111,7 +1267,118 @@ class SessionMixin:
         mode = getattr(self, "panel_mode", "world")
         return mode == "world" or mode in RIGHT_PANEL_MODES
 
+    def _update_idle_animation_mode(self) -> None:
+        """C10：按「无输入时长 + 无动态来源」切换全速/空闲定时器组。"""
+        if not getattr(self, "_idle_animation_on", False):
+            return
+        if not self.is_running or not self.is_mounted:
+            return
+        idle_for = time.monotonic() - getattr(self, "_last_activity", 0.0)
+        if getattr(self, "_idle_mode", False):
+            wanted = self._idle_animation_static()
+        else:
+            wanted = (idle_for >= UI_IDLE_ENTER_SECONDS
+                      and self._idle_animation_static())
+        if wanted != self._idle_mode:
+            self._set_idle_animation_mode(wanted)
+
+    def _idle_animation_static(self) -> bool:
+        """确认处于「没有任何动态来源」的空闲世界视图。
+
+        与 _map_frame_is_dynamic 的口径一致，但额外把移动表现、自动寻路、
+        长按与瞬时 FX 队列都算作动态——空闲换频只允许发生在真正静止的
+        世界视图上；主页/全屏模态/观察模式不参与（那些路径本来就不刷地图）。
+        """
+        if self.home_mode or self.observe_mode:
+            return False
+        if getattr(self, "layer_observation", None) is not None:
+            return False
+        mode = getattr(self, "panel_mode", "world")
+        if mode != "world" and mode not in RIGHT_PANEL_MODES:
+            return False
+        if getattr(self, "_held_key", None) is not None:
+            return False
+        if getattr(self, "_held_direction", None) is not None:
+            return False
+        if (self.path or getattr(self, "observe_walk_path", None)
+                or getattr(self, "assist_path", None)):
+            return False
+        if self.aiming or self.target_assist or getattr(self, "sentence_aim", None) is not None:
+            return False
+        movement = getattr(self, "_movement_presentation", None)
+        if movement is not None and movement.is_active(time.monotonic()):
+            return False
+        if (getattr(self, "_fx_projectile", None) or getattr(self, "_fx_combat_pulses", None)
+                or self._map_particles.pending or getattr(self, "_fx_hits", None)
+                or getattr(self, "_fx_waves", None) or getattr(self, "_fx_flashes", None)
+                or getattr(self, "_fx_impact_cues", None)
+                or getattr(self, "_visual_player", None) is not None
+                and self._visual_player.pending
+                or charging_casts(self.session.state)):
+            return False
+        if (getattr(self, "_floor_transition", None) is not None
+                or getattr(self, "pending_confirmation", None)):
+            return False
+        state = self.session.state
+        local_events = presentation_events(self, state)
+        if (getattr(state, "run_over", False) or local_events.explosion_cells
+                or local_events.pending_tickers
+                or getattr(state, "tutorial", {}).get("active")):
+            return False
+        return True
+
+    def _set_idle_animation_mode(self, idle: bool) -> None:
+        """切换全速/空闲定时器组（任一输入走 _note_activity 立即切回）。"""
+        game_idle = getattr(self, "_game_frame_idle_timer", None)
+        fx_idle = getattr(self, "_fx_idle_timer", None)
+        if game_idle is None or fx_idle is None:
+            return
+        if idle:
+            self._game_frame_timer.pause()
+            self._fx_timer.pause()
+            game_idle.reset()
+            fx_idle.reset()
+        else:
+            game_idle.pause()
+            fx_idle.pause()
+            # reset() 恢复调度并丢弃错过的周期（与 _sync_presentation_timer 同理）。
+            self._game_frame_timer.reset()
+            self._fx_timer.reset()
+        self._idle_mode = idle
+
+    def _action_toast(self, result, anchor=3):
+        def finish(actual):
+            self.show_toast(actual.message, anchor)
+            self.refresh_view()
+            return actual
+        return self._after_action(result, finish)
+
+    def _action_container(self, result):
+        def finish(actual):
+            if actual.data.get('container_menu') is not None:
+                self._open_container_overlay(actual.data['container_menu'])
+            else:
+                self.refresh_view()
+            return actual
+        return self._after_action(result, finish)
+
+    def _after_action(self, result, continuation):
+        from concurrent.futures import Future
+        if isinstance(result, Future):
+            return self.session.then(result, continuation)
+        return continuation(result)
+
     def _refresh_game_frame(self) -> None:
+        if not self.is_running:
+            # Teardown may precede widget unmount; flush due saves without DOM.
+            if getattr(getattr(self, "_driver", None), "is_headless", False):
+                self.session.flush_pending_save()
+            else:
+                self.session.flush_pending_save_async()
+            return
+        if getattr(self.session, 'asynchronous', False):
+            self._drain_legacy_owner()
+        self._update_idle_animation_mode()
         self._expire_attack_confirmation()
         # 节流自动存档：动作标记的脏状态按回合间隔（10 回合）落盘（30fps 下检查成本可忽略）
         was_dirty = self.session._dirty
@@ -1130,6 +1397,13 @@ class SessionMixin:
         self._guard_native_close_prompt()
         if getattr(self, '_native_prompt_suppressed', False):
             return
+        if getattr(self, '_gc_idle_enabled', False):
+            signature = (self.session.state.time, self.session.state.player.x,
+                         self.session.state.player.y)
+            if signature != getattr(self, '_gc_activity_signature', None):
+                self._gc_activity_signature = signature
+                self._gc_activity_at = time.monotonic()
+                self._gc_idle_pending = True
         if was_dirty != self.session._dirty:
             self._refresh_qol()
         # 临时弹窗动画/倒计时。（控件引用缓存：见 __init__ 的 C9 说明）
@@ -1147,9 +1421,9 @@ class SessionMixin:
             self._push_header_ticker(self._seen_event_message)
         # 异象蓄力/准备类提示的独立通道（2026-10-12）：不进事件记录，只上顶部
         # 滚动。每帧最多播一条：连发时逐帧切入，跑马灯不会把前一条瞬间顶掉。
-        pending_ticker = bool(state.ticker_notes)
-        if pending_ticker:
-            self._push_header_ticker(state.ticker_notes.pop(0))
+        local_events = presentation_events(self, state)
+        pending_ticker = bool(local_events.pending_tickers)
+        display_next_ticker(self, state, local_events)
         # 结算演出（run_over && ending_id）：帧推进；教程卡/地图高亮随帧同步。
         settlement = self._frame_widget("_frame_settlement", SettlementScreen)
         settlement_active = bool(settlement is not None and settlement.active)
@@ -1159,12 +1433,7 @@ class SessionMixin:
         if not self.home_mode and self.panel_mode != "home" and not getattr(state, "run_over", False):
             self._tutorial_frame()
         # 爆炸动画老化：每帧 +1，6 帧后清除（黄→橙红→深红→消失）。
-        explosion = bool(getattr(state, "explosion_cells", None))
-        if explosion:
-            state.explosion_age += 1
-            if state.explosion_age > 6:
-                state.explosion_cells = set()
-                state.explosion_age = 0
+        explosion = local_events.advance(state)
         if not self.is_running or not self.is_mounted or not self._world_view_live():
             # 全屏模态/观察/层观测才停：右栏面板（含 ~ 锁定页）下世界仍可行动，
             # 长按自动移动与平滑采样必须继续（2026-10-28 修复面板冻结）。
@@ -1180,7 +1449,12 @@ class SessionMixin:
                 self._movement_presentation_viewport = None
                 self._movement_presentation_needs_final_frame = False
             return
+        map_sync_before = getattr(self, "_map_sync_serial", 0)
         self._auto_repeat_move()
+        flush_ui = getattr(self, '_flush_ui_refresh', None)
+        if flush_ui is not None:
+            flush_ui()
+        map_already_synced = getattr(self, "_map_sync_serial", 0) != map_sync_before
         map_view = self._frame_widget("_frame_map", MapView)
         if map_view is None:
             return
@@ -1221,7 +1495,11 @@ class SessionMixin:
             map_view.assist_cells = set(self.assist_path)
         elif map_view.assist_cells:
             map_view.assist_cells = None
-        map_view.update_state(self.session.state)
+        # Automatic movement refresh_view synchronizes this map synchronously.
+        # Keep presentation/final-frame work below, but avoid repeating its
+        # interaction signature and map-state preparation in the same callback.
+        if not map_already_synced:
+            map_view.update_state(self.session.state)
         if force_presentation_frame:
             # update_state 的同场景快捷路径可能因 interaction signature 未变而
             # 不调用 Static.update；动画采样本身虽变，需显式调度一次地图重绘。
@@ -1314,31 +1592,41 @@ class SessionMixin:
 
         只有确认没有动态来源时才按 DIV 分频；任何动态来源都立即复位相位，
         让下一帧立刻刷新（不会出现「刚有变化却仍按旧相位跳过」）。
+
+        C10：空闲换频期间直接整帧跳过地图同步（不再按 DIV 隔帧刷）——此时
+        定时器已经是 UI_IDLE_FRAME_HZ，且调度器刚刚确认过没有任何动态来源；
+        面板模式在这一支下也按静止处理（面板正文只在动作后经 refresh_view 重建）。
         """
+        dynamic = self._map_frame_is_dynamic(
+            toast_shown=toast_shown, settlement_active=settlement_active,
+            new_message=new_message, pending_ticker=pending_ticker,
+            explosion=explosion, tutorial_active=tutorial_active,
+            map_view=map_view, ignore_panel_mode=getattr(self, "_idle_mode", False))
         divisor = self._idle_frame_div
-        if divisor <= 1 or self._map_frame_is_dynamic(
-                toast_shown=toast_shown, settlement_active=settlement_active,
-                new_message=new_message, pending_ticker=pending_ticker,
-                explosion=explosion, tutorial_active=tutorial_active,
-                map_view=map_view):
+        if divisor <= 1 or dynamic:
             self._idle_frame_phase = 0
             return False
+        if getattr(self, "_idle_mode", False):
+            self._idle_frame_phase = 0
+            return True
         self._idle_frame_phase = (self._idle_frame_phase + 1) % divisor
         return self._idle_frame_phase != 0
 
     def _map_frame_is_dynamic(self, *, toast_shown: bool, settlement_active: bool,
                               new_message: bool, pending_ticker: bool,
                               explosion: bool, tutorial_active: bool,
-                              map_view) -> bool:
+                              map_view, ignore_panel_mode: bool = False) -> bool:
         """地图这一帧是否有动态来源（C9 的「不跳过」白名单）。
 
         注意 _fx_active 不在这里：它是「FX 画布开着」的常驻标记，正常游玩中
         20Hz 的 _fx_tick 每帧都会把它置真（实测空闲时也为 True）。真正的动态
         来源是下面的瞬时 FX 队列（弹道/粒子/战斗脉冲/波纹/短光/命中涟漪）。
         """
-        if self.home_mode or self.panel_mode != "world":
+        if self.home_mode or (self.panel_mode != "world" and not ignore_panel_mode):
             # 面板/主页帧一律按动态处理，不参与 C9 分频（既有语义：面板内容
             # 可能随世界状态变化；tests/test_idle_gc_261022.py 钉住这一点）。
+            # ignore_panel_mode 只由 C10 的空闲调度传入：主页仍不忽略，因为
+            # 主页有独立的 _home_timer 与牌匾流光。
             return True
         if self._held_key is not None or getattr(self, "_held_direction", None) is not None:
             return True
@@ -1372,6 +1660,12 @@ class SessionMixin:
         return False
 
     def on_unmount(self) -> None:
+        self._legacy_wakeup_mounted = False
+        detach = getattr(self.session, 'set_completion_wakeup', None)
+        if callable(detach):
+            detach(None)
+        from ..presentation_events import release_presentation_events
+        release_presentation_events(self)
         from ...realm_glyphs import set_character_style
         set_character_style(None)
         painter = getattr(self, "_world_painter", None)
@@ -1384,7 +1678,10 @@ class SessionMixin:
             self._native_image_plane = None
         layer = getattr(self,'layer_observation',None)
         if layer is not None and layer.context == self._layer_context():
-            self.session.state.hover_target = layer.previous.get('_world_hover_target')
+            target = layer.previous.get('_world_hover_target')
+            submit_presentation(self.session, self.session.state,
+                                'clear_hover' if target is None else 'hover',
+                                *(() if target is None else target))
         self.layer_observation = None
         self._map_packets = []
         self._map_packet_image = None
@@ -1395,10 +1692,19 @@ class SessionMixin:
             self._home_timer.stop()
         if self._game_frame_timer is not None:
             self._game_frame_timer.stop()
+        gc_idle_timer = getattr(self, '_gc_idle_timer', None)
+        if gc_idle_timer is not None:
+            gc_idle_timer.stop()
         if self._presentation_timer is not None:
             self._presentation_timer.stop()
             self._presentation_timer_running = False
-        if not self.home_mode and not self.session.state.run_over and not self.save_disabled:
+        if getattr(self.session, 'asynchronous', False):
+            self.session.close(save=not self.home_mode and not self.session.state.run_over
+                               and not self.save_disabled)
+            suspended = getattr(self, '_tutorial_home_session', None)
+            if suspended and getattr(suspended[0], 'asynchronous', False):
+                suspended[0].close(save=False)
+        elif not self.home_mode and not self.session.state.run_over and not self.save_disabled:
             self.session.save_and_exit()
         # 停掉音乐并释放音频设备（内部全降级，未初始化时是空操作）。
         sfx.shutdown()
@@ -1410,3 +1716,4 @@ class SessionMixin:
                 gc.unfreeze()
             except Exception:
                 pass
+

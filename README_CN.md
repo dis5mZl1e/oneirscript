@@ -86,18 +86,17 @@
 
 ## 下载
 
-**下载 v0.1.1：** 按系统与处理器选择发行包。
+**下载 v0.1.2：** 本版中文仅提供 Windows 包。
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Windows-x86_64-zh.zip) |
-| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-Linux-x86_64-zh.tar.gz) |
-| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-arm64-zh.zip) |
-| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.1/Oneirscript-v0.1.1-20261101-macOS-Intel-zh.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Windows-x86_64-zh.zip) |
 
-[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.1)
+[All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)
 
-请完整解压。桌面包已包含终端与字体，无需安装 Python。macOS 包未签名、未公证，若被拦截请在“系统设置 → 隐私与安全性”选择“仍要打开”；Linux 需要图形桌面。
+英文版另提供 Linux 与 macOS（Apple Silicon / Intel）包；中文版本版仅发布 Windows 包。
+
+本版中文仅提供 Windows 包；Linux/macOS 说明适用于英文版发行包。请完整解压。桌面包已包含终端与字体，无需安装 Python。macOS 包未签名、未公证，若被拦截请在“系统设置 → 隐私与安全性”选择“仍要打开”；Linux 需要图形桌面。
 
 [返回目录](#zh) · [English](README_EN.md#en-download)
 
@@ -183,10 +182,10 @@ python run_demo.py --smoke --save-dir save-smoke
 
 ### 安装 Python 分发包
 
-v0.1.1 Release 同时提供 Python 3.11+ 的 wheel 与源码分发包。下载 `oneirscript-0.1.1-py3-none-any.whl` 后安装并启动：
+v0.1.2 Release 同时提供 Python 3.11+ 的 wheel 与源码分发包。下载 `oneirscript-0.1.2-py3-none-any.whl` 后安装并启动：
 
 ```sh
-python -m pip install oneirscript-0.1.1-py3-none-any.whl
+python -m pip install oneirscript-0.1.2-py3-none-any.whl
 oneirscript
 ```
 

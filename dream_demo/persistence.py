@@ -2,6 +2,7 @@ from __future__ import annotations
 from .materials import DOOR_KINDS
 
 from dataclasses import asdict
+from copy import deepcopy
 import json
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -215,6 +216,8 @@ class SaveManager:
         self._async_executor: ThreadPoolExecutor | None = None
         self._async_futures: list[Future] = []
         self._async_error: Exception | None = None
+        self._async_queue_lock = threading.Lock()
+        self._async_replaceable = None
         # UI 契约：本次 load() 是否真的执行了旧档迁移。只有 True 时调用方才需要
         # 立刻把迁移结果落盘；普通新档为 False。读档失败路径也必须保证属性存在。
         self.load_migrated: bool = False
@@ -231,12 +234,33 @@ class SaveManager:
         except Exception as error:
             # 上一次后台编码失败不该阻断这一次落盘：记下来，照常写新快照。
             self._record_save_diagnostic(error, ['pending-async'])
-        payload = {"schema_version": SAVE_SCHEMA_VERSION, "state": self._encode_safe(state)}
-        self.next_file.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        # 2026-11-05：同步存档只序列化一次。旧路径是 _encode_safe 先 dumps
+        # 一遍做 JSON 安全自检、save 再 dumps 一遍真正写盘——同一份 3MB
+        # 载荷编码两遍（实测多花约 40ms）。这里直接用「序列化即自检」：
+        # 首次 dumps 失败才隔离元组键重试，语义（含诊断记录）不变。
+        self.next_file.write_text(self._encode_text(state), encoding="utf-8")
         if self.primary.exists():
             shutil.copyfile(self.primary, self.backup)
         self.next_file.replace(self.primary)
         self.save_catalog(state.catalog)
+
+    def _encode_text(self, state: GameState) -> str:
+        """把一次存档编码成最终 JSON 文本；序列化本身就是安全自检。
+
+        与 _encode_safe 的区别只在于不再预先单独 dumps 一遍：首次 dumps 抛
+        TypeError 时才走隔离坏键的复制路径（并记录诊断），成功则直接用这份
+        文本写盘。后台异步路径仍用 _encode_safe（它要拿到 dict 里的 catalog
+        与完整状态，序列化在写盘线程完成）。
+        """
+        encoded = self._encode(state)
+        try:
+            return json.dumps({"schema_version": SAVE_SCHEMA_VERSION, "state": encoded},
+                              ensure_ascii=False, separators=(",", ":"))
+        except TypeError as error:
+            fixed, paths = _sanitize_json_keys(encoded)
+            self._record_save_diagnostic(error, paths)
+            return json.dumps({"schema_version": SAVE_SCHEMA_VERSION, "state": fixed},
+                              ensure_ascii=False, separators=(",", ":"))
 
     def _encode_safe(self, state: GameState) -> dict[str, Any]:
         """编码后先自检一次 JSON 安全性；发现元组键就隔离并记诊断，绝不抛出。
@@ -284,19 +308,40 @@ class SaveManager:
     def _track_async_future(self, future: Future) -> None:
         self._async_futures.append(future)
 
-        def done(fut: Future) -> None:
+    def _drain_completed_async_saves(self) -> None:
+        """Retire completed work without waiting or discarding its failure."""
+        pending = []
+        for future in self._async_futures:
+            if not future.done():
+                pending.append(future)
+                continue
             try:
-                fut.result()
-            except Exception as error:  # 磁盘错误不能影响游戏线程
-                self._async_error = error
-        future.add_done_callback(done)
+                future.result()
+            except Exception as error:
+                if self._async_error is None:
+                    self._async_error = error
+        self._async_futures = pending
+
+    def _write_encoded_with_catalog(self, encoded: dict[str, Any]) -> None:
+        # The detached catalog belongs to the same snapshot as run.json. Both
+        # writes share the single FIFO worker; neither holds the action lock.
+        self.save_catalog(encoded['catalog'])
+        self._write_encoded_async(encoded)
 
     def _encode_and_write_with_lock(self, state: GameState, lock) -> None:
         """在动作锁内编码，随后在锁外写盘；主线程不再执行 _encode。"""
         with lock:
             encoded = self._encode_safe(state)
-            self.save_catalog(state.catalog)
-        self._write_encoded_async(encoded)
+        self._write_encoded_with_catalog(encoded)
+
+    def _write_replaceable_save(self, request) -> None:
+        # Taking a request makes it nonreplaceable before encoding begins.
+        # Callers sharing its Future all observe the same durable write/error.
+        with self._async_queue_lock:
+            if self._async_replaceable is request:
+                self._async_replaceable = None
+            state, lock = request['state'], request['lock']
+        self._encode_and_write_with_lock(state, lock)
 
     def save_async(self, state: GameState, lock=None) -> Future:
         """Encode/write in one background worker; main thread returns immediately.
@@ -305,20 +350,56 @@ class SaveManager:
         读到半更新状态。调用方若需要确定性（测试/退出），用
         wait_for_pending_async_saves()。目录/文件命名不变，失败记录在
         _async_error。
+
+        同一 state/lock 尚未开始的周期请求共用一个 Future；它们本来就
+        读取工作线程开始编码时的状态。Future 只在替代写盘完成后结束。
+        周期请求一经接受就不可取消，避免一位等待者取消其他调用者的存档。
+        无锁调用保留调用时的独立快照，并作为 FIFO 顺序屏障。
         """
         # 单工作线程保证 FIFO 写序；最多积压 4 个待写快照再阻塞，避免
         # 每次周期存档都为上一次写盘等待而失去异步收益。
+        self._drain_completed_async_saves()
+        if lock is not None:
+            with self._async_queue_lock:
+                request = self._async_replaceable
+                if (request is not None and request['state'] is state
+                        and request['lock'] is lock):
+                    return request['future']
         if len(self._async_futures) >= 4:
             self.wait_for_pending_async_saves()
         executor = self._ensure_async_executor()
         if lock is None:
             # 兼容旧调用/测试：编码在调用线程完成，保存调用时的确定性快照。
             encoded = self._encode_safe(state)
-            future = executor.submit(self._write_encoded_async, encoded)
+            with self._async_queue_lock:
+                # An exact call-time snapshot is a FIFO ordering barrier.
+                self._async_replaceable = None
+            future = executor.submit(self._write_encoded_with_catalog, encoded)
             self._track_async_future(future)
-            self.save_catalog(state.catalog)
             return future
-        future = executor.submit(self._encode_and_write_with_lock, state, lock)
+        with self._async_queue_lock:
+            request = {'state': state, 'lock': lock}
+            # Expose an accepted-work observation, never the executor's queued
+            # Future: cancelling that would skip both the write and cleanup.
+            future = Future()
+            future.set_running_or_notify_cancel()
+            request['future'] = future
+            work = executor.submit(self._write_replaceable_save, request)
+            self._async_replaceable = request
+
+        def completed(work):
+            # Also retire a request if executor shutdown skipped its worker.
+            with self._async_queue_lock:
+                if self._async_replaceable is request:
+                    self._async_replaceable = None
+            try:
+                result = work.result()
+            except BaseException as error:
+                future.set_exception(error)
+            else:
+                future.set_result(result)
+
+        work.add_done_callback(completed)
         self._track_async_future(future)
         return future
 
@@ -328,7 +409,8 @@ class SaveManager:
             try:
                 future.result()
             except Exception as error:
-                self._async_error = error
+                if self._async_error is None:
+                    self._async_error = error
         if self._async_error is not None:
             error, self._async_error = self._async_error, None
             raise OSError(f"后台存档失败：{error}")
@@ -860,6 +942,11 @@ class SaveManager:
         只有 _encode 会传入 cache；cache 为 None 时继续走逐格回退，保持
         ``_encode_cell(cache=None)`` 的 list.index 语义不变。
         """
+        if cache is not None:
+            from .core.material_save_cache import encode_owned
+            owned = encode_owned(rows, tables, cache, SaveManager)
+            if owned is not None:
+                return owned
         if (cache is not None and _kernel_enabled("save")
                 and _env_flag("CY_KERNEL_SAVE_ENCODE", default=False)):
             return _kernel_encode_cells(rows, tables, cache)
@@ -869,10 +956,21 @@ class SaveManager:
     @staticmethod
     def _encode_layer(snapshot: LayerSnapshot, tables: dict[str, list[str]],
                      cache: dict[str, dict[str, int]] | None = None) -> dict[str, Any]:
+        from .core.metadata_versions import layer_metadata
+        # Preserve the reference dictionary's evaluation order, including
+        # authored depth/seed getters which may change the Cell graph.
+        encoded_depth, encoded_seed = snapshot.depth, snapshot.seed
+        encoded_cells = SaveManager._encode_cells(snapshot.cells, tables, cache)
+        if type(snapshot) is LayerSnapshot:
+            metadata = layer_metadata(snapshot, asdict)
+            if metadata is not None:
+                metadata['depth'], metadata['seed'] = encoded_depth, encoded_seed
+                metadata['cells'] = encoded_cells
+                return metadata
         return {
-            "depth": snapshot.depth,
-            "seed": snapshot.seed,
-            "cells": SaveManager._encode_cells(snapshot.cells, tables, cache),
+            "depth": encoded_depth,
+            "seed": encoded_seed,
+            "cells": encoded_cells,
             "enemies": [asdict(enemy) for enemy in snapshot.enemies],
             "world_items": [asdict(item) for item in snapshot.world_items],
             "events": [asdict(event) for event in snapshot.events],
@@ -885,12 +983,12 @@ class SaveManager:
             "height": snapshot.height,
             "logic_scenarios": {k: str(v) for k, v in snapshot.logic_scenarios.items()},
             "logic_valves": {k: list(v) for k, v in snapshot.logic_valves.items()},
-            "logic_boards": snapshot.logic_boards,
-            "logic_fences": snapshot.logic_fences,
-            "enemy_skill_fields": snapshot.enemy_skill_fields,
-            "realm_bg_zones": snapshot.realm_bg_zones,
+            "logic_boards": deepcopy(snapshot.logic_boards),
+            "logic_fences": deepcopy(snapshot.logic_fences),
+            "enemy_skill_fields": deepcopy(snapshot.enemy_skill_fields),
+            "realm_bg_zones": deepcopy(snapshot.realm_bg_zones),
             "material_time": snapshot.material_time,
-            "realm_features": snapshot.realm_features,
+            "realm_features": deepcopy(snapshot.realm_features),
         }
 
     @staticmethod
@@ -958,8 +1056,17 @@ class SaveManager:
         # 顶层浅拷贝（asdict 会递归深拷贝全部层快照的整幅地图，是存档
         # 耗时的大头）；少量实体逐个 asdict，格子走紧凑编码。
         runtime_caches = ("_liquid_cells", "_gas_cells", "_periodic_liquid_cells", "_periodic_gas_cells", "_flame_cells", "_special_cells", "_ventilation_cells", "_exhaust_cells", "_phase_cells",
-                          "_material_index_ready", "_material_index_ready_value",
-                          "_sight_revision", "_visible_cache",
+                          "_awake_liquid", "_awake_gas", "_awake_phase", "_touch_tick",
+                          "_decay_hold", "_decay_due", "_decay_heap", "_decay_interval_used",
+                          "_gas_absorb_cells", "_dial_tone_cells",
+                          "_material_dirty_on", "_material_canonical_on", "_material_step",
+                          "_material_full_step", "_material_full_interval",
+                          "_material_grid", "_material_grid_on", "_material_grid_error",
+                          "ui_dirty", "ui_revision", "material_revision",
+                          "_material_index_ready", "_material_index_ready_value", "_material_index_cursor",
+                          "_material_index_projection",
+                          "_sight_revision", "_visible_cache", "_sight_radius_cache",
+                          "_narrow_light_cache",
                           # 本帧机械光延长表（core/vision/glow.publish_frame）：键是格坐标，
                           # 进了 JSON 就是「keys must be ... not tuple」；视野随时可重算。
                           "_glow_frame",
@@ -971,6 +1078,11 @@ class SaveManager:
                           "_kill_full_reward", "_superfluid_notified_depths", "_piezo_stacks",
                           "_recipe_notified_depths",
                           "explosion_cells", "explosion_age", "_last_full_scan_time",
+                          "_presentation_explosions", "_presentation_explosion_seq",
+                          "_presentation_map_identity",
+                          "_presentation_explosion_recovery",
+                          "_command_context_token",
+                          "ticker_notes",
                           "_mind_fences", "_rune_cooldowns", "_position_history", "explosion_blasts",
                           "gate_inputs", "_logic_energized", "_gate_evaluating",
                           "realm_gate_open", "realm_plate_order", "realm_plate_progress",
@@ -1015,8 +1127,11 @@ class SaveManager:
                           # 里面还带 id()，不入档。
                           "_light_fixture_index",
                           "pending_event_id", "pending_event_uid", "pending_npc_id")  # 运行期缓存/对话框瞬态不入档
+        # These fields used to retain live lists/dicts after the action lock
+        # was released. Copy only the retained fields; large cell arrays and
+        # dataclass objects below already receive fresh encoded containers.
         data = {
-            key: value
+            key: deepcopy(value)
             for key, value in state.__dict__.items()
             if key not in runtime_caches
             and key not in ("cells", "layer_states", "player", "enemies", "world_items",
@@ -1026,14 +1141,14 @@ class SaveManager:
         }
         # 世界记录（§12.2）独立于层快照存：远层重建后仍要知道谁在这儿、
         # 设施还剩几次、哪几格被永久改过。
-        data["world_ledger"] = state.world_ledger.to_dict()
+        data["world_ledger"] = deepcopy(state.world_ledger.to_dict())
         data["board"] = state.board.to_dict()
         data["player"] = asdict(state.player)
         data["enemies"] = [asdict(enemy) for enemy in state.enemies]
         data["world_items"] = [asdict(item) for item in state.world_items]
         data["events"] = [asdict(event) for event in state.events]
         data["inventory"] = [asdict(item) for item in state.inventory]
-        data["catalog"] = state.catalog
+        data["catalog"] = deepcopy(state.catalog)
         data["hover_target"] = list(state.hover_target) if state.hover_target else None
         data["layer_states"] = {
             key: SaveManager._encode_layer(snapshot, tables, cache)
@@ -1331,10 +1446,12 @@ class SaveManager:
         return migrated, bool(legacy_keys)
 
     def _decode(self, data: dict[str, Any]) -> GameState:
+        from .core.metadata_versions import adopt_private, OwnedList
+        from .core.spatial_index import SpatialActors
         tables = data.get("tables") or SaveManager._make_tables()
         cells = SaveManager._decode_cells(data["cells"], tables)
-        player = self._decode_entity(data["player"])
-        enemies = [self._decode_entity(enemy) for enemy in data.get("enemies", [])]
+        player = adopt_private(self._decode_entity(data["player"]))
+        enemies = [adopt_private(self._decode_entity(enemy)) for enemy in data.get("enemies", [])]
         def decode_item(item: dict[str, Any]) -> Item:
             # 名称以定义表为准：物品名从不在运行期被改写（始终由定义快照而来），
             # 因此读档时刷新可让老存档里带 emoji 尾缀、或措辞更新过的旧名字
@@ -1367,7 +1484,7 @@ class SaveManager:
             )
             from .core.firing_sources import ensure_magazine
             ensure_magazine(decoded)
-            return decoded
+            return adopt_private(decoded)
 
         def decode_world_item(entry: dict[str, Any]) -> WorldItem:
             return WorldItem(item=decode_item(entry["item"]), x=entry["x"], y=entry["y"],
@@ -1382,9 +1499,9 @@ class SaveManager:
                         if layer_cells and 0 <= item.y < len(layer_cells)
                         and 0 <= item.x < len(layer_cells[0]) else None)
                 item.sync_surface(cell)
-            return LayerSnapshot(
+            return adopt_private(LayerSnapshot(
                 depth=entry["depth"], seed=entry["seed"], cells=layer_cells,
-                enemies=[self._decode_entity(enemy) for enemy in entry.get("enemies", [])],
+                enemies=SpatialActors(self._decode_entity(enemy) for enemy in entry.get("enemies", [])),
                 world_items=layer_items,
                 events=[WorldEvent(**event) for event in entry.get("events", [])],
                 player_x=entry["player_x"], player_y=entry["player_y"],
@@ -1401,7 +1518,7 @@ class SaveManager:
                 realm_bg_zones=normalize_bg_zones(entry.get("realm_bg_zones", []),
                                                 len(layer_cells[0]) if layer_cells else 0,
                                                 len(layer_cells)),
-            )
+            ))
 
         equipped = dict(data.get("equipped", {}))
         if "依附物" in equipped:  # 旧存档单依附槽迁移到第一个标准槽
@@ -1435,8 +1552,8 @@ class SaveManager:
                                    else max(0, int(data.get("legacy_basic_magazine") or 0))),
             legacy_basic_reload_steps=max(0, int(data.get("legacy_basic_reload_steps") or 0)),
             legacy_basic_reload_paid=bool(data.get("legacy_basic_reload_paid", False)),
-            world_items=[decode_world_item(item) for item in data.get("world_items", [])],
-            events=[WorldEvent(**event) for event in data.get("events", [])],
+            world_items=OwnedList(decode_world_item(item) for item in data.get("world_items", [])),
+            events=OwnedList(adopt_private(WorldEvent(**event)) for event in data.get("events", [])),
             inventory=decoded_inventory,
             board=board,
             memory_fragments=data.get("memory_fragments", []),
@@ -1814,10 +1931,49 @@ class GameSession:
             self._provisional = False
 
     def apply(self, command: str, *args: Any, choice: str | None = None) -> ActionResult:
+        if (command == 'catalog_control' and len(args) == 1
+                and type(args[0]) is str and args[0] in ('clear', 'unlock')
+                and self.persistence_enabled):
+            # Pending writers can need _action_lock to capture their state.
+            # Drain before acquiring it, so a prior catalog cannot be written
+            # back after a clear and the barrier cannot deadlock the owner.
+            self.manager.wait_for_pending_async_saves()
         with self._action_lock:
             return self._apply_locked(command, *args, choice=choice)
 
     def _apply_locked(self, command: str, *args: Any, choice: str | None = None) -> ActionResult:
+        if command in ('commit_world_tamper', 'commit_range_tamper'):
+            from .core.world_tamper_control import prepare_world_tamper
+            prepared = prepare_world_tamper(self.state, command, *args)
+            if isinstance(prepared, ActionResult):
+                return prepared
+            args = (prepared,)
+        if command == 'tutorial_view':
+            from .core.tutorial_control import apply_tutorial
+            result = apply_tutorial(self, *args)
+            if result.data.get('state_changed'):
+                self._dirty = True
+            return result
+        if command == 'catalog_control':
+            from .core.catalog_control import apply_catalog_control
+            result = apply_catalog_control(self, *args)
+            if result.data.get('state_changed'):
+                self._dirty = True
+            return result
+        if command == 'presentation_control':
+            from .core.presentation_control import apply_presentation
+            result = apply_presentation(self.state, *args)
+            if result.data.get('state_changed'):
+                self._dirty = True
+            return result
+        if command == 'ui_control':
+            # Zero-time controls share the owner/save lock, but are not actions:
+            # root frames, projectile replay, clocks and exploration stay intact.
+            from .core.ui_control import apply_control
+            result = apply_control(self.state, *args)
+            if result.data.get('state_changed'):
+                self._dirty = True
+            return result
         # Finalize equipment's root frame before checking death and saving history.
         practice_before = {'abilities':len(self.state.abilities),
                            'position':(self.state.player.x,self.state.player.y),
@@ -1970,6 +2126,11 @@ class GameSession:
             # 篡改提交（规格 §5）：参数是 TamperRequest，不是坐标整数。
             from .core.tampering import commit_tamper
             result = commit_tamper(self.state, args[0])
+        elif command in ('commit_world_tamper', 'commit_range_tamper'):
+            from .core.world_tamper_control import execute_world_tamper
+            result = execute_world_tamper(self.state, command, args[0])
+        elif command == 'debug_descend':
+            result = self.state.descend(ignore_dissolution=True)
         elif command == "throw":
             result = self.state.throw_item(*args)
         elif command == "throw_target":

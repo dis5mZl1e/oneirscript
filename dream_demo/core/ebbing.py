@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from .metadata_versions import OwnedList
+
 from ..i18n import tr
 
 # 每 6 个客观回合吞掉一圈边界。
@@ -88,8 +90,8 @@ class EbbingMixin:
             if not cell.solid:
                 self.configure_wall(cell, EBBING_WALL_KIND)
         if rimmed:
-            self.world_items = [it for it in self.world_items if (it.x, it.y) not in rimmed]
-            self.events = [e for e in self.events if (e.x, e.y) not in rimmed]
+            self.world_items = OwnedList(it for it in self.world_items if (it.x, it.y) not in rimmed)
+            self.events = OwnedList(e for e in self.events if (e.x, e.y) not in rimmed)
             self.enemies = [e for e in self.enemies if (e.x, e.y) not in rimmed]
             self._reset_material_index()
         self.messages.append(

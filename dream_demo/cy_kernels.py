@@ -6,7 +6,13 @@ knowledge 除外）；未编译、内核缺失或环境变量关闭时，调用�
 
     ONEIRSCRIPT_CY_KERNELS=0            关闭全部内核
     ONEIRSCRIPT_CY_KERNEL_SAVE=0        只关闭指定内核
-    可用名称：save / fx / sight / gas / raster / knowledge
+    可用名称：save / fx / sight / gas / raster / knowledge / phase / recipe
+
+phase / recipe（方案 1，2026-11-04）：只做候选筛选，默认关闭。玩家存档与
+160×100（9731 液格）大图 A/B 均为 −0.09ms/步，远低于「每步 p50 降低 ≥2ms」
+的保留线：筛选本身只有 0.27ms/0.04ms，成本真正落在通过筛选后的逐格结算，
+编译扫描覆盖不到。已移出 build_cython_ext.MODULES；源码、回退路径与
+ONEIRSCRIPT_CY_KERNEL_PHASE=1 / ONEIRSCRIPT_CY_KERNEL_RECIPE=1 复测开关保留。
 
 raster 默认关闭：2026-10-27 复测（101 帧同进程配对，中位差 0.0ms、均值
 −0.05ms）属噪声内无实际改善；保留源码与开关，但不再默认走内核。
@@ -20,10 +26,11 @@ from __future__ import annotations
 
 from .env_compat import get
 
-_NAMES = frozenset({"save", "fx", "sight", "gas", "raster", "knowledge"})
+_NAMES = frozenset({"save", "fx", "sight", "gas", "raster", "knowledge",
+                    "phase", "recipe"})
 _FALSE = frozenset({"0", "false", "no", "off"})
 # 逐项默认值：未列出的默认开启。
-_DEFAULT_OFF = frozenset({"raster", "knowledge"})
+_DEFAULT_OFF = frozenset({"raster", "knowledge", "phase", "recipe"})
 
 
 def enabled(name: str) -> bool:

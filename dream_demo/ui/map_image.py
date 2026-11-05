@@ -609,7 +609,8 @@ class SceneImageCache:
     ONEIRSCRIPT_IMAGE_PAN_REUSE=0 关闭平移增量（平移帧仍整张重建）。
     """
 
-    def __init__(self):
+    def __init__(self, *, image_factory=None):
+        self._new_image = Image.new if image_factory is None else image_factory
         self.geometry = None
         self.viewport = None
         self.cells: dict[tuple[int, int], tuple] = {}
@@ -620,6 +621,8 @@ class SceneImageCache:
         self.pan_reuses = 0
         self.painted_cells = 0
         self.last_rebuild_reason = ''
+        self._source_scene = None
+        self._overlay_positions = frozenset()
 
     # -- 整张重建（与旧实现逐像素一致） --------------------------------
     def _rebuild(self, scene, geometry, viewport, backgrounds, effect_glyphs, reason,
@@ -627,7 +630,7 @@ class SceneImageCache:
         cell_px, show_grid = geometry[0], geometry[1]
         cw, ch = cell_px
         left, top, width, height = viewport
-        image = Image.new('RGB', (width*cw, height*ch), UNKNOWN)
+        image = self._new_image('RGB', (width*cw, height*ch), UNKNOWN)
         tokens = {}
         backgrounds = backgrounds or {}
         effect_glyphs = effect_glyphs or {}
@@ -689,12 +692,15 @@ class SceneImageCache:
         cov_top, cov_bottom = max(old_top, top), min(old_top+old_h, top+height)
         if cov_right <= cov_left or cov_bottom <= cov_top:
             raise _PanFallback('jump')
-        image = Image.new('RGB', (width*cw, height*ch), UNKNOWN)
+        image = self._new_image('RGB', (width*cw, height*ch), UNKNOWN)
         image.paste(
             self.image.crop(((cov_left-old_left)*cw, (cov_top-old_top)*ch,
                              (cov_right-old_left)*cw, (cov_bottom-old_top)*ch)),
             ((cov_left-left)*cw, (cov_top-top)*ch))
-        tokens = dict(self.cells)
+        # Departed coordinates cannot contribute pixels to the next viewport.
+        # Keeping them makes every subsequent pan copy the entire explored path.
+        tokens = {pos: token for pos, token in self.cells.items()
+                  if left <= pos[0] < left + width and top <= pos[1] < top + height}
         backgrounds = backgrounds or {}
         effect_glyphs = effect_glyphs or {}
         fog_backgrounds = fog_backgrounds or {}
@@ -787,6 +793,41 @@ class SceneImageCache:
 
     def render(self, scene, cell_px, show_grid, backgrounds, effect_glyphs, fog_backgrounds=None,
                glyph_layers=None, protected_cells=frozenset()):
+        result = self._render_current(scene, cell_px, show_grid, backgrounds,
+                                      effect_glyphs, fog_backgrounds,
+                                      glyph_layers, protected_cells)
+        # SceneSnapshot copies its maps into read-only proxies, and SceneCell /
+        # SceneGlyph are frozen values. Only this exact snapshot can reuse its
+        # base facts; a replacement snapshot takes ordinary full token checking.
+        self._source_scene = scene
+        self._overlay_positions = frozenset().union(
+            backgrounds or (), effect_glyphs or (), fog_backgrounds or (),
+            glyph_layers or (), protected_cells or ())
+        return result
+
+    def _update_overlay_positions(self, scene, positions, backgrounds, effect_glyphs,
+                                  fog_backgrounds, glyph_layers, protected_cells):
+        left, top, _, _ = self.viewport
+        backgrounds, effect_glyphs = backgrounds or {}, effect_glyphs or {}
+        fog_backgrounds, glyph_layers = fog_backgrounds or {}, glyph_layers or {}
+        protected_cells = protected_cells or ()
+        for pos in positions:
+            cell = scene.cells.get(pos)
+            if cell is None:
+                continue
+            token = _cell_token(cell, scene.visuals.get(pos), backgrounds.get(pos),
+                                fog_backgrounds.get(pos), effect_glyphs.get(pos),
+                                glyph_layers.get(pos), pos in protected_cells)
+            if self.cells.get(pos) != token:
+                self.cells[pos] = token
+                _paste_cell(self.image, pos, cell, scene.visuals.get(pos),
+                            scene.realm_id, self.geometry[0], self.geometry[1],
+                            token, scene.observe_layer, left, top)
+                self.painted_cells += 1
+
+    def _render_current(self, scene, cell_px, show_grid, backgrounds, effect_glyphs,
+                        fog_backgrounds=None, glyph_layers=None,
+                        protected_cells=frozenset()):
         cell_px = (int(cell_px[0]), int(cell_px[1]))
         viewport = tuple(int(value) for value in scene.viewport)
         geometry = (cell_px, bool(show_grid), scene.realm_id, scene.observe_layer)
@@ -806,6 +847,14 @@ class SceneImageCache:
                 self._rebuild(scene, geometry, viewport, backgrounds, effect_glyphs, 'sparse',
                               fog_backgrounds, glyph_layers, protected_cells)
                 return self.image
+            if type(scene) is SceneSnapshot and scene is self._source_scene and self._dense:
+                positions = self._overlay_positions.union(
+                    backgrounds or (), effect_glyphs or (), fog_backgrounds or (),
+                    glyph_layers or (), protected_cells or ())
+                if len(positions) < len(scene.cells):
+                    self._update_overlay_positions(scene, positions, backgrounds,
+                        effect_glyphs, fog_backgrounds, glyph_layers, protected_cells)
+                    return self.image
             self._update(scene, viewport, backgrounds, effect_glyphs, fog_backgrounds,
                          glyph_layers, protected_cells)
             return self.image

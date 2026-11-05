@@ -42,6 +42,38 @@ def _compose_frame(canvas, origin, sprite, cell_px, player, camera, size):
     return image
 
 
+class _ScaledFrameCache:
+    """One exact Pillow result, reusable only for versioned immutable assets."""
+
+    def __init__(self):
+        self._key = self._image = None
+
+    def compose(self, packet, player, camera, size):
+        from PIL import Image
+        versions = packet.get('_asset_versions')
+        viewport = tuple(packet['viewport_size'])
+        crop = tuple(round((camera[i] - packet['origin'][i]) * packet['cell_px'][i])
+                     for i in range(2))
+        position = tuple(round((player[i] - camera[i]) * packet['cell_px'][i])
+                         for i in range(2))
+        key = ((tuple(sorted(versions.items())), viewport, tuple(size), crop, position)
+               if versions else None)
+        if key is not None and key == self._key:
+            return self._image
+        image = _compose_frame(packet['canvas'], packet['origin'], packet['sprite'],
+                               packet['cell_px'], player, camera, viewport)
+        if image.size != size:
+            image = image.resize(size, Image.Resampling.BILINEAR)
+        overlay = packet.get('text_overlay')
+        if overlay is not None:
+            if overlay.size != size:
+                overlay = overlay.resize(size, Image.Resampling.BILINEAR)
+            image = image.convert('RGBA')
+            image.alpha_composite(overlay)
+        self._key, self._image = key, image
+        return image
+
+
 def _player_sprite(visual, cell_px, scale=.82):
     from PIL import Image
     from .map_presentation import glyph_mask_compatible, glyph_source, _ink_rgb
@@ -56,6 +88,77 @@ def _player_sprite(visual, cell_px, scale=.82):
         ink.putalpha(mask.getchannel('A'))
     sprite.alpha_composite(ink, ((cell_px[0]-ink.width)//2, (cell_px[1]-ink.height)//2))
     return sprite
+
+
+def _cached_player_sprite(view, visual, cell_px, scale, token):
+    # Keep one unmasked glyph template. Packet-specific difference masks must
+    # never mutate this template or carry another cell's background into alpha.
+    key = (token, visual.text, visual.color, tuple(cell_px), scale)
+    cached = getattr(view, '_native_player_sprite', None)
+    if cached is None or cached[0] != key:
+        cached = view._native_player_sprite = (key, _player_sprite(visual, cell_px, scale))
+    return cached[1].copy()
+
+
+class _GuardRasterCache:
+    """One permitted edge raster; compare complete rendered inputs."""
+
+    def __init__(self, *, owned=False):
+        self._key = self._image = None
+        self._cache = None
+        if owned:
+            from .map_image import SceneImageCache
+            from ._native_producer_raster import _OwnedRaster
+            self._cache = SceneImageCache(image_factory=_OwnedRaster)
+
+    def render(self, scene, cell_px, token, *, backgrounds=None, effect_glyphs=None,
+               fog_backgrounds=None, glyph_layers=None, protected_cells=frozenset()):
+        from .map_image import _cell_token, render_scene_image
+        backgrounds = backgrounds or {}
+        fog = fog_backgrounds or {}
+        effects = effect_glyphs or {}
+        layers = glyph_layers or {}
+        protected = protected_cells or ()
+        cells = tuple((pos, _cell_token(cell, scene.visuals.get(pos), backgrounds.get(pos),
+                                       fog.get(pos), effects.get(pos), layers.get(pos), pos in protected))
+                      for pos, cell in scene.cells.items())
+        key = (token, tuple(cell_px), scene.viewport, scene.realm_id, scene.observe_layer, cells)
+        if key != self._key:
+            if self._cache is not None and self._key is not None and self._key[0] != token:
+                from .map_image import SceneImageCache
+                from ._native_producer_raster import _OwnedRaster
+                self._cache = SceneImageCache(image_factory=_OwnedRaster)
+            self._image = render_scene_image(scene, cell_px=cell_px, backgrounds=backgrounds,
+                                            effect_glyphs=effects, fog_backgrounds=fog,
+                                            glyph_layers=layers, protected_cells=protected,
+                                            cache=self._cache)
+            self._key = key
+        return self._image
+
+
+def _guard_rasters_for(view, guard_key, count):
+    """Reuse edge caches across scene wrappers only while their geometry matches."""
+    scenes = getattr(view, '_native_guard_scenes', None)
+    rasters = getattr(view, '_native_guard_rasters', None)
+    if scenes is not None and scenes[1] == guard_key and len(rasters or ()) == count:
+        return rasters
+    return [_GuardRasterCache(owned=type(view) is _OwnedNativeView) for _ in range(count)]
+
+
+def _guard_canvas_for(view, extent, cell_px):
+    """Reuse the packet canvas only while its world and pixel geometry match."""
+    from PIL import Image
+    key = (tuple(extent), tuple(cell_px))
+    cached = getattr(view, '_native_guard_canvas', None)
+    if cached is None or cached[0] != key:
+        gl, gt, gr, gb = extent
+        factory = Image.new
+        if type(view) is _OwnedNativeView:
+            from ._native_producer_raster import _OwnedRaster
+            factory = _OwnedRaster
+        cached = (key, factory('RGB', ((gr-gl)*cell_px[0], (gb-gt)*cell_px[1])))
+        view._native_guard_canvas = cached
+    return cached[1]
 
 
 def _build_native_packet(view, image):
@@ -89,7 +192,7 @@ def _build_native_packet(view, image):
     from ..core.map_scene import build_scene
     from .render import render_map
     from .map_presentation import present_scene
-    from .map_image import render_scene_image, _tile, _glyph_scale
+    from .map_image import _tile, _glyph_scale, _cell_token
     from .styles import MOVE_REPEAT_MIN_SECONDS
     left, top, width, height = scene.viewport
     if image.width % width or image.height % height:
@@ -103,7 +206,10 @@ def _build_native_packet(view, image):
                  None, scene.observe_layer, None,
                  view._image_glyph_layers.get(player),
                  player in view._image_protected_cells)
-    sprite = _player_sprite(visual, cell_px, _glyph_scale(cell, *cell_px, False, False))
+    from ..realm_glyphs import presentation_token
+    raster_token = presentation_token()
+    sprite = _cached_player_sprite(view, visual, cell_px,
+                                    _glyph_scale(cell, *cell_px, False, False), raster_token)
     tile_box = ((player[0]-left)*cell_px[0], (player[1]-top)*cell_px[1],
                 (player[0]-left+1)*cell_px[0], (player[1]-top+1)*cell_px[1])
     difference = ImageChops.difference(image.crop(tile_box).convert('RGB'), tile.convert('RGB'))
@@ -124,11 +230,37 @@ def _build_native_packet(view, image):
         gb = min(state.height, top+height+int(adjacent and dy < 0))
         view._native_guard_viewport = scene.viewport
         view._native_guard_extent = (gl, gt, gr, gb)
-    canvas = Image.new('RGB', ((gr-gl)*cell_px[0], (gb-gt)*cell_px[1]))
-    canvas.paste(image, ((left-gl)*cell_px[0], (top-gt)*cell_px[1]))
-    canvas.paste(tile, ((player[0]-gl)*cell_px[0], (player[1]-gt)*cell_px[1]))
-    from ..realm_glyphs import presentation_token
-    guard_key = (presentation_token(), view.symbol_mode, bool(view.animated_combat), (gl, gt, gr, gb))
+    canvas = _guard_canvas_for(view, (gl, gt, gr, gb), cell_px)
+    position = ((left-gl)*cell_px[0], (top-gt)*cell_px[1])
+    tile_position = ((player[0]-gl)*cell_px[0], (player[1]-gt)*cell_px[1])
+    owned = type(view) is _OwnedNativeView
+    if owned:
+        changed_rows = canvas.paste_owned(image, position, 'viewport')
+        recipe = (raster_token, player, scene.realm_id, scene.observe_layer, cell_px,
+                  _cell_token(cell, visual, view._image_effects[0].get(player),
+                              view._image_fog_backgrounds.get(player), None,
+                              view._image_glyph_layers.get(player),
+                              player in view._image_protected_cells))
+        previous_tile = getattr(view, '_native_removed_player', None)
+        if (previous_tile != (canvas, recipe)
+                or any(tile_position[1] <= row < tile_position[1]+tile.height for row in changed_rows)):
+            canvas.paste(tile, tile_position)
+            view._native_removed_player = (canvas, recipe)
+        cached_sprite = getattr(view, '_native_owned_sprite', None)
+        if cached_sprite is None or cached_sprite[0] != recipe:
+            from ._native_producer_raster import _OwnedRaster
+            sprite_owner = _OwnedRaster('RGBA', sprite.size)
+            sprite_owner.paste(sprite, (0, 0))
+            cached_sprite = (recipe, sprite_owner.snapshot())
+            view._native_owned_sprite = cached_sprite
+        sprite = cached_sprite[1]
+    else:
+        canvas.paste(image, position)
+        canvas.paste(tile, tile_position)
+    guard_key = (raster_token, view.symbol_mode, bool(view.animated_combat),
+                 getattr(view, 'explosion_cells', frozenset()),
+                 getattr(view, 'explosion_blasts', ()), getattr(view, 'explosion_age', 0),
+                 (gl, gt, gr, gb))
     cached = getattr(view, '_native_guard_scenes', None)
     if cached is None or cached[0] is not scene or cached[1] != guard_key:
         scenes = []
@@ -143,25 +275,117 @@ def _build_native_packet(view, image):
                 state, viewport_width=ew, viewport_height=eh, origin=(ex, ey),
                 symbol_mode=view.symbol_mode, cell_w=max(2, view.cell_w), cell_h=view.cell_h,
                 tutorial_cells=view.tutorial_cells,
-                explosion_cells=None if view.animated_combat else getattr(state, 'explosion_cells', None),
-                explosion_blasts=getattr(state, 'explosion_blasts', None),
-                explosion_age=getattr(state, 'explosion_age', 0),
+                explosion_cells=None if view.animated_combat else getattr(view, 'explosion_cells', None),
+                explosion_blasts=getattr(view, 'explosion_blasts', None),
+                explosion_age=getattr(view, 'explosion_age', 0),
                 markers=view.sound_markers or None, visuals=visuals, visible=visible)
             edge_scene = build_scene(state, viewport=edge, cell_w=view.cell_w, cell_h=view.cell_h,
                                      legacy_terrain=not bool(getattr(state, 'map_memory_enabled', False)),
                                      visible=visible)
             scenes.append(present_scene(edge_scene, rendered, visuals=visuals,
                                         priority=set(view.sound_markers) | set(view.tutorial_cells or ())))
+        rasters = _guard_rasters_for(view, guard_key, len(scenes))
         view._native_guard_scenes = (scene, guard_key, scenes)
-    for edge_scene in view._native_guard_scenes[2]:
-        edge_image = render_scene_image(edge_scene, cell_px=cell_px,
+        view._native_guard_rasters = rasters
+    for edge_scene, raster in zip(view._native_guard_scenes[2], view._native_guard_rasters):
+        edge_image = raster.render(edge_scene, cell_px, raster_token,
                                         backgrounds=view._image_effects[0],
                                         effect_glyphs=view._image_effects[1],
                                         fog_backgrounds=view._image_fog_backgrounds,
                                         glyph_layers=view._image_glyph_layers,
                                         protected_cells=view._image_protected_cells)
         ex, ey = edge_scene.viewport[:2]
-        canvas.paste(edge_image, ((ex-gl)*cell_px[0], (ey-gt)*cell_px[1]))
+        position = ((ex-gl)*cell_px[0], (ey-gt)*cell_px[1])
+        if owned:
+            canvas.paste_owned(edge_image, position, ('edge', ex, ey))
+        else:
+            canvas.paste(edge_image, position)
+    if owned:
+        canvas = canvas.snapshot()
     return {'canvas': canvas, 'origin': (gl, gt), 'sprite': sprite,
             'player': player, 'camera': (left, top), 'cell_px': cell_px,
-            'layer': (state.layer_key(), image.size), 'duration': MOVE_REPEAT_MIN_SECONDS, 'animate': True}
+            'layer': (state.layer_key(), image.size), 'duration': MOVE_REPEAT_MIN_SECONDS,
+            'animate': True}
+
+
+class _OwnedNativeView:
+    """Native-only cache context; no borrowed public image enters this route."""
+    def __init__(self, view):
+        import weakref
+        from .map_image import SceneImageCache
+        from ._native_producer_raster import _OwnedRaster
+        self._view = weakref.ref(view)
+        self._base_cache = SceneImageCache(image_factory=_OwnedRaster)
+        self._raster_policy = None
+
+    def __getattr__(self, name):
+        if name.startswith('_native_'):
+            raise AttributeError(name)
+        return getattr(self._view(), name)
+
+
+class _NativeFrameGeometry:
+    """Immutable presentation metadata; carries no publicly borrowed pixels."""
+    __slots__ = ('size', 'width', 'height')
+
+    def __init__(self, size):
+        self.size = tuple(size)
+        self.width, self.height = self.size
+
+
+def _prepare_native_frame(view, *, overview=False):
+    """Actual native producer entry: private facts first, PIL only on fallback."""
+    smooth = view._smooth_player_sample()
+    if smooth is not None:
+        return view._native_image_frame(_prepared_smooth=smooth), None
+    packet = None if overview else _build_owned_native_packet(view, view._image_cell_pixels())
+    if packet is None:
+        return view._native_image_frame(_prepared_smooth=None), None
+    context = view._owned_native_context
+    identity = (packet['canvas'], packet['sprite'], packet['layer'][1])
+    previous = getattr(context, '_frame_geometry', None)
+    if (previous is None or previous[0][0] is not identity[0]
+            or previous[0][1] is not identity[1] or previous[0][2] != identity[2]):
+        previous = (identity, _NativeFrameGeometry(packet['layer'][1]))
+        context._frame_geometry = previous
+    return previous[1], packet
+
+
+def _build_owned_native_packet(view, cell_px):
+    """Render permission-filtered facts into exclusive rasters, never PIL aliases.
+
+    Post-base image decorations retain their exact existing borrowed fallback
+    until their drawing writes have an equivalent ownership contract.
+    """
+    scene = view.shared_scene
+    app = view.app
+    live = getattr(app, '_world_view_live', lambda: getattr(app, 'panel_mode', 'world') == 'world')
+    if (scene is None or not live() or min(cell_px) < 2
+            or app.aiming or app.observe_mode or app.layer_observation is not None
+            or getattr(app, '_floor_transition', None) is not None
+            or getattr(app, '_left_panel_open', lambda: False)()
+            or getattr(app, 'world_tamper_editor', None) is not None
+            or not app.config.get('smooth_movement') or app.config.get('fx_reduce_motion')):
+        return None
+    current = getattr(view, '_image_cache', None)
+    if current is not None and view._public_image_was_exposed(current[1]):
+        return None
+    if (scene is None or scene.observe_layer in ('elevation', 'floor', 'low', 'middle', 'high')
+            or view.observe_cursor is not None or view.assist_cells
+            or view.preview_tints or view.preview_marks or view.intent_marks
+            or view.tamper_highlights or view.tamper_focus or view.tamper_destination is not None):
+        return None
+    from .map_image import SceneImageCache
+    from ._native_producer_raster import _OwnedRaster
+    from ..realm_glyphs import presentation_token
+    context = getattr(view, '_owned_native_context', None)
+    if context is None:
+        context = view._owned_native_context = _OwnedNativeView(view)
+    policy = presentation_token()
+    if context._raster_policy != policy:
+        context._base_cache = SceneImageCache(image_factory=_OwnedRaster)
+        context._raster_policy = policy
+    base = context._base_cache.render(scene, cell_px, False, view._image_effects[0],
+                                     view._image_effects[1], view._image_fog_backgrounds,
+                                     view._image_glyph_layers, view._image_protected_cells)
+    return _build_native_packet(context, base)

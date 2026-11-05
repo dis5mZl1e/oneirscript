@@ -1,5 +1,7 @@
 """DreamApp 应用主体（拆分后主类壳）：视图刷新、FX/装饰 tick、主页场景。"""
 from __future__ import annotations
+from ..tutorial_observation import observe_tutorial_ui
+from ...core.presentation_control import submit_presentation
 
 import math
 import json
@@ -8,6 +10,7 @@ import time
 from pathlib import Path
 
 from rich.text import Text
+from ..refresh_domains import RefreshDomainsMixin
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -67,8 +70,7 @@ from ..render import render_map
 from ...core.cast_fx import charging_casts
 from ...data.anomaly_skills import FX_PROFILES
 from ..transition import TOTAL, cell_off_time_a, cell_on_time_b, cell_segments, compose_frame
-from ...core.tutorial import tutorial_card_text, tutorial_pump, tutorial_target_cells
-from ...core.origin_course import COURSE_TEMPLATE_VERSION
+from ...core.tutorial import tutorial_card_text, tutorial_target_cells
 
 try:
     # textual 0.89 的分区竖线（真正的 Rule 控件在私有模块 _rule 里）。
@@ -110,10 +112,12 @@ FX_WRITEBACK_INTERVAL = 1.0 / FX_WRITEBACK_HZ
 # 5Hz 下每次推进 2.4 档（一圈 4 秒 → 每帧走一圈的 5%），肉眼仍是连续的 chase。
 # 实测这一项就值约 3.5 个百分点（见 perf_compare 的 nodeco 与 now 之差）。
 DECO_FRAME_HZ = 5.0
-# 空闲降频（2026-10-26）：真实输入 2s 后装饰边框从 5Hz 降到 2Hz；任何输入
+# 空闲降频（2026-10-26）：真实输入 2s 后装饰边框从 5Hz 降到 1Hz；任何输入
 # 立刻恢复。5Hz 装饰实测占总空闲 CPU 约 12 个百分点（暂停 _deco_timer 后
 # 16.4% → 4.3%），降频不改变流光顺序与相位，只是更新更稀。
-DECO_IDLE_HZ = 2.0
+# C10（2026-11-05）：2Hz → 1Hz（每次写边框=一次整屏合成；静止画面里
+# 1Hz 的极慢呼吸仍可见，而空闲单核再降约 1 个百分点，见文档 C.7）。
+DECO_IDLE_HZ = 1.0
 DECO_IDLE_AFTER = 2.0
 # ONEIRSCRIPT_DECO_IDLE_THROTTLE=0 可退回全程 5Hz（排障/录屏用）。
 _DECO_IDLE_THROTTLE = str(_env_get("DECO_IDLE_THROTTLE", "1")).strip().lower() not in (
@@ -232,6 +236,10 @@ IMPACT_LIGHT_MAX = 2
 IMPACT_HEAVY_MIN = 8
 
 
+# P2（性能方案 §3）：UI 域级增量。开启后，字符后端把 `shared_scene` 的构建/
+# 呈现挪到本帧刷新之后（首帧不读它），并在一次刷新内共享装备编译结果。
+# 开关与域级刷新共用 `ONEIRSCRIPT_UI_INCREMENTAL`，现已默认开启
+# （ONEIRSCRIPT_UI_INCREMENTAL=0 可回到逐行旧路径）。
 def _visual_signature(frame) -> int:
     """多层字符帧的稳定签名；空帧恒为 0，旧画面 digest 逐像素等价。"""
     if frame is None or frame.is_empty:
@@ -425,7 +433,7 @@ from ..tutorial_coach import TutorialCoachMixin
 from ..left_event_log import LeftEventLogMixin
 
 
-class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMixin, PanelShortcutsMixin, SignalStatusMixin, LiveMapMixin, LayerObservationMixin, LayerInfoMixin, NavigationMixin, BoardEditorMixin, PanelsMixin, SessionMixin, AppCssMixin, QoLUIMixin, GraphicsMixin, PanelViewMixin, InputMixin, DebugPanelMixin, SelfAuditMixin, TamperWorldUIMixin, TamperUIMixin, App[None]):
+class DreamApp(RefreshDomainsMixin, LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, SidebarWorkspacesMixin, TerrainPreviewMixin, PanelShortcutsMixin, SignalStatusMixin, LiveMapMixin, LayerObservationMixin, LayerInfoMixin, NavigationMixin, BoardEditorMixin, PanelsMixin, SessionMixin, AppCssMixin, QoLUIMixin, GraphicsMixin, PanelViewMixin, InputMixin, DebugPanelMixin, SelfAuditMixin, TamperWorldUIMixin, TamperUIMixin, App[None]):
     """主类：mixin 组合（拆分见 docs/megafile-refactor-plan.md）。"""
 
     # 主页光标的两轴地图（行 × 列），id 与 compose() 里的控件一一对应：
@@ -522,36 +530,52 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         self.refresh_view()
 
     def refresh_view(self) -> None:
+        self._run_ui_refresh(force=True)
+
+    def _refresh_view_now(self) -> None:
         if self.tutorial_session and (self.session.state.run_over
                 or not self.session.state.tutorial.get('active')):
             self._finish_tutorial_session()
             return
-        self._sidebar_before_refresh()
-        self._sync_map_task_focus()
-        if self.panel_mode == 'inventory' and self.panel_selection not in self._inventory_visible_indices():
-            self._qol_reselect_inventory(focus=False, reset_scroll=False)
-        self._refresh_view_contents()
-        self._refresh_qol()
-        if self.layer_observation is None:
-            self._refresh_panel_help()
-        self._sync_layer_observation_ui()
-        self._map_startup_notice()
-        if not self.home_mode:
-            self._refresh_signal_status()
-            self._refresh_self_audit(self.session.state)
-            self._refresh_layer_info(self.session.state)
-        elif self._inspection_active():
-            self.close_signal_detail()
-            self._close_self_audit(refresh=False)
-            self._close_layer_info(refresh=False)
-        self._sidebar_after_refresh()
-        if self._coach_enabled():
-            # UI-only objectives must survive opening/closing a view between
-            # timer ticks; record the real current interface on each transition.
-            from ...core.origin_course import observe_ui, pump
-            observe_ui(self)
-            pump(self.session.state)
-        self._refresh_tutorial_coach()
+        # P2：一次刷新内世界状态是冻结的，装备编译（视距、状态栏、面板都要读）
+        # 只做一次；刷新结束后立刻释放，不把「活条件」跨帧缓存。
+        depth = getattr(self, '_refresh_depth', 0)
+        token = None
+        equipment = getattr(self.session.state, 'equipment', None)
+        incremental = self._incremental_ui_enabled()
+        if depth == 0 and incremental and equipment is not None:
+            token = object()
+            equipment.begin_frame(token)
+        self._refresh_depth = depth + 1
+        try:
+            self._sidebar_before_refresh()
+            self._sync_map_task_focus()
+            if self.panel_mode == 'inventory' and self.panel_selection not in self._inventory_visible_indices():
+                self._qol_reselect_inventory(focus=False, reset_scroll=False)
+            self._refresh_view_contents()
+            self._refresh_qol()
+            if self.layer_observation is None:
+                self._refresh_panel_help()
+            self._sync_layer_observation_ui()
+            self._map_startup_notice()
+            if not self.home_mode:
+                self._refresh_signal_status()
+                self._refresh_self_audit(self.session.state)
+                self._refresh_layer_info(self.session.state)
+            elif self._inspection_active():
+                self.close_signal_detail()
+                self._close_self_audit(refresh=False)
+                self._close_layer_info(refresh=False)
+            self._sidebar_after_refresh()
+            if self._coach_enabled():
+                # UI-only objectives must survive opening/closing a view between
+                # timer ticks; record the real current interface on each transition.
+                observe_tutorial_ui(self)
+            self._refresh_tutorial_coach()
+        finally:
+            self._refresh_depth = depth
+            if token is not None:
+                equipment.end_frame(token)
 
     def _paint_world_early(self, *widgets) -> None:
         """painter 模式下动作内提前写地图；textual/canvas 模式是空操作。"""
@@ -560,6 +584,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             painter.paint_early(widgets)
 
     def _refresh_view_contents(self) -> None:
+        self.fx_engine.scanlines_disabled = not self._effective_scanlines()
         self._sync_music()
         if self._floor_transition is not None:
             return  # 演出期间冻结常规刷新：新层由动画一格一格露出（设计文档 §2.3）
@@ -584,7 +609,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self.pickup_goal = None
             self.shortcut_targets.clear()
             self.assist_path = []
-            state.hover_target = None
+            submit_presentation(self.session, state, 'layer_cleanup')
             # 观察光标同理：层换了，? 的坐标未必还在新地图里，直接收回观察。
             self.observe_mode = False
             self.observe_cursor = None
@@ -592,9 +617,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self.close_cell_detail()
             # 进行中的对话同理：NPC/复合事件都不在本层了，残留的 pending id
             # 只会让悬浮面板显示「对话已经结束」。直接收起。
-            state.pending_npc_id = None
-            state.pending_event_id = None
-            state.pending_event_uid = None
+            # Pending dialogue cleanup is part of the owner layer_cleanup above.
         writer = self.query_one('#equipment-sentence', SentenceWriter)
         if getattr(self, '_equipment_sentence_state', id(state)) != id(state):
             writer.clear()
@@ -647,16 +670,26 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         elif map_view.assist_cells:
             map_view.assist_cells = None
         self._sync_tutorial_highlight(map_view, state)
-        map_view.animated_combat = self.config.get("fx_quality") != "off"
-        map_visible = not (self.home_mode or self.panel_mode in {
+        map_view.animated_combat = self._effective_fx_quality() != "off"
+        map_visible = self._ui_domain_needed('body') and not (self.home_mode or self.panel_mode in {
             'pause', 'pause_settings', 'pause_codex', 'board_editor'})
         deferred_base = False
         deferred_shared = False
         if map_visible:
-            if (world_render_mode() == "painter" and not self.home_mode and not state.run_over
-                    and self.layer_observation is None):
-                deferred_shared = True
-                map_view._next_frame_defer = (self._fx_active, True)
+            character_frame = self.resolved_map_display()[0] == 'character'
+            defer_base_now = (world_render_mode() == "painter" and not self.home_mode
+                              and not state.run_over and self.layer_observation is None)
+            # P2（性能方案 §3）：角色后端的首帧只消费文本帧与 FX，不读 shared_scene
+            # （后者只给图像后端、分层观察与悬停知识层用）。所以字符模式也把
+            # build_scene/present_scene 挪到本帧刷新之后，同步动作里少付一次整图场景。
+            defer_shared_now = (self._incremental_ui_enabled()
+                                and (defer_base_now or character_frame)
+                                and not self.home_mode and not state.run_over
+                                and self.layer_observation is None)
+            if defer_base_now or defer_shared_now:
+                deferred_shared = defer_shared_now
+                map_view._next_frame_defer = (self._fx_active if defer_base_now else False,
+                                              defer_shared_now)
                 try:
                     deferred_base = map_view.update_state(state)
                 except Exception:
@@ -666,6 +699,9 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                     map_view._next_frame_defer = None
             else:
                 map_view.update_state(state)
+            # Let the frame timer recognize the synchronous map synchronization
+            # performed by an automatic movement action in this same callback.
+            self._map_sync_serial = getattr(self, "_map_sync_serial", 0) + 1
         # 基帧刚重画：立刻补回 FX 叠加层，避免先闪一帧没有光照/没有液气底色的
         # 纯基准帧（"每回合闪一下"，见 _fx_repaint 的说明）。
         if map_visible:
@@ -838,7 +874,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         # 换肤会重写两条边框，焦点高亮必须随之重算（缓存键含主题，但这里
         # 直接作废更稳妥：回主页再进同一区时也能立刻恢复焦点高亮）。
         self._focus_style_key = None
-        quality = str(self.config.get('fx_quality') or 'off')
+        quality = str(self._effective_fx_quality() or 'off')
         focused = self._focused_pane_selector()
         for pane in (map_pane, side_pane):
             dim = 1.0 if f"#{pane.id}" == focused else UNFOCUSED_BORDER_DIM
@@ -898,7 +934,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             color = (theme.border_color if selector == focused
                      else _fade_hex(theme.border_color, UNFOCUSED_BORDER_DIM))
             pane.styles.border = (theme.border_style, color)
-        self._paint_panel_ornaments(str(self.config.get("fx_quality") or "off"), 0.0)
+        self._paint_panel_ornaments(str(self._effective_fx_quality() or "off"), 0.0)
 
     def _refresh_world_view(self, state: GameState) -> None:
         # 右侧固定（~ 锁定）：任何自动换页都必须在绘制前被拉回锁定页。
@@ -907,6 +943,16 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         """游戏内界面：只更新可见的世界组件（状态栏/悬停/事件面板），跳过主页的图鉴与设置。"""
         self._apply_region_theme(state.depth, state.realm_id)
         self._refresh_focus_style()
+        if self._ui_domain_needed('status'):
+            self._refresh_status(state)
+        if self._ui_domain_needed('body'):
+            self._refresh_body(state)
+        if self._ui_domain_needed('log'):
+            self._refresh_log(state)
+        if self._ui_domain_needed('panels'):
+            self._refresh_panels(state)
+
+    def _refresh_status(self, state):
         # 层标签（2026-10-24 玩家优化 6）：顺序改为「层型 修饰符 层名」；
         # 英文下层型/修饰符换成 Unicode 代号（词太长放不下），完整词与含义
         # 在点击本行打开的左侧层详情面板里。本行同时是层信息的点击入口。
@@ -1048,21 +1094,23 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                 line.truncate(available, overflow='ellipsis')
         status = Text('\n').join(status_lines)
         update_static_if_changed(self.query_one("#status", Static), status)
+    def _refresh_body(self, state):
         hover_widget = self.query_one("#hover-info", Static)
         # 按悬停区实际显示宽度折行；布局未就绪（宽度 0）时退回侧栏最小宽度
         hover_width = hover_widget.content_size.width or 44
-        update_static_if_changed(hover_widget, self._sidebar_context_text(state, hover_width))
-        self._refresh_sidebar_tools()
+        update_static_if_changed(hover_widget, self._ui_body_text(state, hover_width))
         # §15.6 操作预览必须排在悬浮读数之后：`_hover_text` 顺手写下
         # state.hover_target，而预览中心正是 `visible_target(state)`——早一步就
         # 差一帧（鼠标刚移开，图上还留着上一格的黄圈）。只重叠交互层，基帧不动。
         self._apply_terrain_preview(state, self.query_one("#map", MapView))
         # Inspectors refresh after all layout modes, including the board editor.
         self._refresh_map_hints()
-        # 左侧透明事件记录：位置依赖玩家在当前地图显示框里的象限，必须在
-        # 地图/布局刷新之后算（与悬浮气泡同一拍）。
+    def _refresh_log(self, state):
         self._refresh_left_event_log(state)
-        update_static_if_changed(self.query_one("#panel", Static), self._panel_text(state))
+
+    def _refresh_panels(self, state):
+        self._refresh_sidebar_tools()
+        update_static_if_changed(self.query_one('#panel', Static), self._ui_panel_text(state))
 
     def action_focus_next(self) -> None:
         """Screen's priority Tab binding must use the same context routing."""
@@ -1178,14 +1226,15 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         return (px > map_view.region.x + (width * cell_w) // 2
                 and py < map_view.region.y + (height * cell_h) // 2)
 
-    def _push_header_ticker(self, message: str) -> None:
+    def _push_header_ticker(self, message: str) -> bool:
         """事件记录在顶部标题位播报；地图气泡保留独立的操作反馈。"""
         if self.home_mode:
-            return
+            return False
         try:
             self.query_one('#header-ticker', HeaderTicker).push(message, self)
         except Exception:
-            pass
+            return False
+        return True
 
     def _refresh_birth_layout(self) -> None:
         if not self.is_running:
@@ -1480,7 +1529,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         enabled = (not self.home_mode and map_view.display_mode == 'image'
                    and self.config.get('intent_hints') is not False)
         map_view.set_intent_marks(intent_marks(
-            state, animated=self.config.get('fx_quality') != 'off', include_chase=False)
+            state, animated=self._effective_fx_quality() != 'off', include_chase=False)
             if enabled else {})
 
     def _fx_tick(self) -> None:
@@ -1496,9 +1545,9 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self._sync_intent_badges(self.query_one('#map', MapView), self.session.state)
         except Exception:
             pass
-        quality = str(self.config.get("fx_quality") or "off")
+        quality = str(self._effective_fx_quality() or "off")
         # 扫描线独立开关：每帧同步，设置页改动即时生效（一次布尔赋值，零开销）。
-        self.fx_engine.scanlines_disabled = not bool(self.config.get("fx_scanlines"))
+        self.fx_engine.scanlines_disabled = not self._effective_scanlines()
         if quality == "off" or self.home_mode or self.session.state.run_over:
             self._fx_last = None
             if quality == "off":
@@ -1638,14 +1687,14 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         self._fx_note_events(state, self._fx_clock)
         self._update_hit_shake(self._fx_clock)
         if (raw is not None and not self.home_mode and not self.session.state.run_over
-                and self._floor_transition is None and self.config.get("fx_quality") != "off"):
+                and self._floor_transition is None and self._effective_fx_quality() != "off"):
             self._fx_projectile = (raw, self._fx_clock)
             self._schedule_bounce_particles(raw, self._fx_clock)
             self._fx_last = time.monotonic()
             self._fx_active = self._fx_paint(self.query_one("#map", MapView), self.session.state,
                                             self._fx_clock, force=True)
         elif (self._fx_active or self._map_particles.pending or self._fx_combat_pulses) and not self.home_mode and not self.session.state.run_over:
-            if self.config.get("fx_quality") == "off":
+            if self._effective_fx_quality() == "off":
                 self._fx_tick()
             elif (_FX_ACTION_SKIP_ENABLED and not had_transient_overlay
                   and not fx_changed and not (
@@ -1660,7 +1709,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                 self._fx_active = self._fx_paint(self.query_one("#map", MapView), self.session.state, self._fx_clock, force=True)
 
     def _schedule_bounce_particles(self, raw, born):
-        if self.config.get('fx_quality') == 'off':
+        if self._effective_fx_quality() == 'off':
             return
         count = len(raw.get('cells', ()))
         flight = projectile_flight_time(raw.get('kind', 'shot'), count)
@@ -1684,7 +1733,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             and not self.home_mode
             and not state.run_over
             and self._floor_transition is None
-            and self.config.get("fx_quality") != "off"
+            and self._effective_fx_quality() != "off"
         )
         if not timeline_active:
             sfx.play(event, volume=volume)
@@ -1725,11 +1774,11 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
 
         self.call_after_refresh(flush_after_paint)
 
-    def _defer_projectile_messages(self, first_message: int, raw) -> None:
+    def _defer_projectile_messages(self, first_message, raw) -> None:
         """Keep shot outcome prose hidden until its flight and impact frame finish."""
         active = getattr(self, "_fx_projectile", None)
         if (not active or raw is None or active[0].get("seq") != raw.get("seq")
-                or self.config.get("fx_quality") == "off"):
+                or self._effective_fx_quality() == "off"):
             return
         state = self.session.state
         owner = id(state)
@@ -1738,28 +1787,58 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self._fx_deferred_message_owner = owner
         from ..effects import projectile_replay_time
         deadline = active[1] + projectile_replay_time(raw)
-        for index in range(max(0, first_message), len(state.messages)):
-            self._fx_deferred_message_until[index] = max(
-                deadline, self._fx_deferred_message_until.get(index, 0.0))
+        history = state.messages
+        if isinstance(first_message, tuple):
+            generation, first_id = first_message
+            identities = (identity for identity in history.occurrence_ids
+                          if generation != history.generation or identity >= first_id)
+        else:
+            identities = iter(history.occurrence_ids[max(0, first_message):])
+        for identity in identities:
+            key = ('occurrence', history.generation, identity)
+            self._fx_deferred_message_until[key] = max(
+                deadline, self._fx_deferred_message_until.get(key, 0.0))
 
-    def _visible_game_messages(self, state):
-        """Messages whose matching projectile playback has reached its end."""
+    def _visible_game_message_count(self, state):
+        """Visible prefix length, without copying the message window per frame."""
         if self._fx_deferred_message_owner != id(state):
             self._fx_deferred_message_until.clear()
             self._fx_deferred_message_owner = id(state)
-        if (self.config.get("fx_quality") == "off" or self.home_mode
+        if (self._effective_fx_quality() == "off" or self.home_mode
                 or state.run_over):
             self._fx_deferred_message_until.clear()
-            return state.messages
+            return len(state.messages)
         pending = self._fx_deferred_message_until
-        for index in tuple(pending):
-            if index >= len(state.messages) or pending[index] <= self._fx_clock:
-                pending.pop(index, None)
         if not pending:
-            return state.messages
+            return len(state.messages)
+        history = state.messages
+        # Positions are resolved from occurrence ids after a mutation only.
+        # This retains exact shot ownership through capped head removal/reorder.
+        source_key = (history.generation, history.revision)
+        if getattr(self, '_fx_message_position_key', None) != source_key:
+            self._fx_message_positions = {identity: index for index, identity
+                                         in enumerate(history.occurrence_ids)}
+            self._fx_message_position_key = source_key
+        cutoff = len(history)
+        for key in tuple(pending):
+            if isinstance(key, tuple):
+                index = (self._fx_message_positions.get(key[2])
+                         if key[1] == history.generation else None)
+            else:
+                # Legacy direct index callers remain supported.
+                index = key if 0 <= key < len(history) else None
+            if index is None or pending[key] <= self._fx_clock:
+                pending.pop(key, None)
+            else:
+                cutoff = min(cutoff, index)
         # Preserve log order when another action happens before the previous shot
         # finishes: later prose cannot leap ahead of the pending shot result.
-        return state.messages[:min(pending)]
+        return cutoff
+
+    def _visible_game_messages(self, state):
+        """Messages whose matching projectile playback has reached its end."""
+        count = self._visible_game_message_count(state)
+        return state.messages if count == len(state.messages) else state.messages[:count]
 
     def _reset_hit_shake(self) -> None:
         """强制把地图偏移归零：关闭特效/回主页/换层/读档/终局都必须走到。"""
@@ -1775,9 +1854,29 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         self._reset_hit_shake()
         self._fx_impact_cues.clear()
 
+    def _movement_effects_reduced(self) -> bool:
+        from ..styles import HOLD_RELEASE_TIMEOUT
+        if (not self._world_view_live() or self.session.state.run_over
+                or self._floor_transition is not None or self.aiming
+                or self.pending_confirmation):
+            return False
+        if self.path:
+            return True
+        return bool(
+            self._held_key is not None and self._held_direction is not None
+            and (self._hold_repeats > 0 or getattr(self, '_continuous_move_active', False))
+            and time.monotonic() - self._last_hold_event <= HOLD_RELEASE_TIMEOUT)
+
+    def _effective_fx_quality(self) -> str:
+        quality = str(self.config.get('fx_quality') or 'off')
+        return 'low' if quality != 'off' and self._movement_effects_reduced() else quality
+
+    def _effective_scanlines(self) -> bool:
+        return bool(self.config.get('fx_scanlines')) and not self._movement_effects_reduced()
+
     def _reduce_motion(self) -> bool:
         try:
-            return bool(self.config.get("fx_reduce_motion"))
+            return bool(self.config.get("fx_reduce_motion")) or self._movement_effects_reduced()
         except KeyError:  # pragma: no cover - 外部构造的最小配置
             return False
 
@@ -1799,7 +1898,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         同一个 born。质量档 off 时只推进序号，不产生任何表现。
         """
         raw = getattr(state, "last_projectile", None) or {}
-        quality = str(self.config.get("fx_quality") or "off")
+        quality = str(self._effective_fx_quality() or "off")
         for event in getattr(state, "presentation_hits", ()) or ():
             seq = int(event.get("seq", 0) or 0)
             if seq <= self._fx_hit_seq:
@@ -1822,8 +1921,19 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             combined_resources = {str(cue.get("resource") or "")}
             kept_motion = set()
             merged_cues = set()
+            def same_target(old):
+                target = cue.get("target_id")
+                old_target = old.get("target_id")
+                if old.get("born") != cue["born"]:
+                    # Sequential numbers replace either the same actor's old
+                    # anchor or a previous occupant's number at this anchor.
+                    return (old.get("impact") == cue.get("impact")
+                            or (target is not None and target == old_target))
+                if target is not None and old_target is not None:
+                    return target == old_target and old.get("impact") == cue.get("impact")
+                return old.get("impact") == cue.get("impact")
             for old in self._fx_impact_cues:
-                if old.get("impact") != cue.get("impact"):
+                if not same_target(old):
                     continue
                 if ((quiet or old.get("kind") == "damage") and not old.get("number_hidden")
                         and not old.get("blocked") and not cue.get("blocked")
@@ -1859,15 +1969,22 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                 # 同源同格连击由上面的合并逻辑汇成一个数。不同来源同帧命中
                 # 保留最新两条，稍后分行显示，以便来源色仍然可辨。
                 matching = [old for old in self._fx_impact_cues
-                            if old.get("impact") == cue["impact"]
+                            if same_target(old)
                             and old.get("born") == cue.get("born")
                             and old.get("action_seq") == cue.get("action_seq")
                             and old.get("target_id") == cue.get("target_id")]
                 keep_ids = {id(old) for old in matching[-1:]
                             if id(old) not in merged_cues}
                 keep_ids.update(kept_motion)
+                # A projectile is registered before landing. Its predecessor
+                # remains readable until the replacement actually appears.
+                for old in self._fx_impact_cues:
+                    if (same_target(old) and id(old) not in keep_ids
+                            and cue["born"] > t and old.get("born", t) < cue["born"]):
+                        old["number_until"] = min(old.get("number_until", cue["born"]), cue["born"])
+                        keep_ids.add(id(old))
                 self._fx_impact_cues = [old for old in self._fx_impact_cues
-                                        if old.get("impact") != cue["impact"]
+                                        if not same_target(old)
                                         or id(old) in keep_ids]
             self._fx_impact_cues.append(cue)
         if len(self._fx_impact_cues) > IMPACT_CUE_MAX:
@@ -1923,7 +2040,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         只露出末位。跳字优先级高于弹道/装饰粒子（见调用处的合并顺序）。
         定格（C1）把起飞与淡出整体后移；减少动态（C4）去掉位移但保留数字。
         """
-        if str(self.config.get("fx_quality") or "off") == "off":
+        if str(self._effective_fx_quality() or "off") == "off":
             return {}, {}
         reduce_motion = self._reduce_motion()
         left, top, width, height = map_view.viewport
@@ -1947,7 +2064,8 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             if (age <= hold + spec["emphasis"] and not cue.get("blocked")
                     and cue.get("kind") != "damage"):
                 styles[(vx, vy)] = "bold #0b0b12 on " + color
-            text = "" if cue.get("number_hidden") else str(cue.get("text") or "")
+            text = ("" if cue.get("number_hidden") or t >= cue.get("number_until", float("inf"))
+                    else str(cue.get("text") or ""))
             if not text:
                 continue
             # 定格只冻结位移与起飞，数字本身在停住的这一帧就已经画出来。
@@ -2025,12 +2143,18 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self._visual_frame_key = 0
             # 读档/新局：旧场景的意图角标不能跟到新地图上。
             from ...core.anomaly_intents import clear as clear_intents
-            clear_intents(state)
+            if not getattr(self.session, "asynchronous", False):
+                clear_intents(state)
+            else:
+                state.clear_display_intents()
         # 统一视觉事件：真实结算处登记的新多层字符事件在这里入播放器。
         # 只入旁路队列；面板冻结时不 drain，避免补播过期演出。
-        world_visible = (not self.home_mode and getattr(self, 'panel_mode', 'world') == 'world'
+        # 右栏工作区开着时世界仍活着（RIGHT_PANEL_MODES）；默认页是「行囊」，
+        # 继续用 panel_mode == 'world' 会让跳字/涟漪/施法波永远不入场。
+        world_visible = (self._world_view_live()
                          and not getattr(state, 'run_over', False))
-        visual_events = drain_visual_events(state) if world_visible else ()
+        visual_events = ((state.drain_visual_events() if getattr(self.session, 'asynchronous', False)
+                          else drain_visual_events(state)) if world_visible else ())
         if visual_events:
             self._visual_player.accept(visual_events, VisualClock(
                 float(getattr(state, "time", 0.0) or 0.0),
@@ -2044,7 +2168,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         # 每次脉冲都在，信息不丢。
         pulse = getattr(state, "last_sound_pulse", None)
         if (pulse and pulse.get("seq") != self._fx_sound_seq
-                and self.config.get("fx_quality") != "off"):
+                and self._effective_fx_quality() != "off"):
             self._fx_sound_seq = pulse.get("seq")
             # The core supplies only the compact audible patch and an allowed
             # center. Player-made sounds never register a visual event.
@@ -2065,7 +2189,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             if seq <= self._fx_flash_seq:
                 continue
             self._fx_flash_seq = seq
-            if self.config.get("fx_quality") == "off":
+            if self._effective_fx_quality() == "off":
                 continue
             item = dict(entry)
             item["born"] = t
@@ -2089,7 +2213,10 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             self._fx_blast_count = len(getattr(state, 'explosion_blasts', ()) or ())
             # 换层：上一层的动画与角标不带过去，也不补播。
             from ...core.anomaly_intents import clear as clear_intents
-            clear_intents(state)
+            if not getattr(self.session, "asynchronous", False):
+                clear_intents(state)
+            else:
+                state.clear_display_intents()
         blasts = getattr(state, 'explosion_blasts', ()) or ()
         raw_proj = getattr(state, "last_projectile", None)
         delay = projectile_flight_time("throw", len(raw_proj.get("cells", ()))) if raw_proj and raw_proj.get("kind") == "throw" else 0.0
@@ -2099,7 +2226,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             if event['seq'] <= self._fx_combat_seq:
                 continue
             self._fx_combat_seq = event['seq']
-            if self.config.get('fx_quality') == 'off':
+            if self._effective_fx_quality() == 'off':
                 continue
             event_delay = (projectile_flight_time(raw_proj.get('kind','shot'),len(raw_proj.get('cells',())))
                            if raw_proj and event.get('projectile_seq') == raw_proj.get('seq') else 0.0)
@@ -2108,7 +2235,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             if event['kind'] == 'explosion':
                 self._map_particles.emit('explosion', event['center'], born)
         if (not getattr(state, '_combat_fx_events', ()) and len(blasts) > self._fx_blast_count
-                and self.config.get('fx_quality') != 'off'):
+                and self._effective_fx_quality() != 'off'):
             for x, y, _radius in blasts[self._fx_blast_count:][-4:]:
                 self._map_particles.emit('explosion', (x, y), t+delay)
         self._fx_blast_count = len(blasts)
@@ -2182,7 +2309,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                 or (self._fx_memory_ids is not None and memory_ids - self._fx_memory_ids)):
             self.fx_engine.note_border_event(t, BORDER_EVENT_COLORS["memory"])
             self._border_feedback.push('reward', t, source=f'memory:{memories}')
-            if self.config.get('fx_quality') != 'off':
+            if self._effective_fx_quality() != 'off':
                 self._map_particles.emit('memory', (state.player.x, state.player.y), t)
         self._fx_memory_count = memories
         self._fx_memory_ids = memory_ids
@@ -2299,7 +2426,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         纯帧，必须当帧补上，否则「打开面板 → 火把光整片消失」的回归又会回来
         （tests/test_fx.py 有这条）。
         """
-        map_view.animated_combat = self.config.get("fx_quality") != "off"
+        map_view.animated_combat = self._effective_fx_quality() != "off"
         # 基帧新鲜度：refresh_view 刚 update_state 过的调用方直接标记 base_fresh，
         # 不再重复跑 update_state 的签名/悬停/声音标记预计算。其余路径用世界/视口
         # 快照做一次廉价判重，未变化时也跳过；任何外部置空 _frame_key（缩放/尺寸/
@@ -2329,7 +2456,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         if base is None:
             return False
         left, top, vw, vh = map_view.viewport
-        quality = str(self.config.get("fx_quality") or "off")
+        quality = str(self._effective_fx_quality() or "off")
         # Ambient FX are intentionally presented at 4Hz (ambient_key below).
         # The 20Hz timer still wakes for transient combat, but avoid sampling
         # visual players, facilities, and casts on the four ticks that cannot
@@ -2340,7 +2467,9 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
                          or self._fx_hits or self._fx_waves or self._fx_impact_cues
                          or self._visual_player.pending
                          or charging_casts(state))
-        ambient_key = (map_view._frame_key, quality, int(t * 4))
+        ambient_key = (map_view._frame_key, quality,
+                       int(t * (getattr(self, "_idle_light_hz", 4.0)
+                                if getattr(self, "_idle_mode", False) else 4)))
         if (not force and not transient and not map_view.fx_base_overwritten
                 and ambient_key == getattr(self, "_fx_ambient_key", None)):
             return True
@@ -2656,7 +2785,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             # §12 B2：来源发现 / 连片保形采样 / 逐源掩码只在「来源签名 + 遮挡
             # 签名 + 视口」变化时重算——**键里不再有 state.time**，所以世界没变
             # 时跨回合也命中缓存（静态场景每回合重跑掩码正是 §12.6.2 点名的问题）。
-            low_quality = str(self.config.get('fx_quality') or 'off') == 'low'
+            low_quality = str(self._effective_fx_quality() or 'off') == 'low'
             points = LOW_REGION_SAMPLES if low_quality else REGION_SAMPLES
             cache = self._env_light_cache
             blockers = (state._skill_sight_blockers()
@@ -2858,7 +2987,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         was_visible = scene.display
         scene.display = visible
         if self._home_timer is not None:
-            if visible and self.config.get("fx_quality") != "off":
+            if visible and self._effective_fx_quality() != "off":
                 self._home_timer.resume()
             else:
                 self._home_timer.pause()
@@ -2880,7 +3009,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         if self._home_started is None:
             self._home_started = now
         elapsed = now - self._home_started
-        quality = str(self.config.get("fx_quality") or "off")
+        quality = str(self._effective_fx_quality() or "off")
         scene = self._frame_widget('_frame_home_scene', HomeScene)
         if scene is None or not scene.is_mounted:
             return
@@ -2897,8 +3026,13 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             title.update(dream_title_text(key[0], phase, animation_time, width=title_width))
 
     def _note_activity(self) -> None:
-        """真实键鼠输入：记录活动时刻，装饰帧立即恢复 5Hz。"""
+        """真实键鼠输入：记录活动时刻，装饰帧立即恢复 5Hz。
+
+        C10：空闲动画定时器组同样在输入当拍切回全速（不等下一帧的静态判定）。
+        """
         self._last_activity = time.monotonic()
+        if getattr(self, "_idle_mode", False):
+            self._set_idle_animation_mode(False)
 
     def _deco_painter_throttle_applies(self) -> bool:
         """当前是否由 painter 接管世界视图——决定装饰帧要不要降频。
@@ -3002,7 +3136,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         （默认 1Hz；空闲降频取更小值），把每秒多次整屏合成降到约 1 次。
         注入 t 的测试/探针路径不受影响，仍是 DECO_FRAME_HZ。
         """
-        quality = str(self.config.get("fx_quality") or "off")
+        quality = str(self._effective_fx_quality() or "off")
         if quality == "off":
             # Restore regional colors after an animated frame. Merely stopping
             # the timer leaves its last chase color frozen on the native border.
@@ -3058,17 +3192,26 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         放在帧循环里（而非各 action 分支）保证非回合路径（观察移动/面板
         切换/瞄准）同样被评估；pump 只做字典读取与坐标比较，成本可忽略。
         """
+        pending = getattr(self, '_tutorial_frame_pending', None)
+        if pending is not None and pending[0] is self.session:
+            return
         self._coach_before_frame()
+        result = observe_tutorial_ui(self, frame=True)
+        from concurrent.futures import Future
+        if isinstance(result, Future):
+            owner = self.session
+            self._tutorial_frame_pending = owner, result
+            def finish(actual):
+                self._tutorial_frame_pending = None
+                if self.session is owner:
+                    self._finish_tutorial_frame(actual)
+            self.session.then(result, finish)
+            return
+        self._finish_tutorial_frame(result)
+
+    def _finish_tutorial_frame(self, result):
         state = self.session.state
-        # 教程埋点（每帧统一写入）：观察步的判定就是 ? 此刻停在哪格。
-        # 键盘挪 ? 与鼠标点击寻路 ?（_follow_observe_path）两条路径都在这里
-        # 汇合——旗标挂在 UI 状态上而非某个输入分支，不会再被改界面时漏掉。
-        if self.observe_mode and self.observe_cursor is not None:
-            state.tutorial_events["observe_cell"] = self.observe_cursor
-        if state.tutorial.get('version') == COURSE_TEMPLATE_VERSION:
-            from ...core.origin_course import observe_ui
-            observe_ui(self)
-        message = tutorial_pump(state)
+        message = result.message if result is not None else ''
         if self.tutorial_session and (state.run_over or not state.tutorial.get('active')):
             self._finish_tutorial_session()
             return
@@ -3338,7 +3481,7 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
         terse_mode = terse_enabled(self.config)
         cache_key = (mode, get_language(), tabs_width, self.panel_mode, self.sidebar_workspace,
                      self._panel_subpage_id(), self.layer_observation is not None,
-                     terse_mode)
+                     terse_mode, self.config.get('standalone_memory_page'))
         if getattr(self, "_nav_cache_key", None) == cache_key:
             return
         self._nav_cache_key = cache_key
@@ -3358,11 +3501,12 @@ class DreamApp(LeftEventLogMixin, TutorialCoachMixin, SidebarManagementMixin, Si
             button.set_class(selector == '#nav-' + self.sidebar_workspace, 'sidebar-active')
         from ..sidebar_workspaces import ROUTES, SUBTAB_COLORS
         group = self.sidebar_workspace
-        self.query_one('#panel-sections').display = len(ROUTES.get(group, ())) > 1 and self.layer_observation is None
+        visible_routes = self._sidebar_routes(group)
+        self.query_one('#panel-sections').display = len(visible_routes) > 1 and self.layer_observation is None
         for workspace, routes in ROUTES.items():
             for index, route in enumerate(routes):
                 button = self.query_one('#section-' + route.key, Button)
-                button.display = workspace == group
+                button.display = workspace == group and route in visible_routes
                 button.label = (route_symbol(route.key, mode) if terse_mode
                                 else route.english if get_language() == 'en' else tr(route.label))
                 button.styles.color = SUBTAB_COLORS[index % len(SUBTAB_COLORS)]

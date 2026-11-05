@@ -205,6 +205,7 @@ def apply_plant_release(state: Any, holder: Any, x: int, y: int, code: int,
     if not isinstance(state_of_cell, dict):
         state_of_cell = {}
         cell.plant_state = state_of_cell
+        state_of_cell = cell.plant_state
     if state_of_cell.get("released"):
         return {}
 
@@ -523,6 +524,7 @@ def tick_periodic_plants(state: Any, amount: int) -> None:
         if not isinstance(state_of_cell, dict):
             state_of_cell = {}
             cell.plant_state = state_of_cell
+            state_of_cell = cell.plant_state
         remaining = state_of_cell.get(budget_key)
         total = max(definition.absorb_gas_budget, definition.absorb_liquid_budget,
                     definition.push_gas_budget, definition.purify_budget)

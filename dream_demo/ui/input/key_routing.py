@@ -1,5 +1,9 @@
 """键位路由族：on_key 主路由、观察/锁定/面板键处理与 escape 链。"""
 from __future__ import annotations
+from ..action_completion import after_action
+from ...core.tutorial_control import submit_tutorial
+from ..tutorial_observation import observe_tutorial_ui
+from ...core.presentation_control import submit_presentation
 
 import time
 
@@ -10,11 +14,10 @@ from ...i18n import tr
 from ...audio import sfx
 from ...core import ABILITY_DEFINITIONS
 from ...core.entities import ActionResult
-from ...core.tutorial import tutorial_skip_step
 from ...materials import PORTENT_DEFINITIONS, TABLE_KINDS, wall_def
 from .._native import _trace_native
 from ..styles import RIGHT_PANEL_MODES
-from ..panels import MEMORY_FOOTER_ITEM_ROWS, TAMPER_ENTRY_ROW
+from ..panels import EQUIPMENT_ITEM_ROWS, EQUIPMENT_REGION_ROWS, MEMORY_FOOTER_ITEM_ROWS, TAMPER_ENTRY_ROW
 from ..widgets import EventPanel, MapView
 
 ATTACK_CONFIRMATION_SECONDS = 8.0
@@ -151,9 +154,7 @@ class KeyRoutingMixin:
         self.refresh_hover_only()
         self._refresh_signal_status()
         if self._coach_enabled():
-            from ...core.origin_course import observe_ui, pump
-            observe_ui(self)
-            pump(self.session.state)
+            observe_tutorial_ui(self)
             self._refresh_tutorial_coach()
     def _observe_walk_to(self, target: tuple[int, int]) -> None:
         """观察模式的点击寻路：无视障碍，直接走最短格子。
@@ -191,6 +192,7 @@ class KeyRoutingMixin:
             if walk or cursor == (state.player.x, state.player.y):
                 self.toggle_observe()
                 self.path = list(walk)
+                self._path_replan_options = {}
                 self.assist_path = []
                 self._refresh_cursor_only()
             else:
@@ -649,8 +651,7 @@ class KeyRoutingMixin:
             index = ids.index(self._panel_subpage_id()) if self._panel_subpage_id() in ids else 0
             self.set_panel_subpage(ids[(index + delta) % len(ids)])
             return
-        from ..sidebar_workspaces import ROUTES
-        routes = [route for route in ROUTES.get(self.sidebar_workspace, ())
+        routes = [route for route in self._sidebar_routes()
                   if not route.mode.startswith('@')]
         if len(routes) < 2:
             return
@@ -737,8 +738,7 @@ class KeyRoutingMixin:
                 self._move_panel_selection(target - position)
             return True
         if axis == "h":
-            from ..sidebar_workspaces import ROUTES
-            routes = [route for route in ROUTES.get(self.sidebar_workspace, ()) if not route.mode.startswith('@')]
+            routes = [route for route in self._sidebar_routes() if not route.mode.startswith('@')]
             index = next((i for i, route in enumerate(routes)
                           if route.mode == self.panel_mode and (not route.subpage or route.subpage == self._panel_subpage_id())), None)
             if index is not None:
@@ -801,8 +801,7 @@ class KeyRoutingMixin:
             return
         if self.path:
             # 与「寻路中任意按键先刹停」一致：只停止，不额外行动。
-            from ...core.origin_course import note
-            note(self.session.state, 'path_cancelled')
+            submit_tutorial(self.session, 'facts', 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.pickup_goal = None
@@ -819,9 +818,10 @@ class KeyRoutingMixin:
         if not self._act_on_player_cell():
             state = self.session.state
             # 脚下无事可做、且已达成醒来条件：这次「行动」改为结束入梦。
-            if state.victory and not state.run_over and self._apply("finish_run").changed:
-                self.exit()
-                return
+            if state.victory and not state.run_over:
+                def finish(result):
+                    if result.changed: self.exit()
+                return after_action(self, self._apply('finish_run'), finish)
         self.refresh_view()
 
     def _actions_for(self, target: tuple[int, int]) -> list[str]:
@@ -935,6 +935,29 @@ class KeyRoutingMixin:
             y = event.offset.y
         return 0 <= y < len(rows) and rows[y] == -2
 
+    def _scroll_equipment_list(self, delta: int) -> None:
+        """滚动底部「行囊中的携带意象」区（delta>0 向下看更后面的条目）。"""
+        rows = self._equipment_entry_rows(self.session.state)
+        max_scroll = max(0, len(rows) - EQUIPMENT_ITEM_ROWS)
+        self.equipment_scroll = min(max_scroll, max(0, self.equipment_scroll + delta))
+        self._refresh_navigation_selection()
+
+    def _equipment_list_region_row_at(self, event) -> bool:
+        """滚轮悬停判定：鼠标落在装备盘页底部携带意象区（固定 8 行）上。"""
+        if self.panel_mode != 'equipment' or self._panel_subpage_id() == 'memory':
+            return False
+        start = getattr(self, '_equipment_region_start', None)
+        if start is None:
+            return False
+        widget = getattr(event, "control", None)
+        if getattr(widget, "id", None) != "panel":
+            return False
+        try:
+            y = event.offset.y + int(widget.scroll_offset.y)
+        except Exception:
+            y = event.offset.y
+        return start <= y < start + EQUIPMENT_REGION_ROWS
+
     def _follow_actions_selection(self) -> None:
         """键盘移动选择时把操作界面的条目滚进视窗（2026-09-21）。
 
@@ -959,23 +982,42 @@ class KeyRoutingMixin:
         elif bottom > self.panel_scroll + viewport:
             self.panel_scroll = max(0, bottom - viewport)
 
+    def _follow_equipment_selection(self) -> None:
+        """把选中的携带意象滚进底部固定视窗（只动 equipment_scroll）。"""
+        state = self.session.state
+        indices = [i for i, item in enumerate(state.inventory) if item.slot]
+        if not indices or not 0 <= self.panel_selection < len(indices):
+            return
+        real_index = indices[self.panel_selection]
+        rows = self._equipment_entry_rows(state)
+        starts = [i for i, (_line, index) in enumerate(rows) if index == real_index]
+        if not starts:
+            return
+        top = starts[0]
+        bottom = starts[-1] + 1
+        if top < self.equipment_scroll:
+            self.equipment_scroll = top
+        elif bottom > self.equipment_scroll + EQUIPMENT_ITEM_ROWS:
+            self.equipment_scroll = max(0, bottom - EQUIPMENT_ITEM_ROWS)
+
     def _follow_list_selection(self) -> None:
         """键盘移动选择时把这个条目滚进视窗（行囊/携带意象/洞察与征兆同一手感）。
 
         每个条目可能占多行（注释展开时），所以定位要用「该条目在行列表里的
         起始行/结束行」而不是「条目序号 == 行号」。
         """
+        if self.panel_mode == "equipment" and not self._equipment_list_inline():
+            self._follow_equipment_selection()
+            return
         lines, row_indices, _header = self._panel_lines(self.session.state)
         if not lines:
             return
-        if self.panel_mode == "equipment":
-            equipment_indices = [i for i, item in enumerate(self.session.state.inventory) if item.slot]
-            if equipment_indices and self.panel_selection < len(equipment_indices):
-                real_index = equipment_indices[self.panel_selection]
-            else:
+        real_index = self.panel_selection
+        if self.panel_mode == 'equipment':
+            indices = [i for i, item in enumerate(self.session.state.inventory) if item.slot]
+            if not 0 <= real_index < len(indices):
                 return
-        else:
-            real_index = self.panel_selection
+            real_index = indices[real_index]
         starts = [i for i, row in enumerate(row_indices) if row == real_index]
         if self.panel_mode == 'inventory' and self.inventory_layout == 'grid':
             starts = [i for i, hits in enumerate(self._inventory_cell_rows)
@@ -1048,25 +1090,22 @@ class KeyRoutingMixin:
                 if item.effect == "container":
                     # 容器：打开左侧盛装/倒出浮层（不耗时）；关闭后留在行囊。
                     result = self._apply("use", index)
-                    if result.data.get("container_menu") is not None:
-                        self._open_container_overlay(result.data["container_menu"])
-                    else:
-                        self.refresh_view()
+                    self._action_container(result)
                 elif item.category in ("摄入物", "易逝物", "交互道具", "惯用物"):
                     result = self._apply("use", index)
-                    self.show_toast(result.message, self._selected_panel_row_screen_y())
+                    self._action_toast(result, self._selected_panel_row_screen_y())
                 elif item.slot:
                     # 携带意象：不再静默穿上/脱下——改为带着它进联想盘编辑器（§8.4）。
                     # 记忆槽不上盘，走旧的穿/脱入口。
                     if not self.open_board_editor_for_item(index):
                         result = self._apply("toggle_equip", index)
-                        self.show_toast(result.message, self._selected_panel_row_screen_y())
+                        self._action_toast(result, self._selected_panel_row_screen_y())
         elif self.panel_mode == "insights":
             if key_hint is None and state.insights:
                 key_hint = state.insights[min(self.panel_selection, len(state.insights) - 1)]
             if key_hint == "蜂鸣回响":
                 # §11 §7：广播加成可在详情关闭；切换本身不发声、不耗时。
-                state.buzzing_echo_enabled = not getattr(state, "buzzing_echo_enabled", True)
+                submit_presentation(self.session, state, 'toggle_buzzing_echo')
                 self.expanded_key = key_hint
                 self.show_toast(tr("蜂鸣回响：广播加成已开启。") if state.buzzing_echo_enabled
                                 else tr("蜂鸣回响：广播加成已关闭。"),
@@ -1110,7 +1149,7 @@ class KeyRoutingMixin:
                 target = self.context_menu_target
                 args = (ability, *target) if ability == 'retract' and target else (ability,)
                 result = self._apply('identity_ability', *args)
-                self.show_toast(result.message, self._selected_panel_row_screen_y())
+                self._action_toast(result, self._selected_panel_row_screen_y())
                 self.refresh_view()
                 return
             if key_hint.startswith("ability:"):
@@ -1129,21 +1168,22 @@ class KeyRoutingMixin:
                         self.refresh_view()
                     return
                 # [SFX挂点] 使用主动构想：展开成功播 construct（先声后动也自然）。
-                ability_result = self.session.state.activate_ability(ability_id)
-                if ability_result.changed:
-                    from ...core.origin_course import note
-                    note(self.session.state,'ability_cast')
-                    # §15.6：结算完成即撤掉预览标记，不留上一发的作用区。
-                    self._invalidate_terrain_preview()
-                # 2026-09-21 玩家要求：**去除构想的动画效果**——释放构想不再触发
-                # 边框呼吸闪（BORDER_EVENT construct），反馈只保留气泡 + 音效。
-                # 构想使用结果走临时弹窗（成功/失败都提示），锚点 = 该构想所在屏幕行。
-                self.show_toast(ability_result.message, self._selected_panel_row_screen_y())
-                # 左键/Enter 激活被拒（冷却/想象力不足）时同时给出面板反馈。
-                if ability_result.changed and self.config.get("sfx_enabled"):
-                    sfx.play("construct", volume=int(self.config.get("sfx_volume")) / 10)
-                self.refresh_view()
-                return
+                ability_result = self.session.apply('ability', ability_id)
+                def finish(ability_result):
+                    if ability_result.changed:
+                        submit_tutorial(self.session, 'facts', 'ability_cast')
+                        # §15.6：结算完成即撤掉预览标记，不留上一发的作用区。
+                        self._invalidate_terrain_preview()
+                    # 2026-09-21 玩家要求：**去除构想的动画效果**——释放构想不再触发
+                    # 边框呼吸闪（BORDER_EVENT construct），反馈只保留气泡 + 音效。
+                    # 构想使用结果走临时弹窗（成功/失败都提示），锚点 = 该构想所在屏幕行。
+                    self.show_toast(ability_result.message, self._selected_panel_row_screen_y())
+                    # 左键/Enter 激活被拒（冷却/想象力不足）时同时给出面板反馈。
+                    if ability_result.changed and self.config.get("sfx_enabled"):
+                        sfx.play("construct", volume=int(self.config.get("sfx_volume")) / 10)
+                    self.refresh_view()
+                    return
+                return after_action(self, ability_result, finish)
             if key_hint.startswith("action:"):
                 offset = int(key_hint.split(":", 1)[1])
                 actions = self._actions_for(self.context_menu_target)
@@ -2040,8 +2080,7 @@ class KeyRoutingMixin:
             self._mark_key_handled(key)
             event.stop()
             event.prevent_default()
-            from ...core.origin_course import note
-            note(self.session.state, 'path_cancelled')
+            submit_tutorial(self.session, 'facts', 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.pickup_goal = None
@@ -2305,6 +2344,7 @@ class KeyRoutingMixin:
                 self._held_direction = direction
                 self._last_hold_event = now
                 self._hold_repeats += 1
+                self._continuous_move_active = True
                 cadence = getattr(self, "_move_cadence", None)
                 if cadence is not None and not cadence.active:
                     cadence.begin(now)
@@ -2318,6 +2358,7 @@ class KeyRoutingMixin:
             self._held_direction = direction
             self._last_hold_event = now
             self._hold_repeats = 0
+            self._continuous_move_active = False
             cadence = getattr(self, "_move_cadence", None)
             if cadence is not None:
                 # 转向立即响应，并从当前时刻重建截止点。
@@ -2362,8 +2403,7 @@ class KeyRoutingMixin:
                 index = next((i for i, item in enumerate(state.inventory) if item.category in ("摄入物", "易逝物", "交互道具")), None)
                 if index is not None:
                     result = self._apply("use", index)
-                    if result.data.get("container_menu") is not None:
-                        self._open_container_overlay(result.data["container_menu"])
+                    self._action_container(result)
             # 2026-10-21：U 只使用物品；没有可用物品时不生成发射许可。
         elif key == "n":
             self._mark_key_handled(key)  # 底栏「下潜」绑定紧随其后，吃掉那次重复
@@ -2382,8 +2422,11 @@ class KeyRoutingMixin:
                 self._activate_panel_selection()
         # 教程埋点：welcome 步等待任意键（所有走到这里的输入都算证据）。
         if self.session.state.tutorial.get("active"):
-            self.session.state.tutorial_events.setdefault("any_input", 1)
-        self.refresh_view()
+            submit_tutorial(self.session, 'event', 'any_input')
+        if key in directions:
+            self.request_ui_refresh()
+        else:
+            self.refresh_view()
     def _ui_escape_chain(self) -> bool:
         """Esc 的「取消/关闭界面」链：按优先级逐层收面板，返回是否消费了按键。
 
@@ -2484,8 +2527,7 @@ class KeyRoutingMixin:
             self.close_anomaly_detail()
             return True
         if self.path:
-            from ...core.origin_course import note
-            note(self.session.state, 'path_cancelled')
+            submit_tutorial(self.session, 'facts', 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.refresh_view()
@@ -2592,6 +2634,8 @@ class KeyRoutingMixin:
         self.refresh_view()
 
     def action_save_exit(self) -> None:
+        if getattr(self.session, 'navigation_barrier', False) is True:
+            return
         if self.signal_detail_open:
             return
         """F10 / Alt+Q / 底栏按钮：保存并退出。
@@ -2620,7 +2664,26 @@ class KeyRoutingMixin:
                 self.exit()
             return
         if not self.session.state.run_over:
-            self.session.save_and_exit()
+            saved = self.session.save_and_exit()
+            from concurrent.futures import Future
+            if isinstance(saved, Future):
+                session = self.session
+                session.navigation_barrier = True
+                def after_save():
+                    if not saved.done():
+                        self.set_timer(.025, after_save)
+                        return
+                    try:
+                        saved.result()  # completion checked; never blocks UI
+                    except BaseException as error:
+                        session.navigation_barrier = False
+                        self.show_toast(tr('保存失败：{reason}', reason=str(error)), 6)
+                        return
+                    if self.session is session:
+                        self._return_home()
+                    session.navigation_barrier = False
+                self.set_timer(.025, after_save)
+                return
         self._return_home()
 
     def action_context_q(self) -> None:
@@ -2729,8 +2792,7 @@ class KeyRoutingMixin:
             self.close_anomaly_detail()
             return
         if self.path:
-            from ...core.origin_course import note
-            note(self.session.state, 'path_cancelled')
+            submit_tutorial(self.session, 'facts', 'path_cancelled')
             self.path.clear()
             self.observe_walk_path.clear()
             self.refresh_view()

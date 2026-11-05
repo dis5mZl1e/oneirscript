@@ -1,5 +1,6 @@
 """导航动作族：action_*、楼层过渡、主页/存档/新游戏/暂停菜单、按钮分发。"""
 from __future__ import annotations
+from ..action_completion import after_action
 
 import math
 import json
@@ -228,24 +229,26 @@ class NavigationMixin:
                 old_viewport = None
         result = (self._apply(command, ignore_dissolution=True) if ignore_dissolution
                   else self._apply(command))
-        if self.tutorial_session and (self.session.state.run_over
-                or not self.session.state.tutorial.get('active')):
-            self._finish_tutorial_session()
+        def finish(result):
+            if self.tutorial_session and (self.session.state.run_over
+                    or not self.session.state.tutorial.get('active')):
+                self._finish_tutorial_session()
+                return result
+            if result.changed and old_frame is not None and not self.home_mode:
+                try:
+                    self._start_floor_transition(old_frame, old_viewport, old_image)
+                except Exception:
+                    # 演出挂了也必须把新层画出来：否则状态已经下潜、画面还停在旧层，
+                    # 玩家看到的就是「卡死」。
+                    if self._floor_transition is not None:
+                        self._finish_floor_transition(suppress_wipe=True)
+                    else:
+                        self.refresh_view()
+            else:
+                self.refresh_view()
             return result
-        if result.changed and old_frame is not None and not self.home_mode:
-            try:
-                self._start_floor_transition(old_frame, old_viewport, old_image)
-            except Exception:
-                # 演出挂了也必须把新层画出来：否则状态已经下潜、画面还停在旧层，
-                # 玩家看到的就是「卡死」。
-                if self._floor_transition is not None:
-                    self._finish_floor_transition(suppress_wipe=True)
-                else:
-                    self.refresh_view()
-        else:
-            self.refresh_view()
-        return result
 
+        return after_action(self, result, finish)
     def _start_floor_transition(self, old_frame, old_viewport=None, old_image=None) -> None:
         self._clear_projectile()
         state = self.session.state
@@ -511,6 +514,9 @@ class NavigationMixin:
         self._cancel_attack_confirmation(refresh=False)
         self._clear_projectile()
         self._home_started = None
+        # 说明遮罩（盘面要点 / 入梦介绍）铺在整屏层，回主页前必须关掉：
+        # 否则它会盖住主页的存档、删除等按钮，点击全落在遮罩上。
+        self.set_board_info(False)
         self.home_mode = True
         self.panel_mode = "home"
         # 退出存档回主页＝锁定解除（玩家规则：只有退出存档重进或手动 ~ 才解除）。
@@ -583,6 +589,10 @@ class NavigationMixin:
         self.panel_locked = False
         self._locked_panel_page = None
         self.panel_mode = self._default_panel_mode()
+        self.panel_subpages['actions'] = self.config.get('default_action_page')
+        self.panel_scroll = 0
+        self._map_overview_zoom = None
+        self.query_one('#map').zoom = float(self.config.get('default_zoom'))/100
         # [SFX挂点] 音乐·进入游戏（读档/新开局）：play_music("theme") 淡入循环，
         # 建议 梦境音乐\snow_theme_loop.ogg 改名 theme.ogg 覆盖占位资源。
         # 主页里 Enter 由按钮绑定消费时不经过底栏，可能留下未消耗的标记；
@@ -596,6 +606,7 @@ class NavigationMixin:
         self.query_one("#home").styles.display = "none"
         self.query_one(Header).styles.display = "block"
         self.query_one(Footer).styles.display = "block"
+        self._ensure_side_tamper_on_route(self.panel_mode)
         self.refresh_view()
     # ---- 全屏暂停菜单（2026-09-20）：Esc 的「菜单」语义 ----
 
@@ -969,7 +980,16 @@ class NavigationMixin:
         参数 persist_initial：构造 GameSession 时是否立即写盘。新开局/重试必须
         保持 True；普通读档传 False，避免把刚读出的状态原样重写一遍。
         """
+        from ..presentation_events import release_presentation_events
+        release_presentation_events(self)
+        previous_session = self.session
         self.session = GameSession(state, manager, persist_initial=persist_initial)
+        if getattr(self, '_independent_session', False):
+            from ...legacy_session import independent_session
+            self.session = independent_session(self.session, entered=True)
+            if getattr(previous_session, 'asynchronous', False):
+                previous_session.close(save=not self.home_mode and not self.save_disabled)
+
         self.tutorial_session = False
         self.test_mode = bool(test_mode)  # 测试存档带调试面板
         self.selected_slot = slot
@@ -986,13 +1006,18 @@ class NavigationMixin:
         if not self.tutorial_session:
             self._tutorial_home_session = (self.session, self.save_disabled)
         self._return_home()
-        state = GameState.new(seed=20261023, tutorial=True)
-        state.tutorial['coach_version'] = 1
+        from ...core.tutorial_control import new_tutorial_session
         self._coach_hidden = self._coach_directory = False
         self._coach_drag_position = None
         self._coach_content_key = self._coach_card_geometry = None
-        self.session = GameSession(state, SaveManager(self.base_save_dir),
-                                   persist_initial=False, persistence_enabled=False)
+        from ..presentation_events import release_presentation_events
+        release_presentation_events(self)
+        if self.tutorial_session and getattr(self.session, 'asynchronous', False):
+            self.session.close(save=False)
+        self.session = new_tutorial_session(SaveManager(self.base_save_dir))
+        if getattr(self, '_independent_session', False):
+            from ...legacy_session import independent_session
+            self.session = independent_session(self.session, entered=True)
         self.tutorial_session = True
         self.save_disabled = True
         self.test_mode = False
@@ -1002,6 +1027,10 @@ class NavigationMixin:
     def _finish_tutorial_session(self) -> None:
         self.tutorial_session = False
         self._return_home()
+        from ..presentation_events import release_presentation_events
+        release_presentation_events(self)
+        if getattr(self.session, 'asynchronous', False):
+            self.session.close(save=False)
         self.session, self.save_disabled = self._tutorial_home_session
         self._tutorial_home_session = None
         self._open_saves()
@@ -1178,7 +1207,8 @@ class NavigationMixin:
         # never opens the introduction, including if it was closed midway.
         show_intro = not self.newgame_saves_test
         if show_intro:
-            state.tutorial['intro_shown'] = True
+            from ...core.tutorial_control import initialize_intro_marker
+            initialize_intro_marker(state)
         self._adopt_slot_session(state, manager, slot, test_mode=self.newgame_saves_test)
         self.newgame_saves_test = False
         if show_intro:

@@ -314,6 +314,7 @@ class HospitalEffectMixin:
                     st['cleanse_left'] = 4
                     if wash:
                         cell.liquid -= 1
+                        self._sync_material_position(holder.x, holder.y)
                     if holder is self.player:
                         self.messages.append(tr('洁净削短了「{name}」的持续。', name=tr(portent_def(pid).name)))
             waking = ((cell.liquid_kind == '晨醒溶液' and cell.liquid >= 4)

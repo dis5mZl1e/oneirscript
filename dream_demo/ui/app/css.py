@@ -101,7 +101,7 @@ class AppCssMixin:
     """DreamApp 的样式表（CSS 类属性）。"""
 
     CSS = """
-    Screen { background: #101018; layers: default overlay tamper toast help inspection tutorial confirmation; }
+    Screen { background: #101018; layers: default overlay tamper toast help inspection tutorial confirmation _tooltips; }
     #signal-status { height: 1; width: 100%; }
     #signal-status:focus { text-style: underline; }
     #signal-detail { display: none; layer: inspection; position: absolute;
@@ -128,6 +128,8 @@ class AppCssMixin:
         border: none; background: #181b24; color: #c8b478; }
     #controls-help-close:hover, #controls-help-close:focus { background: #252a35; color: #f1dfad; }
     #layout { height: 1fr; }
+    #map-column { width: 2fr; height: 1fr; }
+    #map-column > #map-pane { width: 1fr; height: 1fr; }
     # 左侧面板（格子详情 / 物品菜单 / 意象详情，都是下面那个 #map-overlay 浮层）
     # 要在左边框里居中，靠的是容器自己的 align：Textual 对齐的是「同一 layer 内
     # 所有子节点并集的包围盒」。浮层带 layer: overlay、单独成层，那一层只有它

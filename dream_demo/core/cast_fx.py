@@ -12,16 +12,16 @@ _cell_effect_fields = attrgetter(*_CELL_FIELDS)
 
 
 def _effect_snapshot(state):
-    # The same immutable tuple, without a Python generator per map cell.
-    cells = {(x, y): _cell_effect_fields(c)
-             for y, row in enumerate(state.cells) for x, c in enumerate(row)}
+    # 行级不可变快照：整行相同即跳过，diff 只进到真正变化的行。
+    # 不再为每格构造 (x, y) 键和 dict 条目。
+    rows = tuple(tuple(_cell_effect_fields(c) for c in row) for row in state.cells)
     actors = {}
     for actor in [state.player, *state.enemies]:
         actors[actor.id] = ((actor.x, actor.y), actor.integrity,
                             tuple(sorted(actor.portents.items())),
                             actor.frozen_turns, actor.blind_turns, actor.slow_turns, actor.alert_state,
                             actor.last_seen_x, actor.last_seen_y)
-    return cells, actors, frozenset(state.developed_cells.get(str(state.depth), ()))
+    return rows, actors, frozenset(state.developed_cells.get(str(state.depth), ()))
 
 
 class EffectCapture:
@@ -35,8 +35,13 @@ class EffectCapture:
 
     def checkpoint(self):
         current = _effect_snapshot(self.state)
-        old_cells, old_actors, old_developed = self.baseline
-        self.cells.update(p for p, value in current[0].items() if old_cells.get(p) != value)
+        old_rows, old_actors, old_developed = self.baseline
+        for y, (before_row, after_row) in enumerate(zip(old_rows, current[0])):
+            if before_row == after_row:
+                continue
+            for x, (before, after) in enumerate(zip(before_row, after_row)):
+                if before != after:
+                    self.cells.add((x, y))
         for key, value in current[1].items():
             if old_actors.get(key) != value:
                 self.cells.add(value[0])

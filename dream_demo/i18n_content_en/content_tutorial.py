@@ -1317,6 +1317,43 @@ EN_CONTENT.update({
         "Ankle-high reeds whose tips forever point at the 4 PM sun: walking through leaves your steps heavy (+0.5 move time).",
     "贴水生长的低丛，叶尖挂着一串小气泡：液面漫过也不散。":
         "Low growth hugging the water, beaded with tiny bubbles: it holds even when the water rises over it.",
+    # ---- 三位面植物地形（2026-10-26）----
+    "被踩倒的蒲草，只剩本格那一点迟滞（移动 +0.5）。":
+        "Trampled reeds; all that remains is a little drag in this cell (+0.5 move time).",
+    "贴地的软塑料带：每次真实踏入都被绊慢半拍（移动 +0.5）；遇液不散，只会熔化。":
+        "A soft plastic strip lying flat: every real step stumbles half a beat (+0.5 move time); liquid won't scatter it, only melt it.",
+    "金属振片：首次踩上会振响一格短声并压平；液体与火焰都毁不掉它。":
+        "A metal reed: the first step rings out one cell of sound and flattens it; neither liquid nor flame can destroy it.",
+    "常驻的导电金属线（自己不发电）；首次踩过或拔起，最多三格短暂带电。":
+        "A permanent conductive wire (it generates no power itself); the first step across or pull-up briefly electrifies up to three cells.",
+    "立起的塑料片：挡住视线却挡不住路；液体漫过也不会倒。":
+        "An upright plastic sheet: it blocks sight, not passage; rising liquid won't knock it over.",
+    "金属热丝：被踩或拔起时放出一次电热脉冲，最多点燃三处有燃料的格。":
+        "A metal hot-wire: stepping on or pulling it up releases one heat pulse, igniting up to three fuelled cells.",
+    "竖起的书页脊：纸缝可穿、只挡视线；可燃，遇液塌散。":
+        "An upright book spine: you can pass through the page gap, but it blocks sight; flammable, and it collapses in liquid.",
+    "书册的装订线：绊脚但不定身（移动 +0.5）。":
+        "A book binding cord: it trips you but holds you still (+0.5 move time).",
+    "深色绒芯每回合吸走一单位湿墨或稀墨，全株至多吸六单位。":
+        "A dark felt core absorbs one unit of wet or thin ink per round, up to six units per plant.",
+    "松软的空白絮：一格内脚步轻一档；攻击与警报声不减。":
+        "Soft blank fluff: footsteps are one step quieter within a cell; attacks and alarms stay as loud.",
+    "粗糙的硬页：被踩或拔起时刮过相邻地面，最多三格各削去八点耐久。":
+        "A coarse hard page: stepping on or pulling it up scrapes neighbouring ground, shaving eight durability from up to three cells.",
+    "收紧的缝合线：常态绊脚（移动 +0.5）；首次踩上会被短暂缠住。":
+        "Tightened stitching thread: it always trips (+0.5 move time); the first step briefly entangles you.",
+    "多孔滤材：每回合吸走一单位胞尘或梦醚气，全株至多六单位。":
+        "Porous filter felt: it absorbs one unit of cell dust or dream-ether gas per round, up to six units per plant.",
+    "金属遮光折片：把本格与一格内的机械照明视距压低一档，不熄灯。":
+        "A metal light-stop fold: it lowers mechanical lighting sight by one step in this cell and one cell around, without extinguishing it.",
+    "薄膜囊：首次被踩时把本格最多四单位同种气体推向它嘴朝的那一格。":
+        "A thin membrane sac: the first step pushes up to four units of same gas in this cell toward the cell its mouth faces.",
+    "封着洗兆液的膜囊：被踩破时把十二单位药液摊到最多三格（每格四单位）。":
+        "A membrane sac sealed with omen-wash: crushed, it spills twelve units of the liquid over up to three cells (four each).",
+    "尚未展开的低矮叠片：不挡视线，催生后才立起。":
+        "A low folded stack not yet unfolded: it blocks no sight; it only rises after being grown.",
+    "合页状态的纸脊：可燃、遇液塌散；催生后才展开成竖脊。":
+        "A closed paper spine: flammable, and it collapses in liquid; it only unfolds into an upright spine after being grown.",
 })
 
 

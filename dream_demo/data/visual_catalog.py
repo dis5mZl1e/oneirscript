@@ -245,6 +245,8 @@ RECIPES = {
     # 减声与加时本身照旧结算，只是不再有这层字——不要把它们加回来。
     "plant.absorb": VisualRecipe(
         # 常驻吸收：只对**真实被扣掉 1 单位的源格**画一次收束，不铺满 R1。
+        # 2026-10-27 起逐回合吸收默认静默（见 visual_policy.allows_event_trigger），
+        # 配方留作显式开启的后备，事件仍照常登记供状态查询。
         "plant.absorb", 0, 0.4, theme="plant", charset=".,'`",
         colors=("#cfe3b1", "#41592f"),
         layers=(

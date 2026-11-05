@@ -30,9 +30,11 @@ def _ink_columns(strip):
 
 
 class _WideCompositor(Compositor):
-    def _overlay_background(self, fragment, x, y):
+    def _overlay_background(self, fragment, x, y, visible_widgets=None):
         """Keep the map's background color under each overlaid character."""
-        target = next(((w, r) for w, (r, _clip) in self.visible_widgets.items()
+        if visible_widgets is None:
+            visible_widgets = self.visible_widgets
+        target = next(((w, r) for w, (r, _clip) in visible_widgets.items()
                        if getattr(w, 'id', None) == 'map'), None)
         if target is None:
             return fragment
@@ -55,10 +57,16 @@ class _WideCompositor(Compositor):
                 offset += width
         return Strip(segments, fragment.cell_length)
 
-    def _overlay_above_map(self, overlay, x, y):
+    def _overlay_above_map(self, overlay, x, y, visible_widgets=None):
         """The event text belongs above the map and below opaque panels."""
+        if visible_widgets is None:
+            visible_widgets = self.visible_widgets
         seen = False
-        for widget, _region in self.get_widgets_at(x, y):
+        # Match Textual.get_widgets_at's front-to-back region/clip predicate,
+        # using the same visibility snapshot as the ownership calculation.
+        for widget, (region, clip) in visible_widgets.items():
+            if not (widget.visible and region.contains(x, y) and clip.contains(x, y)):
+                continue
             if widget is overlay:
                 seen = True
                 continue
@@ -85,11 +93,15 @@ class _WideCompositor(Compositor):
             self._partial_damage_spans = None
         if update is None:
             return None
+        # Textual reads self.cuts again after _render_chops, so a lazy layout
+        # replacement may have supplied ends for a different frame. Segment
+        # output must pair each captured chop with its original end column.
+        update.chop_ends = [row[1:] for row in self._wide_rendered_cuts]
         # 脏区自身也可能仅覆盖双宽字的一半。把同一前景片段作为原子更新，
         # 不跨真实遮挡边界；合并重叠片段避免一行反复输出。
         spans = []
         for y, x1, x2 in update.spans:
-            cuts = self.cuts[y]
+            cuts = self._wide_rendered_cuts[y]
             start = cuts[max(0, bisect_right(cuts, x1)-1)]
             end = cuts[min(len(cuts)-1, bisect_left(cuts, x2))]
             if spans and spans[-1][0] == y and start <= spans[-1][2]:
@@ -101,13 +113,17 @@ class _WideCompositor(Compositor):
 
     @property
     def cuts(self):
-        if self._cuts is not None:
+        visible_widgets = self.visible_widgets
+        # Textual's lazy full_map rebuild replaces the visibility table without
+        # clearing _cuts. Ownership and cuts must describe that same layout.
+        if (self._cuts is not None
+                and getattr(self, '_wide_visible_widgets', None) is visible_widgets):
             return self._cuts
         width, height = self.size
         owners = [[None]*width for _ in range(height)]
         bounds = self.size.region
         # visible_widgets 与 _get_renders 都按从前到后排列，先到者占有像素。
-        for widget, (region, clip) in self.visible_widgets.items():
+        for widget, (region, clip) in visible_widgets.items():
             original = region
             region = region.intersection(clip).intersection(bounds)
             transparent = getattr(widget, 'transparent_text_overlay', False)
@@ -122,15 +138,20 @@ class _WideCompositor(Compositor):
                 for start, end in runs:
                     for x in range(region.x + start, min(region.x + end, region.right)):
                         if (row[x] is None and
-                                (not transparent or self._overlay_above_map(widget, x, y))):
+                                (not transparent or self._overlay_above_map(widget, x, y, visible_widgets))):
                             row[x] = widget
         self._wide_owners = owners
+        self._wide_visible_widgets = visible_widgets
         self._cuts = [[0] + [x for x in range(1, width) if row[x] is not row[x-1]]
                       + [width] for row in owners]
         return self._cuts
 
     def _render_chops(self, crop, is_rendered_line):
         cuts = self.cuts
+        # Rendering a widget may lazily rebuild Textual's full_map. Geometry
+        # must stay paired with the ownership/cuts captured for this frame;
+        # the next frame will pick up the replacement visibility table.
+        visible_widgets = self._wide_visible_widgets
         chops = [dict.fromkeys(row[:-1]) for row in cuts]
         bounds = self.size.region
         crop = bounds if crop is None else crop.intersection(bounds)
@@ -151,7 +172,7 @@ class _WideCompositor(Compositor):
                 if widget is not None:
                     jobs.setdefault(widget, {}).setdefault(y, []).append((start, end))
         for widget, lines in jobs.items():
-            region, clip = self.visible_widgets[widget]
+            region, clip = visible_widgets[widget]
             visible = region.intersection(clip).intersection(bounds)
             transparent = getattr(widget, 'transparent_text_overlay', False)
             rows = list(lines)
@@ -168,7 +189,8 @@ class _WideCompositor(Compositor):
                         # Keep the whole ownership span, including both cells of a wide glyph.
                         fragment = strip.crop(start - visible.x, end - visible.x)
                         if not transparent or any(segment.text.strip() for segment in fragment):
-                            chops[y][start] = (self._overlay_background(fragment, start, y)
+                            chops[y][start] = (self._overlay_background(fragment, start, y, visible_widgets)
                                                if transparent else fragment)
                 index = stop
+        self._wide_rendered_cuts = cuts
         return chops

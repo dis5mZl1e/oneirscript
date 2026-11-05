@@ -2150,6 +2150,7 @@ class EnemyMixin(PursuitMixin):
             # 盆栽看守：经过的低草长成高丛。
             if enemy.trait == "gardener" and self.cell(enemy.x, enemy.y).plant == 1:
                 self.cell(enemy.x, enemy.y).plant = 2
+                self._sync_material_position(enemy.x, enemy.y)
             # 回声抄写员：与玩家上一次移动同向挪一格（可通行时）。
             if not uses_active_skills and enemy.trait == "echo_copy" and getattr(self, "_last_player_move", None):
                 dx, dy = self._last_player_move
@@ -2887,7 +2888,10 @@ class EnemyMixin(PursuitMixin):
         for other in self.enemies:
             if other is source or other.integrity <= 0 or not other.communicates:
                 continue
-            distance = abs(other.x - source.x) + abs(other.y - source.y)
+            distance = abs(other.x - source.x)
+            if distance > radius:
+                continue
+            distance += abs(other.y - source.y)
             if distance <= radius and other.alert_state == "未察觉" and self._has_line_of_sight(source.x, source.y, other.x, other.y):
                 other.alert_state = "怀疑"
                 # §22 B：传信是独立事实，只记报信点，不冒充目击，也不给

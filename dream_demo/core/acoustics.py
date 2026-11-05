@@ -146,6 +146,10 @@ def propagate(state, x: int, y: int, radius: int) -> dict[tuple[int, int], int]:
     heap = [(-residual[start], x, y)]
     directions = ((1, 0), (0, 1), (-1, 0), (0, -1))
     folds = fold_edges(state)
+    from .expansion_consumables import PREFIX, records
+    # Ledger and cell state are read-only throughout one propagation query.
+    plugs = {(r['x'], r['y']) for r in records(state)
+             if r['kind'] == PREFIX + 'acoustic_plug'}
     while heap:
         neg, cx, cy = heapq.heappop(heap)
         current_residual = -neg
@@ -160,8 +164,8 @@ def propagate(state, x: int, y: int, radius: int) -> dict[tuple[int, int], int]:
             cost = _edge_cost(current, neighbor)
             if cost is None:
                 continue
-            from .expansion_consumables import acoustic_cost
-            cost += acoustic_cost(state, nx, ny)
+            if (nx, ny) in plugs and not neighbor.flame:
+                cost += 6
             if folds and tuple(sorted(((cx, cy), (nx, ny)))) in folds:
                 cost += FOLD_EXTRA_LOSS
             value = current_residual - cost

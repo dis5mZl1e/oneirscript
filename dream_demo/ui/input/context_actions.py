@@ -1,5 +1,8 @@
 """上下文动作族：句子/装备瞄准、_apply 结算、对话与攻击确认、路径跟随。"""
 from __future__ import annotations
+from ..action_completion import after_action
+from ...core.tutorial_control import submit_tutorial
+from ...core.presentation_control import submit_presentation
 
 import time
 
@@ -10,7 +13,6 @@ from ...i18n import tr
 from ...audio import sfx
 from ...core import ABILITY_DEFINITIONS
 from ...core.entities import ActionResult
-from ...core.tutorial import tutorial_skip_step
 from ...materials import PORTENT_DEFINITIONS, TABLE_KINDS, wall_def
 from .._native import _trace_native
 from ..styles import HOLD_RELEASE_TIMEOUT, MOVE_REPEAT_MIN_SECONDS, RIGHT_PANEL_MODES
@@ -108,13 +110,15 @@ class ContextActionsMixin:
         args = ((pending['row'], *target) if command == 'use_equipment_sentence' else
                 (pending['source_index'], *target) if command == 'spray_target' else target)
         result = self._apply(command, *args, choice=pending['key'])
-        if not result.changed:
-            # Failed target/resource checks are free; the player can retarget.
-            self.sentence_aim = pending
-            self.aiming = True
-        self.show_toast(result.message, 3)
-        self.refresh_view()
+        def finish(result):
+            if not result.changed:
+                # Failed target/resource checks are free; the player can retarget.
+                self.sentence_aim = pending
+                self.aiming = True
+            self.show_toast(result.message, 3)
+            self.refresh_view()
 
+        return after_action(self, result, finish)
     def _sentence_aim_key(self, key):
         directions = {'up': (0,-1), 'down': (0,1), 'left': (-1,0), 'right': (1,0),
                       'num8': (0,-1), 'num2': (0,1), 'num4': (-1,0), 'num6': (1,0)}
@@ -187,30 +191,29 @@ class ContextActionsMixin:
     def _apply_interact(self):
         """interact 的统一出口：复合事件返回 {"dialogue"} 时唤起事件对话面板。"""
         result = self._apply("interact")
-        state = self.session.state
-        if result.data.get('pickup_target'):
-            self.open_pickup(tuple(result.data['pickup_target']))
+        def finish(result):
+            state = self.session.state
+            if result.data.get('pickup_target'):
+                self.open_pickup(tuple(result.data['pickup_target']))
+                return result
+            if result.changed and state.pending_npc() is not None and state.tutorial.get("active"):
+                # 教程埋点：对话步只需「跟纸偶说上话」（对话框打开即认可）。
+                submit_tutorial(self.session, 'event', 'npc_talked')
+            if result.changed and result.data.get("dialogue"):
+                self.panel_mode = "event_dialog"
+                self.panel_scroll = 0
+                self.event_dialog_scroll = 0
+                self.event_dialog_cursor = 0
             return result
-        if result.changed and state.pending_npc() is not None and state.tutorial.get("active"):
-            # 教程埋点：对话步只需「跟纸偶说上话」（对话框打开即认可）。
-            state.tutorial_events["npc_talked"] = 1
-        if result.changed and result.data.get("dialogue"):
-            self.panel_mode = "event_dialog"
-            self.panel_scroll = 0
-            self.event_dialog_scroll = 0
-            self.event_dialog_cursor = 0
-        return result
 
+        return after_action(self, result, finish)
     def _close_event_dialog_state(self) -> None:
         """收起对话面板时同步清掉 core 侧的 pending id，避免残留状态。"""
         state = self.session.state
         self._dialog_feedback = None
         # 篡改草稿随对话一起丢（规格 §4.4）：对话关了，编辑的对象就不在眼前了。
         self.close_tamper_editor(refresh=False)
-        if state.pending_npc_id is not None:
-            state.close_npc_dialog()
-        else:
-            state.close_event_dialog()
+        self.session.apply('ui_control', 'close_dialog')
 
     def _toy_npc_for_depth(self) -> tuple[str, ...]:
         """玩具的回忆：当前层守门人 npc id（恒显集合，含全部三层以便判定）。"""
@@ -229,12 +232,15 @@ class ContextActionsMixin:
         self.event_dialog_cursor = index
         command = "choose_npc_option" if state.pending_npc() else "choose_event_option"
         result = self._apply(command, index)
-        # 结算消息贴进对话面板（2026-10-11）：以前只进事件记录，对话里看不到反馈。
-        self._dialog_feedback = (result.changed, result.message or "")
-        if result.changed and state.pending_npc() is None and state.pending_event() is None:
-            self.panel_mode = self._default_panel_mode()
-        self.refresh_view()
+        def finish(result):
+            state = self.session.state
+            # 结算消息贴进对话面板（2026-10-11）：以前只进事件记录，对话里看不到反馈。
+            self._dialog_feedback = (result.changed, result.message or "")
+            if result.changed and state.pending_npc() is None and state.pending_event() is None:
+                self.panel_mode = self._default_panel_mode()
+            self.refresh_view()
 
+        return after_action(self, result, finish)
     def _click_dialog_option(self, index: int) -> None:
         """左键两段式（2026-09-18 应用户要求）：首击只选中（▶ 移过去），
         已选中的项再击才触发。与键盘手感一致：↑↓ 选中、Enter 确认。"""
@@ -274,7 +280,7 @@ class ContextActionsMixin:
                 return
             result = self._apply(pending['command'], *pending['args'],
                                  choice=pending['options'][index]['key'])
-            self.show_toast(result.message, 3)
+            self._action_toast(result, 3)
         self.refresh_view()
 
     def _perform_reload(self, instance_id):
@@ -284,18 +290,20 @@ class ContextActionsMixin:
         self.observe_walk_path.clear()
         self._clear_held()
         result = self._apply('reload_weapon_step', str(instance_id))
-        if pending is not None and pending.get('command') == 'aim_equipment':
-            pending['options'] = self._firing_source_options()
-            pending['context'] = self._equipment_choice_context()
-            pending['cursor'] = min(pending['cursor'], max(0, len(pending['options']) - 1))
-            self.equipment_choice = pending
-        if self.aiming:
-            self._aim_failed = False
-            self._aim_equipment_identity = self.session.state.equipment.formation().semantic_signature
-        self.show_toast(result.message, 3)
-        self.refresh_view()
-        return result
+        def finish(result):
+            if pending is not None and pending.get('command') == 'aim_equipment':
+                pending['options'] = self._firing_source_options()
+                pending['context'] = self._equipment_choice_context()
+                pending['cursor'] = min(pending['cursor'], max(0, len(pending['options']) - 1))
+                self.equipment_choice = pending
+            if self.aiming:
+                self._aim_failed = False
+                self._aim_equipment_identity = self.session.state.equipment.formation().semantic_signature
+            self.show_toast(result.message, 3)
+            self.refresh_view()
+            return result
 
+        return after_action(self, result, finish)
     def _aim_spray_medium(self):
         selected = self.aim_action_choice
         if selected is not None:
@@ -501,167 +509,198 @@ class ContextActionsMixin:
         enemies0 = len(state.enemies)
         projectile_seq0 = int(getattr(state, "projectile_seq", 0) or 0)
         hit_seq0 = int(getattr(state, "hit_event_seq", 0) or 0)
-        messages0 = len(state.messages)
+        messages0 = state.messages.cursor
         resolved0 = sum(1 for entry in state.events if entry.resolved)
         player0 = (state.player.x, state.player.y)
         action0 = state.action_seq
         time0 = state.time
+        def capture_before_publication(resolved):
+            nonlocal mind0, projectile_visual, supply_before, lucidity0, insight0, memory0
+            nonlocal memories0, blasts0, combat0, run_over0, enemies0, projectile_seq0
+            nonlocal hit_seq0, messages0, resolved0, player0, action0, time0
+            before = self.session.state
+            mind0, lucidity0 = before.mind, before.lucidity
+            resolved_args = resolved[1] if isinstance(resolved, tuple) else args
+            projectile_visual = capture_projectile_visual(before, command, resolved_args, flags.get('choice'))
+            supply_before = supply_levels(before) if command in ('fire', 'fire_assisted', 'reload_weapon_step') else None
+            insight0, memory0 = before.pending_insight, before.pending_memory
+            memories0 = tuple(before.memory_fragments)
+            blasts0 = len(getattr(before, 'explosion_blasts', ()) or ())
+            combat0 = getattr(before, '_combat_fx_seq', 0)
+            run_over0, enemies0 = before.run_over, len(before.enemies)
+            projectile_seq0 = int(getattr(before, 'projectile_seq', 0) or 0)
+            hit_seq0 = int(getattr(before, 'hit_event_seq', 0) or 0)
+            messages0 = before.messages.cursor
+            resolved0 = sum(1 for entry in before.events if entry.resolved)
+            player0 = (before.player.x, before.player.y)
+            action0, time0 = before.action_seq, before.time
         volume = int(self.config.get("sfx_volume")) / 10
+        def complete(result, completion=None):
+            state = self.session.state
+            if command == "move":
+                self._update_movement_presentation(player0, result.changed)
+            raw_projectile = getattr(state, "last_projectile", None) or {}
+            projectile_fired = bool(
+                state.projectile_seq != projectile_seq0
+                and raw_projectile.get("seq") == state.projectile_seq
+            )
+            impact_audio_delay = 0.0
+            if projectile_fired:
+                impact_audio_delay = projectile_flight_time(
+                    str(raw_projectile.get("kind") or "shot"),
+                    len(raw_projectile.get("cells", ())))
+                impact_audio_delay += projectile_repeat_delay(raw_projectile)
+
+            def play_action_feedback(event: str, *, at_impact: bool = False) -> None:
+                if projectile_fired and at_impact:
+                    self._play_sfx_after(impact_audio_delay, event, volume)
+                else:
+                    sfx.play(event, volume=volume)
+
+            if supply_before is not None:
+                note_supply_feedback(self,supply_before,result.changed)
+            if result.changed and command == "container_pour":
+                # §15.6：倒出落地即撤掉「本格现有／倒入／预计」的临时标记。
+                self._invalidate_terrain_preview()
+            if command != 'reload_weapon_step' and (result.changed or command not in ('fire', 'fire_assisted', 'spray_fire', 'spray_target')):
+                self.aim_action_choice = None
+            if (not getattr(self.session, "asynchronous", False) and result.changed and not state.run_over and bool(self.config.get("auto_pickup"))
+                    and command not in ("drop", "throw", "throw_target", "pickup", "collect_items", "take_from", "put_on_table")
+                    and (state.action_seq != action0 or state.time != time0 or "position" in result.data)):
+                # Recheck after actual actions too: a hostile can pause collection
+                # on entry, then die while the player is still standing on the loot.
+                self.session.auto_pickup()
+            options = result.data.get('equipment_action_choices')
+            if not result.changed and options:
+                self.equipment_choice = dict(command=command, args=args, options=options,
+                                             cursor=0, context=self._equipment_choice_context())
+                self.path.clear()
+                self.observe_walk_path.clear()
+                self._clear_held()
+            if result.changed and result.data.get('equipment_sentence'):
+                from ..sentence_writer import SentenceWriter
+                self.query_one('#equipment-sentence', SentenceWriter).write(result.data['equipment_sentence'], force=True)
+            aim_request = result.data.get("throw_aim")
+            fire_request = result.data.get("fire_once_aim")
+            deploy_request = result.data.get("deploy_aim")
+            if aim_request is not None or fire_request is not None or deploy_request is not None:
+                # 瞄准请求本身就是权威：不论外层命令叫 use、Enter 装卸转调还是快捷键，
+                # 都进入同一发射界面；Esc 取消不消耗（物品仍在行囊）。
+                self.spray_source = None
+                self._aim_assist_pos = None
+                self.throw_item_index = aim_request
+                self.fire_once_index = fire_request
+                self.aiming = True
+                if deploy_request is not None:
+                    # 部署类物品（2026-10-22 A2）：另开一条落点通道，点位／成对／
+                    # 方向三种形态各自选点，取消零消耗。
+                    self.throw_item_index = None
+                    self.fire_once_index = None
+                    self.begin_item_deploy_aim(deploy_request)
+                self._capture_aim_source()
+                self.panel_mode = self._default_panel_mode()
+                self.path.clear()
+                self.observe_walk_path.clear()
+            if result.data.get("mirror_insight") is not None:
+                # 洞察之镜：开镜掷三种候选洞察（排除已持有），选一即消耗镜子。
+                self.mirror_index = result.data["mirror_insight"]
+                self.mirror_rolls = self.session.state.mirror_candidates(self.mirror_index)
+                self.mirror_cursor = 0
+                self.panel_mode = self._default_panel_mode()
+                self.path.clear()
+                self.observe_walk_path.clear()
+            if command == "choose_event_option" and result.data.get("lens_offering") is not None:
+                # §8 S23：青灯嵌镜成功 → 打开祭品多选浮层（三件易逝物／摄入物）。
+                self.lens_offer_scene = str(result.data["lens_offering"])
+                self.lens_offer_items = [list(row) for row in (result.data.get("eligible") or [])]
+                self.lens_offer_selected = set()
+                self.lens_offer_cursor = 0
+                self.panel_mode = self._default_panel_mode()
+                self.path.clear()
+                self.observe_walk_path.clear()
+            if self.config.get("sfx_enabled"):
+                if command in ("fire", "fire_assisted") and not result.changed:
+                    # 空放：没解锁也没有聚合弹——只有扣扳机的干响，没有后续。
+                    if "聚合弹" in result.message or "发射许可" in result.message:
+                        sfx.play("fire_empty", volume=volume)
+                elif result.changed:
+                    event = ACTION_SOUNDS.get(command)
+                    if command == "move":
+                        event = self._step_sound_for(state, player0, result)
+                    if event:
+                        if projectile_fired and event in ("fire", "throw"):
+                            # Paint the first flight frame before the launch sound.
+                            self._play_sfx_after(0.0, event, volume)
+                        else:
+                            sfx.play(event, volume=volume)
+                    if result.data.get("dialogue"):
+                        # 对话面板唤起：NPC 与事件用不同的确认音。
+                        sfx.play("npc" if state.pending_npc() is not None else "interact", volume=volume)
+                    new_hits = [event for event in (getattr(state, "presentation_hits", ()) or ())
+                                if int(event.get("seq", 0)) > hit_seq0]
+                    blocked_hit = any(event.get("blocked") for event in new_hits)
+                    real_hit = any(not event.get("blocked")
+                                   and int(event.get("amount", 0)) > 0 for event in new_hits)
+                    # 全被挡下时不播命中音，只留 parry：两者共用会让「没掉血」听成吃满。
+                    if result.data.get("hit") and (real_hit or not blocked_hit):
+                        # 命中音对齐命中时刻：近战/轻击当场播；本次动作真的发射了
+                        # 弹道时推迟到弹道视觉抵达落点（与 FX 的 born 同一时长），
+                        # 不再出现「先响命中、后看飞行」。
+                        if projectile_fired:
+                            play_action_feedback("hit", at_impact=True)
+                        else:
+                            sfx.play("hit", volume=volume)
+                    if blocked_hit:
+                        # 格挡/替身：独立反馈，不与真实创伤共用同一层声音。
+                        play_action_feedback("parry", at_impact=True)
+                    if state.mind < mind0 or state.lucidity < lucidity0:
+                        # 创伤分两路：心智创伤减 mind，清醒创伤减 lucidity——
+                        # 只盯 mind 会漏掉清醒创伤（修复 2026-09-19）。
+                        heavy = (mind0 - state.mind) + (lucidity0 - state.lucidity) >= 8
+                        play_action_feedback("wound_heavy" if heavy else "wound_light",
+                                             at_impact=True)
+                    if len(state.enemies) < enemies0:
+                        play_action_feedback("enemy_die", at_impact=True)
+                    if sum(1 for entry in state.events if entry.resolved) > resolved0:
+                        # 事件完成（resolved 数增加：回应交付/触发次数耗尽/剧情房间结算）。
+                        play_action_feedback("event_done", at_impact=True)
+                    if state.pending_insight != insight0:
+                        play_action_feedback("insight", at_impact=True)
+                    if state.pending_memory != memory0:
+                        play_action_feedback("memory", at_impact=True)
+                    if state.run_over and not run_over0 and command != "finish_run":
+                        sfx.play("defeat", volume=volume)
+            # 2026-09-22：core 侧主动唤起的对话（击败 27 层核心执念 → 深潜裂隙
+            # 结局选择）不走 interact 的返回值，这里统一兜底：pending_event_id
+            # 已置位而面板还停在世界视图时，直接展开事件对话面板（interact
+            # 路径随后重复置位同名面板，无副作用）。
+            if state.pending_event_id is not None and (self.panel_mode == "world" or result.data.get('medicine_dialogue') or result.data.get('book_dialogue')):
+                self.panel_mode = "event_dialog"
+                self.panel_scroll = 0
+                self.event_dialog_scroll = 0
+                self.event_dialog_cursor = 0
+            self._capture_projectile_action(changed=result.changed, memory_before=memories0,
+                                            blasts_before=blasts0, combat_before=combat0,
+                                            visual=projectile_visual)
+            if projectile_fired:
+                self._defer_projectile_messages(messages0, raw_projectile)
+                # This queue contains the launch cue at the same FX time as the
+                # first forced paint; impact cues remain on the flight timeline.
+                self._flush_fx_audio_after_refresh(self._fx_clock)
+            return result
+
+        if getattr(self.session, 'asynchronous', False):
+            pickup = bool(self.config.get('auto_pickup')) and command not in (
+                'drop', 'throw', 'throw_target', 'pickup', 'collect_items', 'take_from', 'put_on_table')
+            owner_command = 'debug_descend' if command == 'descend' and flags.get('ignore_dissolution') else command
+            return self.session.submit(owner_command, *args, choice=flags.get('choice'),
+                                       auto_pickup=pickup, continuation=complete,
+                                       before_publish=capture_before_publication)
         if command == "descend" and flags.get("ignore_dissolution") and not state.run_over:
-            result = state.descend(ignore_dissolution=True)
+            result = self.session.apply('debug_descend')
         else:
             result = self.session.apply(command, *args, **({'choice': flags['choice']} if 'choice' in flags else {}))
-        if command == "move":
-            self._update_movement_presentation(player0, result.changed)
-        raw_projectile = getattr(state, "last_projectile", None) or {}
-        projectile_fired = bool(
-            state.projectile_seq != projectile_seq0
-            and raw_projectile.get("seq") == state.projectile_seq
-        )
-        impact_audio_delay = 0.0
-        if projectile_fired:
-            impact_audio_delay = projectile_flight_time(
-                str(raw_projectile.get("kind") or "shot"),
-                len(raw_projectile.get("cells", ())))
-            impact_audio_delay += projectile_repeat_delay(raw_projectile)
-
-        def play_action_feedback(event: str, *, at_impact: bool = False) -> None:
-            if projectile_fired and at_impact:
-                self._play_sfx_after(impact_audio_delay, event, volume)
-            else:
-                sfx.play(event, volume=volume)
-
-        if supply_before is not None:
-            note_supply_feedback(self,supply_before,result.changed)
-        if result.changed and command == "container_pour":
-            # §15.6：倒出落地即撤掉「本格现有／倒入／预计」的临时标记。
-            self._invalidate_terrain_preview()
-        if command != 'reload_weapon_step' and (result.changed or command not in ('fire', 'fire_assisted', 'spray_fire', 'spray_target')):
-            self.aim_action_choice = None
-        if (result.changed and not state.run_over and bool(self.config.get("auto_pickup"))
-                and command not in ("drop", "throw", "throw_target", "pickup", "collect_items", "take_from", "put_on_table")
-                and (state.action_seq != action0 or state.time != time0 or "position" in result.data)):
-            # Recheck after actual actions too: a hostile can pause collection
-            # on entry, then die while the player is still standing on the loot.
-            self.session.auto_pickup()
-        options = result.data.get('equipment_action_choices')
-        if not result.changed and options:
-            self.equipment_choice = dict(command=command, args=args, options=options,
-                                         cursor=0, context=self._equipment_choice_context())
-            self.path.clear()
-            self.observe_walk_path.clear()
-            self._clear_held()
-        if result.changed and result.data.get('equipment_sentence'):
-            from ..sentence_writer import SentenceWriter
-            self.query_one('#equipment-sentence', SentenceWriter).write(result.data['equipment_sentence'], force=True)
-        aim_request = result.data.get("throw_aim")
-        fire_request = result.data.get("fire_once_aim")
-        deploy_request = result.data.get("deploy_aim")
-        if aim_request is not None or fire_request is not None or deploy_request is not None:
-            # 瞄准请求本身就是权威：不论外层命令叫 use、Enter 装卸转调还是快捷键，
-            # 都进入同一发射界面；Esc 取消不消耗（物品仍在行囊）。
-            self.spray_source = None
-            self._aim_assist_pos = None
-            self.throw_item_index = aim_request
-            self.fire_once_index = fire_request
-            self.aiming = True
-            if deploy_request is not None:
-                # 部署类物品（2026-10-22 A2）：另开一条落点通道，点位／成对／
-                # 方向三种形态各自选点，取消零消耗。
-                self.throw_item_index = None
-                self.fire_once_index = None
-                self.begin_item_deploy_aim(deploy_request)
-            self._capture_aim_source()
-            self.panel_mode = self._default_panel_mode()
-            self.path.clear()
-            self.observe_walk_path.clear()
-        if result.data.get("mirror_insight") is not None:
-            # 洞察之镜：开镜掷三种候选洞察（排除已持有），选一即消耗镜子。
-            self.mirror_index = result.data["mirror_insight"]
-            self.mirror_rolls = self.session.state.mirror_candidates(self.mirror_index)
-            self.mirror_cursor = 0
-            self.panel_mode = self._default_panel_mode()
-            self.path.clear()
-            self.observe_walk_path.clear()
-        if command == "choose_event_option" and result.data.get("lens_offering") is not None:
-            # §8 S23：青灯嵌镜成功 → 打开祭品多选浮层（三件易逝物／摄入物）。
-            self.lens_offer_scene = str(result.data["lens_offering"])
-            self.lens_offer_items = [list(row) for row in (result.data.get("eligible") or [])]
-            self.lens_offer_selected = set()
-            self.lens_offer_cursor = 0
-            self.panel_mode = self._default_panel_mode()
-            self.path.clear()
-            self.observe_walk_path.clear()
-        if self.config.get("sfx_enabled"):
-            if command in ("fire", "fire_assisted") and not result.changed:
-                # 空放：没解锁也没有聚合弹——只有扣扳机的干响，没有后续。
-                if "聚合弹" in result.message or "发射许可" in result.message:
-                    sfx.play("fire_empty", volume=volume)
-            elif result.changed:
-                event = ACTION_SOUNDS.get(command)
-                if command == "move":
-                    event = self._step_sound_for(state, player0, result)
-                if event:
-                    if projectile_fired and event in ("fire", "throw"):
-                        # Paint the first flight frame before the launch sound.
-                        self._play_sfx_after(0.0, event, volume)
-                    else:
-                        sfx.play(event, volume=volume)
-                if result.data.get("dialogue"):
-                    # 对话面板唤起：NPC 与事件用不同的确认音。
-                    sfx.play("npc" if state.pending_npc() is not None else "interact", volume=volume)
-                new_hits = [event for event in (getattr(state, "presentation_hits", ()) or ())
-                            if int(event.get("seq", 0)) > hit_seq0]
-                blocked_hit = any(event.get("blocked") for event in new_hits)
-                real_hit = any(not event.get("blocked")
-                               and int(event.get("amount", 0)) > 0 for event in new_hits)
-                # 全被挡下时不播命中音，只留 parry：两者共用会让「没掉血」听成吃满。
-                if result.data.get("hit") and (real_hit or not blocked_hit):
-                    # 命中音对齐命中时刻：近战/轻击当场播；本次动作真的发射了
-                    # 弹道时推迟到弹道视觉抵达落点（与 FX 的 born 同一时长），
-                    # 不再出现「先响命中、后看飞行」。
-                    if projectile_fired:
-                        play_action_feedback("hit", at_impact=True)
-                    else:
-                        sfx.play("hit", volume=volume)
-                if blocked_hit:
-                    # 格挡/替身：独立反馈，不与真实创伤共用同一层声音。
-                    play_action_feedback("parry", at_impact=True)
-                if state.mind < mind0 or state.lucidity < lucidity0:
-                    # 创伤分两路：心智创伤减 mind，清醒创伤减 lucidity——
-                    # 只盯 mind 会漏掉清醒创伤（修复 2026-09-19）。
-                    heavy = (mind0 - state.mind) + (lucidity0 - state.lucidity) >= 8
-                    play_action_feedback("wound_heavy" if heavy else "wound_light",
-                                         at_impact=True)
-                if len(state.enemies) < enemies0:
-                    play_action_feedback("enemy_die", at_impact=True)
-                if sum(1 for entry in state.events if entry.resolved) > resolved0:
-                    # 事件完成（resolved 数增加：回应交付/触发次数耗尽/剧情房间结算）。
-                    play_action_feedback("event_done", at_impact=True)
-                if state.pending_insight != insight0:
-                    play_action_feedback("insight", at_impact=True)
-                if state.pending_memory != memory0:
-                    play_action_feedback("memory", at_impact=True)
-                if state.run_over and not run_over0 and command != "finish_run":
-                    sfx.play("defeat", volume=volume)
-        # 2026-09-22：core 侧主动唤起的对话（击败 27 层核心执念 → 深潜裂隙
-        # 结局选择）不走 interact 的返回值，这里统一兜底：pending_event_id
-        # 已置位而面板还停在世界视图时，直接展开事件对话面板（interact
-        # 路径随后重复置位同名面板，无副作用）。
-        if state.pending_event_id is not None and (self.panel_mode == "world" or result.data.get('medicine_dialogue') or result.data.get('book_dialogue')):
-            self.panel_mode = "event_dialog"
-            self.panel_scroll = 0
-            self.event_dialog_scroll = 0
-            self.event_dialog_cursor = 0
-        self._capture_projectile_action(changed=result.changed, memory_before=memories0,
-                                        blasts_before=blasts0, combat_before=combat0,
-                                        visual=projectile_visual)
-        if projectile_fired:
-            self._defer_projectile_messages(messages0, raw_projectile)
-            # This queue contains the launch cue at the same FX time as the
-            # first forced paint; impact cues remain on the flight timeline.
-            self._flush_fx_audio_after_refresh(self._fx_clock)
-        return result
+        return complete(result)
     @staticmethod
     def _step_sound_for(state, player0: tuple[int, int], result) -> str | None:
         """move 的脚步声按落脚格材质分派；撞上实体（近战）不播脚步。
@@ -746,7 +785,7 @@ class ContextActionsMixin:
         if not targets:
             self.assist_path = []
             self._aim_assist_pos = self._aim_assist_identity = None
-            self.session.state.messages.append(tr("视野内没有可以辅助瞄准的失控意识。"))
+            submit_presentation(self.session, self.session.state, 'no_assist_target')
             return
         targets.sort(key=lambda e: max(abs(e.x - state.player.x), abs(e.y - state.player.y)))
         current = next(
@@ -768,6 +807,7 @@ class ContextActionsMixin:
         self._held_key = None
         self._held_direction = None
         self._hold_repeats = 0
+        self._continuous_move_active = False
         cadence = getattr(self, "_move_cadence", None)
         if cadence is not None:
             cadence.reset()
@@ -802,10 +842,13 @@ class ContextActionsMixin:
             return
         self._hold_repeats = 0
         result = self._move_player(*self._held_direction)
-        if not result.changed:
-            # 撞墙/被阻挡：停止自动移动，避免每个节拍空转
-            self._clear_held()
-        self.refresh_view()
+        def finish(result):
+            if not result.changed:
+                # 撞墙/被阻挡：停止自动移动，避免每个节拍空转
+                self._clear_held()
+            self.request_ui_refresh()
+
+        return after_action(self, result, finish)
 
     def _toggle_panel(self, mode: str) -> None:
         if hasattr(self,'_active_tamper_editor') and self._active_tamper_editor() is not None:
@@ -828,6 +871,15 @@ class ContextActionsMixin:
         self.pickup_goal = None
         self.path_click_goal = None
         self._slide_replans = 0
+        self._slide_replan_landings = set()
+        self._path_replan_options = {}
+
+    def _replan_auto_walk(self, destination):
+        state = self.session.state
+        options = dict(getattr(self, '_path_replan_options', {}))
+        if options:
+            options['known_cells'] = state.visible_cells()
+        return state.path_to(*destination, **options)
 
     def _follow_path(self) -> None:
         if getattr(self, '_board_info_open', False):
@@ -844,9 +896,21 @@ class ContextActionsMixin:
             return
         if not self.path or self.pending_confirmation or self.session.state.run_over:
             return
-        target = self.path.pop(0)
+        if getattr(self, '_slide_replan_path', None) is not self.path:
+            self._slide_replan_landings = set()
+        self._slide_replan_path = self.path
+        target = self.path[0]
+        destination = self.path[-1]
         entity = self.session.state.entity_at(*target)
         if entity and entity is not self.session.state.player:
+            if target != destination:
+                replacement = self._replan_auto_walk(destination)
+                if replacement and replacement[0] != target:
+                    self.path = replacement
+                else:
+                    self._cancel_unreachable_path()
+                self.refresh_view()
+                return
             self.path.clear()
             self.observe_walk_path.clear()
             self._confirm_or_attack(target)
@@ -854,54 +918,81 @@ class ContextActionsMixin:
         before = (self.session.state.player.x, self.session.state.player.y)
         dx = max(-1, min(1, target[0] - before[0]))
         dy = max(-1, min(1, target[1] - before[1]))
-        if not self._move_player(dx, dy).changed:
-            self._cancel_unreachable_path()
-            self.refresh_view()
+        if getattr(self, '_walk_command_pending', False):
             return
-        elif max(
-            abs(self.session.state.player.x - before[0]),
-            abs(self.session.state.player.y - before[1]),
-        ) > 1 and self.path:
-            # 冰面滑行：这一步沿方向滑出了好几格，路径前缀已经被越过。
-            # 若按旧路径继续，下一拍的方向会指回身后——玩家被「弹回」，
-            # 每步还照常耗回合。
-            from ...core.throwing import ice_stoppable
-
-            state2 = self.session.state
-            destination = self.path[-1]
-            after = (state2.player.x, state2.player.y)
-            if after == destination:
-                self.path.clear()  # 正好滑到终点：到达结算在下方照常进行
-            elif not ice_stoppable(state2, *destination):
-                # 目标是冰面腹地：无论从哪个方向进入都会滑过头，永远停不住。
-                # 放弃寻路，玩家停在滑行终点（这一回合已正常消耗）。
-                self._cancel_unreachable_path()
+        self._walk_command_pending = True
+        result = self._move_player(dx, dy)
+        def finish(result):
+            nonlocal destination
+            self._walk_command_pending = False
+            if not result.changed:
+                replacement = self._replan_auto_walk(destination)
+                if replacement and replacement[0] != target:
+                    self.path = replacement
+                else:
+                    self._cancel_unreachable_path()
                 self.refresh_view()
                 return
-            else:
-                self._slide_replans = getattr(self, "_slide_replans", 0) + 1
-                if self._slide_replans > 4:
+            after = (self.session.state.player.x, self.session.state.player.y)
+            # Successful interaction is not necessarily movement (opening or
+            # damaging an obstacle). Consume only a waypoint actually reached.
+            if self.path and self.path[0] == target and after == target:
+                self.path.pop(0)
+            if max(
+                abs(self.session.state.player.x - before[0]),
+                abs(self.session.state.player.y - before[1]),
+            ) > 1 and self.path:
+                # 冰面滑行：这一步沿方向滑出了好几格，路径前缀已经被越过。
+                # 若按旧路径继续，下一拍的方向会指回身后——玩家被「弹回」，
+                # 每步还照常耗回合。
+                from ...core.throwing import ice_stoppable
+
+                state2 = self.session.state
+                destination = self.path[-1]
+                after = (state2.player.x, state2.player.y)
+                if after == destination:
+                    self.path.clear()  # 正好滑到终点：到达结算在下方照常进行
+                elif not ice_stoppable(state2, *destination):
+                    # 目标是冰面腹地：无论从哪个方向进入都会滑过头，永远停不住。
+                    # 放弃寻路，玩家停在滑行终点（这一回合已正常消耗）。
                     self._cancel_unreachable_path()
                     self.refresh_view()
                     return
                 else:
-                    self.path = state2.path_to(*destination)
-        if not self.path:
-            # 教程埋点：自动行走步判定「沿路径抵达目标格」。
-            if self.session.state.tutorial.get("active"):
-                self.session.state.tutorial_events["autowalk_arrived"] = (
-                    self.session.state.player.x, self.session.state.player.y,
-                )
-            # 路径走完（或被挡住停下）：结算「点击可寻路」的目标。
-            self._resolve_path_click_goal()
-        # 走到目的地时，若那里有掉落物就顺手捡起——解决「点了物品还得再点一次」
-        # 的问题：点击远处物品本来就是「走过去 + 捡起来」一个连贯动作。
-        if not self.path and self.pickup_goal is not None:
-            goal = self.pickup_goal
-            self.pickup_goal = None
-            if (self.session.state.player.x, self.session.state.player.y) == goal:
-                self.try_pickup(goal)
-        self.refresh_view()
+                    landings = getattr(self, '_slide_replan_landings', set())
+                    signature = (after, destination)
+                    if signature in landings:
+                        self._cancel_unreachable_path()
+                        self.refresh_view()
+                        return
+                    else:
+                        landings.add(signature)
+                        self._slide_replan_landings = landings
+                        self.path = self._replan_auto_walk(destination)
+                        self._slide_replan_path = self.path
+                        if not self.path:
+                            self._cancel_unreachable_path()
+                            self.refresh_view()
+                            return
+            else:
+                self._slide_replan_landings = set()
+            if not self.path and after == destination:
+                # 教程埋点：自动行走步判定「沿路径抵达目标格」。
+                if self.session.state.tutorial.get("active"):
+                    submit_tutorial(self.session, 'event', 'autowalk_arrived',
+                                    self.session.state.player.x, self.session.state.player.y)
+                # 路径走完（或被挡住停下）：结算「点击可寻路」的目标。
+                self._resolve_path_click_goal()
+            # 走到目的地时，若那里有掉落物就顺手捡起——解决「点了物品还得再点一次」
+            # 的问题：点击远处物品本来就是「走过去 + 捡起来」一个连贯动作。
+            if not self.path and self.pickup_goal is not None:
+                goal = self.pickup_goal
+                self.pickup_goal = None
+                if (self.session.state.player.x, self.session.state.player.y) == goal:
+                    self.try_pickup(goal)
+            self.request_ui_refresh()
+
+        return after_action(self, result, finish)
 
     def _move_player(self, dx: int, dy: int):
         state = self.session.state
@@ -1025,15 +1116,17 @@ class ContextActionsMixin:
             # 稳定意识（NPC）：左键不再尝试攻击（也不再弹二次确认），
             # 直接唤起对话面板——与走近后按 Enter「行动」同一条路径的结果。
             state = self.session.state
-            state.talk_toy_keeper(entity)
-            state.pending_npc_id = entity.id
-            state.messages.append(tr("{name}：「请讲。」", name=tr(entity.label)))
-            self.panel_mode = "event_dialog"
-            self.panel_scroll = 0
-            self.event_dialog_scroll = 0
-            self.event_dialog_cursor = 0
-            self.refresh_view()
-            return
+            result = submit_presentation(self.session, state, 'talk_npc', entity.id)
+            def finish(result):
+                if not result.changed:
+                    return
+                self.panel_mode = "event_dialog"
+                self.panel_scroll = 0
+                self.event_dialog_scroll = 0
+                self.event_dialog_cursor = 0
+                self.refresh_view()
+                return
+            return after_action(self, result, finish)
         if entity and entity.relation != "失控意识":
             self._request_attack_confirmation(target)
             return

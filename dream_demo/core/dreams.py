@@ -25,6 +25,7 @@ from ..i18n import tr
 from ..mapgen.layout import normalize_map_form
 from .ebbing import EBBING_FAIL_MIND_COST
 from .entities import ActionResult, Cell
+from .metadata_versions import OwnedList
 
 
 class DreamRealmMixin:
@@ -262,6 +263,7 @@ class DreamRealmMixin:
             self.cells = snapshot.cells
             self._resume_material_clocks(snapshot)
             self.enemies = snapshot.enemies
+            snapshot.enemies = self.enemies
             self.world_items = snapshot.world_items
             self.events = snapshot.events
             self.player.x, self.player.y = snapshot.player_x, snapshot.player_y
@@ -315,8 +317,8 @@ class DreamRealmMixin:
         self._reset_material_index()
         self.player.x, self.player.y = spawn
         self.enemies = []
-        self.world_items = []
-        self.events = []
+        self.world_items = OwnedList()
+        self.events = OwnedList()
         self.dissolution = 0
         if getattr(self, "_pending_circuit_board", None):
             self.install_circuit_board(self._pending_circuit_board)

@@ -23,6 +23,13 @@ def main() -> bool | None:
     install_gc_tuning()
     parser = argparse.ArgumentParser(description="Oneirscript vertical slice")
     parser.add_argument("--smoke", action="store_true", help="render one frame and save without entering the UI")
+    from dream_demo.env_compat import flag
+    parser.add_argument('--simulation-thread', action='store_true',
+                        default=flag('SIMULATION_THREAD', False),
+                        help='use the experimental immutable-snapshot client')
+    parser.add_argument('--simulation-legacy-process', action='store_true',
+                        default=flag('SIMULATION_LEGACY_PROCESS', False),
+                        help='run the full legacy UI with an independent simulation owner')
     parser.add_argument("--image-smoke", action="store_true", help="verify bundled image map and glyphs (use with --smoke)")
     parser.add_argument("--fx-smoke", action="store_true", help="verify bundled offscreen effects (use with --smoke)")
     parser.add_argument("--save-dir", default="save", help="directory for the automatic save")
@@ -38,6 +45,14 @@ def main() -> bool | None:
         set_unified_font(True)
     if args.image_smoke and not args.smoke:
         parser.error("--image-smoke requires --smoke")
+    if args.simulation_thread:
+        if args.image_smoke or args.fx_smoke:
+            parser.error('the snapshot client does not support image/fx smoke')
+        from run_simulation_thread import main as snapshot_main
+        snapshot_args = ['--save-dir', args.save_dir]
+        if args.smoke:
+            snapshot_args.append('--smoke')
+        return snapshot_main(snapshot_args)
     if args.fx_smoke:
         if not args.smoke:
             parser.error('--fx-smoke requires --smoke')
@@ -56,6 +71,9 @@ def main() -> bool | None:
                    Path(__file__).resolve().parent)
         if prefer_wezterm(sys.argv,directory):
             return True
+    if args.simulation_legacy_process:
+        os.environ['ONEIRSCRIPT_SIMULATION_LEGACY_PROCESS'] = '1'
+        os.environ['ONEIRSCRIPT_MATERIAL_AUTHORITY'] = '1'
     session = create_session(Path(args.save_dir))
     if args.smoke:
         session.start()
@@ -76,13 +94,19 @@ def main() -> bool | None:
         console.print(render_map(session.state))
         console.print(f"梦痕已保存：{session.manager.primary}")
         return
-    import os
     app=DreamApp(session)
     app.terminal_compatibility_notice=(args.compat_terminal or not os.environ.get('WEZTERM_PANE'))
     if not args.terminal_attached:
         from dream_demo.terminal_launch import fallback_reason
         app.terminal_compatibility_notice = fallback_reason() or app.terminal_compatibility_notice
     app.run()
+    # The Textual loop has ended. Join the durability helper here so native
+    # close and save errors reach the launcher without blocking UI input.
+    if getattr(app.session, 'asynchronous', False):
+        app.session.close(save=False).result()
+        suspended = getattr(app, '_tutorial_home_session', None)
+        if suspended and getattr(suspended[0], 'asynchronous', False):
+            suspended[0].close(save=False).result()
     # Textual catches timer/event exceptions and returns from run() after
     # closing the UI. Forward its recorded exception to launch_game so a
     # delayed gameplay crash receives the same persistent report as startup.

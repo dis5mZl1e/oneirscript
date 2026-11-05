@@ -424,6 +424,7 @@ class MovementActionsMixin:
             # 走攻击分支）。门是「高墙」，关闭时相当于墙；此处在玩家占位之前先打「开」，
             # 随后 _update_doors 会因玩家站在门上而维持开启。
             self._open_door(cell)
+            self._sync_material_position(x, y)
             # docs 261022 §16.6：门状态确实改变才发 R=2 机械声。
             self._sound_pulse(x, y, 2, category="mechanical",
                               source=tr("门"), announce=False)

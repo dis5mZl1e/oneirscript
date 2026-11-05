@@ -235,6 +235,7 @@ class LogicMixin(CircuitMixin):
             cell = self.cell(x, y)
             before = cell.solid
             cell.solid = not cell.solid
+            self._sync_material_position(x, y)
             self.messages.append(tr(
                 "机关门转动齿轮，{state}。", state="打开" if not cell.solid else "关上"
             ))
@@ -289,6 +290,7 @@ class LogicMixin(CircuitMixin):
                     # 降下：清栅栏。
                     cell.wall_kind = ""
                     cell.solid = False
+                    self._sync_material_position(nx, ny)
                     fences.pop((nx, ny), None)
                     changed.append((nx, ny))
                     continue
@@ -297,6 +299,7 @@ class LogicMixin(CircuitMixin):
                 # 升起：意识栅栏（可徒手破坏 + 10 回合消散——被关永远有出路）。
                 cell.wall_kind = "意识栅栏"
                 cell.solid = True
+                self._sync_material_position(nx, ny)
                 fences[(nx, ny)] = MIND_FENCE_LIFETIME
                 changed.append((nx, ny))
                 raised_any = True
@@ -465,6 +468,7 @@ class LogicMixin(CircuitMixin):
                         continue
                     cell.wall_kind = "意识栅栏"
                     cell.solid = True
+                    self._sync_material_position(nx, ny)
                     fences[(nx, ny)] = MIND_FENCE_LIFETIME
                     raised += 1
             self._mind_fences = fences
@@ -523,6 +527,7 @@ class LogicMixin(CircuitMixin):
                         cell.solid = True
                         cell.wall_kind = "坚实聚合物"
                         cell.hardness = 3
+                        self._sync_material_position(cx, cy)
                         hardened += 1
             if hardened:
                 self.messages.append(tr("地面隆起凝硬——退路被堵住了几格。"))
@@ -746,6 +751,7 @@ class LogicMixin(CircuitMixin):
                 if cell.wall_kind == "意识栅栏":
                     cell.wall_kind = ""
                     cell.solid = False
+                    self._sync_material_position(x, y)
                 fences.pop((x, y), None)
             for pos in fences:
                 fences[pos] -= 1

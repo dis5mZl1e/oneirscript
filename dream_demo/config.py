@@ -71,6 +71,18 @@ def _format_language(value: bool | int | str) -> str:
 
 
 SETTING_REGISTRY: tuple[SettingDef, ...] = (
+    SettingDef('default_zoom', '默认缩放', SettingType.ENUM, '100',
+               choices=('50', '100', '125', '150', '200', '300'),
+               formatter=lambda value: str(value) + '%'),
+    SettingDef('default_sidebar_workspace', '默认右侧界面', SettingType.ENUM, 'inventory',
+               choices=('actions', 'inventory', 'equipment', 'portents', 'environment', 'tasks'),
+               formatter=lambda value: tr({'actions': '行动', 'inventory': '行囊',
+                   'equipment': '构筑', 'portents': '自身', 'environment': '环境',
+                   'tasks': '任务'}.get(str(value), str(value)))),
+    SettingDef('default_action_page', '行动界面默认项', SettingType.ENUM, 'constructs',
+               choices=('constructs', 'fire', 'tamper'),
+               formatter=lambda value: tr({'constructs': '构想', 'fire': '发射',
+                                           'tamper': '篡改'}.get(str(value), str(value)))),
     SettingDef(
         "symbol_mode",
         "表征模式",
@@ -346,16 +358,15 @@ SETTING_REGISTRY += (
     ),
 )
 
-# 左侧事件记录（2026-10-26）：默认关闭，开启后在地图显示框左下角叠加一层
-# 只有文字、无背景无边框的事件记录（玩家站到左下 1/4 时改贴左上）。
+# 底部左侧消息栏：默认开启，固定在地图与底栏之间，不再叠加地图。
 # 追加在注册表末尾，既有设置项下标保持不变（设置页行号测试依赖既有下标）。
 SETTING_REGISTRY += (
     SettingDef(
         "left_event_log",
         "左侧事件记录",
         SettingType.BOOL,
-        False,
-        description="在地图左下叠加透明事件记录；开启后右侧默认页改为行囊。",
+        True,
+        description="在地图下方、键位表上方显示可滚动的最近消息。",
     ),
 )
 
@@ -420,6 +431,22 @@ RESERVED_KEY_BINDINGS: dict[str, str] = {
 }
 from .controls import reserved_keys
 RESERVED_KEY_BINDINGS.update(reserved_keys())
+
+
+SETTING_REGISTRY += (
+    SettingDef(
+        "auto_event_log", "行动后切换消息记录", SettingType.BOOL, False,
+        description="行动完成后自动将右侧面板切换到消息记录；关闭时保留当前页面。",
+    ),
+)
+
+# 记忆页布局偏好：追加在末尾，保持既有设置项下标不变。
+SETTING_REGISTRY += (
+    SettingDef(
+        "standalone_memory_page", "独立记忆界面", SettingType.BOOL, False,
+        description="开启后在构筑中单独显示记忆页，关闭则显示在联想盘右侧。",
+    ),
+)
 
 
 @dataclass

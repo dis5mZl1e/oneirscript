@@ -13,6 +13,19 @@ def _parent_alive(process):
     return win32event.WaitForSingleObject(process, 0) == win32event.WAIT_TIMEOUT
 
 
+def _wait_for_publication(wake, parent, timeout_ms=500):
+    """Wait for a committed slot or parent death without a polling clock.
+
+    The auto-reset wake must never be explicitly cleared: a publication between
+    the empty-slot read and this wait leaves the event signalled. Timeout only
+    checks the renderer thread's health when the transport remains idle.
+    """
+    import win32event
+    handles = [parent, wake] if parent is not None else [wake]
+    result = win32event.WaitForMultipleObjects(handles, False, timeout_ms)
+    return not (parent is not None and result == win32event.WAIT_OBJECT_0)
+
+
 def _decode_frame(metadata, payload):
     """Decode the map, moving sprite and optional transparent text layer."""
     from PIL import Image
@@ -37,9 +50,71 @@ def _decode_frame(metadata, payload):
     return image, scene
 
 
+class _FrameDecoder:
+    """Bounded exact-byte reuse; every packet remains independently decodable."""
+
+    def __init__(self):
+        self._assets = {}
+        self._version = 0
+
+    def decode(self, metadata, payload):
+        from PIL import Image
+        versions = {}
+        updates = {}
+
+        def component(name, mode, size, start):
+            size = tuple(size)
+            length = size[0] * size[1] * len(mode)
+            raw = payload[name] if isinstance(payload, dict) else payload[start:start + length]
+            if isinstance(raw, Image.Image):
+                if raw.mode != mode or raw.size != size:
+                    raise ValueError('invalid leased native image component')
+                previous = self._assets.get(name)
+                if previous is None or previous[2] is not raw:
+                    change = getattr(raw, '_native_component', None)
+                    prior = getattr(previous[2], '_native_component', None) if previous else None
+                    if (change and prior and change[0] == prior[0]
+                            and change[2] == prior[1] and change[3]):
+                        updates[name] = {'previous': previous[4], 'dirty': change[3]}
+                    self._version += 1
+                    previous = self._assets[name] = (mode, size, raw, raw, self._version)
+                versions[name] = previous[4]
+                return raw, start + length
+            if len(raw) != length:
+                raise ValueError('truncated native image component')
+            previous = self._assets.get(name)
+            if previous is None or previous[:3] != (mode, size, raw):
+                image = (Image.frombuffer(mode, size, raw) if mode == 'RGBA'
+                         else Image.frombytes(mode, size, raw))
+                self._version += 1
+                previous = self._assets[name] = (mode, size, raw, image, self._version)
+            versions[name] = previous[4]
+            return previous[3], start + length
+
+        image, offset = component('canvas', 'RGB', metadata['image_size'], 0)
+        raw_scene = metadata.get('scene')
+        if raw_scene is None:
+            self._assets.pop('sprite', None)
+            self._assets.pop('text_overlay', None)
+            return image, None
+        scene = dict(raw_scene)
+        scene['sprite'], offset = component('sprite', 'RGBA', scene.pop('sprite_size'), offset)
+        overlay_size = scene.pop('text_overlay_size', None)
+        if overlay_size is not None:
+            scene['text_overlay'], offset = component('text_overlay', 'RGBA', overlay_size, offset)
+        else:
+            self._assets.pop('text_overlay', None)
+        scene['canvas'] = image
+        scene['_asset_versions'] = versions
+        scene['_asset_updates'] = updates
+        return image, scene
+
+
 def main(argv=None):
+    import win32con
+    import win32event
     from ._native_image_plane import _NativeImagePlaneRenderer
-    from ._native_plane_ipc import _CAPACITY, _read_latest
+    from ._native_plane_ipc import _CAPACITY, _ImageFrameReader
     args = list(sys.argv[1:] if argv is None else argv)
     directory, owner, traced = Path(args[0]), int(args[1]), bool(int(args[2]))
     parent = None
@@ -47,11 +122,15 @@ def main(argv=None):
         import win32api
         import win32con
         parent = win32api.OpenProcess(win32con.SYNCHRONIZE, False, int(args[3]))
+    wake = (win32event.OpenEvent(win32con.SYNCHRONIZE | 2, False, args[4]) if len(args) > 4
+            else win32event.CreateEvent(None, False, False, None))
     stream = (directory / 'frames.bin').open('r+b')
     memory = mmap.mmap(stream.fileno(), _CAPACITY)
     plane = None
     transports = []
     decodes = []
+    decoder = _FrameDecoder()
+    reader = _ImageFrameReader(on_release=lambda: win32event.SetEvent(wake))
 
     def report(sequence):
         trace_rows = []
@@ -65,7 +144,7 @@ def main(argv=None):
         result = {'sequence': sequence, 'error': plane.error if plane else '',
                   'metrics': list(plane.metrics) if plane else [],
                   'trace': trace_rows, 'transport_ms': transports[-1200:],
-                  'decode_ms': decodes[-1200:]}
+                  'decode_ms': decodes[-1200:], 'image_buffers': reader.metrics()}
         temporary = directory / 'report.new'
         temporary.write_text(json.dumps(result), encoding='utf8')
         temporary.replace(directory / 'report.json')
@@ -77,9 +156,10 @@ def main(argv=None):
         while plane._thread.is_alive():
             if parent is not None and not _parent_alive(parent):
                 break
-            packet = _read_latest(memory, sequence)
+            packet = reader.read(memory, sequence)
             if packet is None:
-                time.sleep(.001)
+                if not _wait_for_publication(wake, parent):
+                    break
                 continue
             sequence, metadata, payload = packet
             command = metadata['command']
@@ -92,7 +172,7 @@ def main(argv=None):
                 report(sequence)
                 continue
             decode_started = time.perf_counter_ns()
-            image, scene = _decode_frame(metadata, payload)
+            image, scene = decoder.decode(metadata, payload)
             decodes.append((time.perf_counter_ns()-decode_started)/1e6)
             if len(decodes) > 1200:
                 del decodes[:-1200]
@@ -114,8 +194,10 @@ def main(argv=None):
         if plane is not None:
             plane.close()
         report(-1)
+        reader.close()
         memory.close()
         stream.close()
+        wake.Close()
         if parent is not None:
             parent.Close()
 

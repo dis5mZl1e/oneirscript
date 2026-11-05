@@ -38,7 +38,8 @@ def find_path(
     1. **目标格先判可通行**：目标本身走不进去（墙格）时立刻返回空表，
        不再做整图搜索——鼠标掠过墙体是最常见的情形；
     2. **可通行性记忆**：同一格只问一次 ``passable``（8 邻域会重复询问，
-       实测调用数降到约 1/4）；
+       实测调用数降到约 1/4）；2026-11-04 起在扩展循环内直接查 memo，
+       不再为每格套一层函数调用，扩展顺序与结果完全不变。
     3. **h 作次级比较键**：f 相同时优先扩展离目标更近的格子（不改 f 的
        优先级，仍是同价下的最短路），等 f 的“平原”不再被整片摊开。
     """
@@ -54,13 +55,6 @@ def find_path(
         return []
 
     memo: dict[tuple[int, int], bool] = {start: True}
-
-    def is_passable(x: int, y: int) -> bool:
-        cell = (x, y)
-        known = memo.get(cell)
-        if known is None:
-            known = memo[cell] = bool(passable(x, y))
-        return known
 
     # 堆项 = (f, h, cost, counter, 格)：f 优先，h 作次级键（同 f 时先扩更近目标的），
     # counter 保证同优先级时比较不落到元组（格）比较上、也避免堆项互相比较。
@@ -84,18 +78,24 @@ def find_path(
             if not (0 <= nx < width and 0 <= ny < height):
                 continue
             neighbor = (nx, ny)
-            if not is_passable(nx, ny) or (neighbor != target and neighbor in blocked):
+            # 热循环内直接查 memo，避免每格一次函数调用；landing 之后对落点
+            # 再判一次（滑行可能落到另一格），其余情形第一遍已判过。
+            known_pass = memo.get(neighbor)
+            if known_pass is None:
+                known_pass = memo[neighbor] = bool(passable(nx, ny))
+            if not known_pass or (neighbor != target and neighbor in blocked):
                 continue
             if landing is not None:
                 neighbor = landing(x, y, dx, dy)
                 nx, ny = neighbor
+                known_pass = memo.get(neighbor)
+                if known_pass is None:
+                    known_pass = memo[neighbor] = bool(passable(nx, ny))
+                if not known_pass or (neighbor != target and neighbor in blocked):
+                    continue
             next_cost = cost + (step_cost(nx, ny) if step_cost is not None else 1)
             known = best_cost.get(neighbor)
             if known is not None and known <= next_cost:
-                continue
-            if not is_passable(nx, ny):
-                continue
-            if neighbor != target and neighbor in blocked:
                 continue
             best_cost[neighbor] = next_cost
             previous[neighbor] = current

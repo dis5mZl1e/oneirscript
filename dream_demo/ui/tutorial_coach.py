@@ -1,14 +1,17 @@
 """Screen-level tutorial controls, live anchors and collision-free placement."""
 from __future__ import annotations
+from .action_completion import after_action
+from ..core.tutorial_control import submit_tutorial
+from .tutorial_observation import observe_tutorial_ui
 
 from rich.text import Text
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.geometry import Region, Size
 from textual.widgets import Static
 
-from ..core.origin_course import MODULES, BY_ID, current, is_course, localized, note
+from ..core.origin_course import MODULES, BY_ID, current, is_course, localized
 from ..core.tutorial_categories import CATEGORIES, category_for, lessons
-from ..core.tutorial_guidance import instructions, next_instruction, prepare_module, replay_state, map_targets
+from ..core.tutorial_guidance import instructions, next_instruction, map_targets
 from ..i18n import get_language, tr
 from .widgets import NativeButton
 
@@ -190,9 +193,7 @@ class TutorialCoachMixin:
 
     def _coach_record_view(self):
         if self._coach_enabled():
-            from ..core.origin_course import observe_ui, pump
-            observe_ui(self)
-            pump(self.session.state)
+            observe_tutorial_ui(self)
 
     def compose(self):
         yield from super().compose()
@@ -304,7 +305,7 @@ class TutorialCoachMixin:
         if self._coach_enabled():
             module = current(self.session.state)
             if module:
-                prepare_module(self.session.state, module['id'])
+                submit_tutorial(self.session, 'prepare', module['id'])
 
     def _coach_live_instruction(self, row):
         text = row.en if get_language() == 'en' else row.zh
@@ -460,6 +461,17 @@ class TutorialCoachMixin:
                      Region(viewport.x, viewport.y, overlap.x-viewport.x, viewport.height),
                      Region(overlap.right, viewport.y, viewport.right-overlap.right, viewport.height))
             visible = [r for r in clear if r.width > 0 and r.height > 0]
+            # 目标行在视口之外（或正好被拖动过的说明框挡住）时，绝不框整块
+            # 可见区域：那一块往往同时盖着别的意象，会把「滚动找到钉枪」
+            # 变成「框住睡衣」，诱导玩家点错。优先退到列表标题行——第一条
+            # 意象之前没有任何命中行，框它只会提示「看这张列表」。
+            items_top = min((side.y + hit.row for hit in editor.side_hits), default=viewport.y)
+            header = Region(viewport.x, viewport.y, viewport.width, max(0, items_top - viewport.y))
+            if header.height > 0:
+                for region in visible:
+                    band = region.intersection(header)
+                    if band.width > 0 and band.height > 0:
+                        return band
             if visible:
                 return max(visible, key=lambda r: r.width*r.height)
         return viewport
@@ -725,22 +737,27 @@ class TutorialCoachMixin:
         if not self._coach_enabled() or module_id not in BY_ID:
             return
         self._coach_cancel_drag()
-        from ..persistence import GameSession
-        fresh = replay_state(self.session.state, module_id)
-        manager = self.session.manager
+        owner = self.session
+        # Cancel old drafts against their original practice state before replay.
         self._return_home()
-        self.session = GameSession(fresh, manager, persist_initial=False, persistence_enabled=False)
-        self._coach_directory = self._coach_hidden = False
-        self._coach_drag_position = None
-        self._coach_content_key = self._coach_card_geometry = None
-        self._coach_layout_key = None
-        self._coach_category = category_for(module_id)
-        self._course_ui_previous = None
-        self._leave_home()
-        # Replaying a lesson is an immediate local reset, not a descent. Do not
-        # leave a floor-intro animation temporarily rejecting inspection input.
-        if getattr(self, '_floor_transition', None) is not None:
-            self._finish_floor_transition(suppress_wipe=True)
+        result = submit_tutorial(owner, 'replay', module_id)
+        def finish(result):
+            if not result.changed:
+                return
+            self.session = owner
+            self._coach_directory = self._coach_hidden = False
+            self._coach_drag_position = None
+            self._coach_content_key = self._coach_card_geometry = None
+            self._coach_layout_key = None
+            self._coach_category = category_for(module_id)
+            self._course_ui_previous = None
+            self._leave_home()
+            # Replaying a lesson is an immediate local reset, not a descent. Do not
+            # leave a floor-intro animation temporarily rejecting inspection input.
+            if getattr(self, '_floor_transition', None) is not None:
+                self._finish_floor_transition(suppress_wipe=True)
+
+        return after_action(self, result, finish)
 
     def handle_button_press(self, button):
         name = button.id or ''
@@ -779,7 +796,7 @@ class TutorialCoachMixin:
             return
         if command == 'directory':
             if getattr(self, '_coach_hidden', False) and 'guide_hidden' in state.tutorial.get('facts', ()):
-                note(state, 'guide_restored')
+                submit_tutorial(self.session, 'facts', 'guide_restored')
             self._coach_directory = not getattr(self, '_coach_directory', False)
             self._coach_hidden = False
             self._coach_category = category_for(module['id'])
@@ -787,11 +804,11 @@ class TutorialCoachMixin:
         elif command == 'hide':
             self._coach_hidden = True
             self._coach_directory = False
-            note(state, 'guide_hidden')
+            submit_tutorial(self.session, 'facts', 'guide_hidden')
         elif command == 'show':
             self._coach_hidden = False
             if 'guide_hidden' in state.tutorial.get('facts', ()):
-                note(state, 'guide_restored')
+                submit_tutorial(self.session, 'facts', 'guide_restored')
         elif command == 'extra':
             row, _, _ = next_instruction(state)
             if module['id'] == 'B4':
@@ -801,13 +818,11 @@ class TutorialCoachMixin:
                 else:
                     self.show_toast(words('先走到①灯旁一格内，再打开光源操作。', 'Stand within one tile of lamp 1 before opening its controls.'))
             elif row and row.fact in ('exit_read', 'practice_log_seen'):
-                note(state, row.fact)
+                submit_tutorial(self.session, 'facts', row.fact)
             elif module['id'] == 'I2':
-                from ..core.origin_course import control
                 op = 'accept' if state.tutorial.get('practice_quest') in ('none', 'abandoned') else 'deliver'
-                result = control(state, op)
-                if result.message:
-                    self.show_toast(result.message)
+                result = submit_tutorial(self.session, 'control', op)
+                self._action_toast(result)
         elif command == 'exit':
             self.action_save_exit()
             return
@@ -820,10 +835,7 @@ class TutorialCoachMixin:
                 and self.session.state.tutorial.get('active')
                 and self.settings_page.capture_target is None and self.qol_confirmation is None
                 and not isinstance(self.focused, Input) and not self.qol_searching):
-            from ..core.tutorial import tutorial_skip_step
-            message = tutorial_skip_step(self.session.state)
-            if message:
-                self.show_toast(message)
+            self._action_toast(submit_tutorial(self.session, 'skip'))
             self._mark_key_handled(event.key)
             self.refresh_view()
             event.stop()

@@ -131,6 +131,7 @@ def prepare_module(state, module_id):
         # teaching tile keeps the conductive comparison repeatable without
         # changing water simulation or inventing a successful condition.
         state.cell(12, 19).aggregate_variant = '金属聚合物'
+        state._sync_material_position(12, 19)
     if module_id == 'H3':
         # The sealed phase-change pool blocks throws. Fire practice gets its
         # own finite, reachable target outside the glass, away from the stand.

@@ -17,7 +17,7 @@ from textual.visual import visualize
 from ..core import GameState
 from ..realm_glyphs import presentation_token
 from .styles import MAP_DEFAULT_ZOOM, MAP_ZOOM_LEVELS, highlighted_message
-from ..i18n import tr
+from ..i18n import get_language, tr
 from ._native import _trace_native
 from .glyphs import viewport_origin
 from .render import render_map
@@ -76,12 +76,12 @@ def _blank_base_text(width: int, height: int, cell_w: int, cell_h: int) -> Text:
 
 
 class MapView(WorldCanvas):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, zoom=MAP_DEFAULT_ZOOM, **kwargs):
         super().__init__(*args, **kwargs)
         self.can_focus = True
         self.state: GameState | None = None
         self.symbol_mode = "themed"
-        self.zoom = MAP_DEFAULT_ZOOM
+        self.zoom = zoom if zoom in MAP_ZOOM_LEVELS else MAP_DEFAULT_ZOOM
         self.viewport = (0, 0, 1, 1)
         # 上一帧相机属于哪一层；只有同一层才允许跨尺寸沿用 left/top。
         self._camera_layer: str | None = None
@@ -179,8 +179,23 @@ class MapView(WorldCanvas):
         time 与玩家位置、实体数量共同覆盖了渲染依赖；指纹相同则直接复用上一帧。
         光标与辅助路径不影响基帧指纹，另从当前完整光照帧叠加。
         """
+        store = getattr(state.cells, 'store', None)
+        journal = store.journal if store is not None else None
+        material_cursor = journal.cursor if journal is not None else None
+        # Whole-scene construction still needs every permitted cell: current
+        # generation/version is enough to invalidate it without materializing a
+        # batch that this consumer cannot yet apply incrementally. This view's
+        # cursor never drains or changes another reader's history.
+        self._map_material_cursor = material_cursor
         return (
             id(state),
+            material_cursor,
+            getattr(state, 'material_revision', 0),
+            getattr(state, 'topology_revision', 0),
+            getattr(state, 'plant_revision', 0),
+            getattr(state, '_sight_revision', 0),
+            state.effective_sight_radius(),
+            state.light_turns > 0,
             state.time,
             state.depth,
             state.developed_total,
@@ -323,9 +338,14 @@ class MapView(WorldCanvas):
         }
         layer = getattr(self.app, 'layer_observation', None)
         display_mode = self.app.resolved_map_display()[0]
+        from .presentation_events import presentation_events
+        local_events = presentation_events(self.app, state)
+        self.explosion_cells = local_events.explosion_cells
+        self.explosion_blasts = local_events.explosion_blasts
+        self.explosion_age = local_events.explosion_age
         frame_key = self._frame_signature(state, width, height) + (
             viewport, display_mode, layer.layer if layer else None,
-            len(getattr(state, "explosion_cells", ()) or ()), getattr(state, "explosion_age", 0), self.animated_combat,
+            local_events.explosion_signature, self.animated_combat,
             tuple(sorted((self.tutorial_cells or {}).items())), state.time % 2,
             tuple(sorted(self.sound_markers.items())),
         )
@@ -354,9 +374,9 @@ class MapView(WorldCanvas):
             cell_w=glyph_cell_w,
             cell_h=self.cell_h,
             tutorial_cells=self.tutorial_cells,
-            explosion_cells=None if self.animated_combat else getattr(state, "explosion_cells", None),
-        explosion_blasts=getattr(state, "explosion_blasts", None),
-            explosion_age=getattr(state, "explosion_age", 0),
+            explosion_cells=None if self.animated_combat else self.explosion_cells,
+            explosion_blasts=self.explosion_blasts,
+            explosion_age=self.explosion_age,
             markers=self.sound_markers or None,
             visuals=visuals,
             visible=visible,
@@ -660,11 +680,22 @@ class MapView(WorldCanvas):
         return width * self.cell_w, height * self.cell_h
 
     def image_frame(self):
-        from .map_image import render_scene_image
-        transition = getattr(self.app,'_floor_transition',None)
-        if transition is not None and transition.get('image_frame') is not None:
-            return transition['image_frame']
-        from PIL import ImageDraw
+        image = self._native_image_frame()
+        # The public PIL result is intentionally mutable. A native renderer
+        # must use its conservative borrower route while this object remains
+        # current; object identity only rejects trust and never proves pixels.
+        from weakref import WeakValueDictionary
+        exposed = getattr(self, '_image_public_exposures', None)
+        if exposed is None:
+            exposed = self._image_public_exposures = WeakValueDictionary()
+        exposed[id(image)] = image
+        return image
+
+    def _public_image_was_exposed(self, image):
+        exposed = getattr(self, '_image_public_exposures', None)
+        return exposed is not None and exposed.get(id(image)) is image
+
+    def _image_cell_pixels(self):
         # Resize.pixel_size when supplied by the terminal gives actual DPI geometry.
         pixels = getattr(self.app, '_map_terminal_pixels', None)
         size = self.app.size
@@ -676,9 +707,18 @@ class MapView(WorldCanvas):
         cell_px = (px*self.cell_w,py*self.cell_h)
         if self.fractional_image_zoom:
             cell_px = (max(1, round(px*2*self.zoom)), max(1, round(py*self.zoom)))
+        return cell_px
+
+    def _native_image_frame(self, *, _prepared_smooth=()):
+        from .map_image import render_scene_image
+        transition = getattr(self.app,'_floor_transition',None)
+        if transition is not None and transition.get('image_frame') is not None:
+            return transition['image_frame']
+        from PIL import ImageDraw
+        cell_px = self._image_cell_pixels()
         preview = self.preview_tints or {}
         marks = self.preview_marks or {}
-        smooth_player = self._smooth_player_sample()
+        smooth_player = self._smooth_player_sample() if _prepared_smooth == () else _prepared_smooth
         smooth_key = None
         if smooth_player is not None:
             player_pos, sample = smooth_player
@@ -966,9 +1006,9 @@ class MapView(WorldCanvas):
 
 
 class ClickableHoverInfo(Static):
-    """右上角「当前地形所在格」读数：点击等于右键自己所在格。
+    """右上角当前环境读数；右键打开悬停格的完整详情。
 
-    只负责把点击转成左侧格子详情面板；读数内容仍由 panels._hover_text 生成。
+    读数内容由 panels._hover_text 生成，详情权限由 open_cell_detail 判断。
     观察模式/模态窗口的守卫交给 open_cell_detail 与宿主状态判断。
     """
 
@@ -988,14 +1028,19 @@ class ClickableHoverInfo(Static):
         super().update(content)
 
     def on_mouse_down(self, event: MouseDown) -> None:
-        if event.button != 1:
+        if event.button not in (1, 3):
             return
         app = self.app
         if getattr(app, 'home_mode', False):
             return
         try:
             state = app.session.state
-            app.open_cell_detail((state.player.x, state.player.y))
+            target = getattr(state, 'hover_target', None)
+            if event.button == 3:
+                target = target or (state.player.x, state.player.y)
+            else:
+                target = (state.player.x, state.player.y)
+            app.open_cell_detail(target)
         except Exception:
             return
         event.stop()
@@ -1003,6 +1048,12 @@ class ClickableHoverInfo(Static):
 
 
 class EventPanel(OrnamentBorderMixin, WorldCanvas):
+    def update(self, content="") -> None:
+        super().update(content)
+        plane = getattr(self, '_inventory_icon_plane', None)
+        if plane is not None:
+            self.call_after_refresh(plane.refresh)
+
     def _on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
         # The sidebar slices its Rich rows itself. Do not let Widget consume
         # the wheel by scrolling an overflowing render before the app sees it.
@@ -1425,7 +1476,24 @@ class MapZoomControls(Static):
     '''
 
     def on_mount(self):
-        self.set_interval(.25, self.refresh)
+        # C10（2026-11-05）：这里原本是 .25s 无条件 refresh——空闲时每秒 4 次
+        # 写回静态文本，每次都会触发一次整屏合成（逐控件计数实测 3s 内 12 次）。
+        # 面板文本只依赖 (home_mode, zoom, 是否全图, 语言)，改为轮询签名，
+        # 只有真的变了才 refresh；其余时间这个定位器只是四次廉价比较。
+        self._poll_key: tuple | None = None
+        self.set_interval(.25, self._poll_refresh)
+
+    def _poll_refresh(self) -> None:
+        try:
+            view = self.app.query_one('#map')
+        except Exception:
+            return
+        key = (getattr(self.app, 'home_mode', True), view.zoom,
+               getattr(self.app, '_map_overview_zoom', None) is not None,
+               get_language())
+        if key != self._poll_key:
+            self._poll_key = key
+            self.refresh()
 
     def render(self):
         if getattr(self.app, 'home_mode', True):

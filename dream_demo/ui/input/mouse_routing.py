@@ -1,5 +1,6 @@
 """鼠标路由族：on_mouse_*、左右键/悬停/滚轮与面板行点击。"""
 from __future__ import annotations
+from ..tutorial_observation import observe_tutorial_ui
 
 import time
 
@@ -10,7 +11,6 @@ from ...i18n import tr
 from ...audio import sfx
 from ...core import ABILITY_DEFINITIONS
 from ...core.entities import ActionResult
-from ...core.tutorial import tutorial_skip_step
 from ...materials import PORTENT_DEFINITIONS, TABLE_KINDS, wall_def
 from .._native import _trace_native
 from ..styles import MOVE_REPEAT_MIN_SECONDS, HOLD_RELEASE_TIMEOUT, RIGHT_PANEL_MODES
@@ -182,7 +182,7 @@ class MouseRoutingMixin:
         path = state.path_to(*waypoint, known_cells=state.visible_cells(),
                              unknown_passable=unknown_target) if waypoint else []
         if path:
-            self.begin_auto_walk(path)
+            self.begin_auto_walk(path, unknown_passable=unknown_target)
             self.path_click_goal = click_goal
         else:
             self._cancel_unreachable_path()
@@ -383,6 +383,7 @@ class MouseRoutingMixin:
         return rows[y]
 
     def handle_panel_right_click(self, event: MouseDown) -> None:
+        self._flush_ui_refresh()
         self._select_input_region('overlay' if getattr(event.control, 'id', None) == 'map-overlay' else 'panel')
         if self.layer_observation is not None:
             if getattr(getattr(event, 'control', None), 'id', None) == 'map-overlay':
@@ -405,6 +406,8 @@ class MouseRoutingMixin:
                 self._close_event_dialog_state()
                 self.panel_mode = self._default_panel_mode()
                 self.refresh_view()
+            return
+        if getattr(widget, 'id', None) == 'panel' and self._handle_memory_bookmark_mouse(event):
             return
         # 与左键一致：offset 是可视行，叠加面板滚动量才对应真实行（判定见 _panel_row_at）。
         index = self._panel_row_at(event.offset.y, offset_x=event.offset.x)
@@ -572,6 +575,7 @@ class MouseRoutingMixin:
             self._assist_cache = None
         self._refresh_cursor_only()
     def handle_panel_mouse_down(self, event: MouseDown, panel: Static | None = None) -> None:
+        self._flush_ui_refresh()
         widget = panel if panel is not None else getattr(event, 'control', None)
         self._select_input_region('overlay' if getattr(widget, 'id', None) == 'map-overlay' else 'panel')
         if self._inspection_active() and getattr(widget, 'id', None) != 'panel':
@@ -849,6 +853,8 @@ class MouseRoutingMixin:
                 self.refresh_view()
             event.stop()
             return
+        if widget_id == 'panel' and self._handle_memory_bookmark_mouse(event):
+            return
         if (widget_id == 'panel' and self.panel_mode == 'actions'
                 and self._panel_subpage_id() == 'fire'):
             source_key = event.style.meta.get('fire_reload')
@@ -926,6 +932,7 @@ class MouseRoutingMixin:
             self.refresh_view()
             return
         if (self.panel_mode == 'actions' and self._panel_subpage_id() == 'constructs'
+                and not getattr(event, "shift", False)
                 and (not key or not key.startswith('action:'))):
             # Right preview and card bodies only select. Only the explicit
             # release token carries this metadata through wrapping/scrolling.
@@ -1117,9 +1124,7 @@ class MouseRoutingMixin:
         self._refresh_qol()
         self._sidebar_after_refresh()
         if self._coach_enabled():
-            from ...core.origin_course import observe_ui, pump
-            observe_ui(self)
-            pump(self.session.state)
+            observe_tutorial_ui(self)
         self._refresh_tutorial_coach()
 
     def _scroll_right_panel(self, event, amount: int) -> bool:
@@ -1127,10 +1132,19 @@ class MouseRoutingMixin:
         if (getattr(getattr(event, 'control', None), 'id', None) != 'panel'
                 or getattr(event, 'ctrl', False) or not self._sidebar_navigation_allowed()):
             return False
-        if self.panel_mode == 'equipment' and self._memory_region_row_at(event):
+        if self.panel_mode == 'equipment' and self._equipment_list_region_row_at(event):
+            self._scroll_equipment_list(-amount)
+        elif self.panel_mode == 'equipment' and self._memory_region_row_at(event):
             self._scroll_memory(-amount)
         else:
-            self._scroll(amount)
+            # Only wheel redraws may reuse the last environment preparation.
+            # Selection actions and normal world/UI refreshes always rebuild it.
+            reuse = getattr(self, '_environment_scroll_reuse', False)
+            self._environment_scroll_reuse = self.panel_mode == 'nearby'
+            try:
+                self._scroll(amount)
+            finally:
+                self._environment_scroll_reuse = reuse
         event.stop()
         return True
 
@@ -1187,6 +1201,10 @@ class MouseRoutingMixin:
         if self.anomaly_detail_target is not None or self.cell_detail_target is not None:
             self._scroll_anomaly_detail(1)
             return
+        if self.panel_mode == "equipment" and self._equipment_list_region_row_at(event):
+            # 悬停在底部携带意象区：只滚它自己的视窗，上方联想盘不动。
+            self._scroll_equipment_list(-1)
+            return
         if self.panel_mode == "equipment" and self._memory_region_row_at(event):
             # 悬停在底部记忆碎片区上：滚轮只滚碎片区，不滚上方装备列表（2026-10-14）。
             self._scroll_memory(-1)
@@ -1237,6 +1255,9 @@ class MouseRoutingMixin:
             return
         if self.anomaly_detail_target is not None or self.cell_detail_target is not None:
             self._scroll_anomaly_detail(-1)
+            return
+        if self.panel_mode == "equipment" and self._equipment_list_region_row_at(event):
+            self._scroll_equipment_list(1)
             return
         if self.panel_mode == "equipment" and self._memory_region_row_at(event):
             self._scroll_memory(1)
