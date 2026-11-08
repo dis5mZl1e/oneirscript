@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from rich.text import Text
+from rich.style import Style
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -140,7 +141,10 @@ class BoardEditorMixin:
         self.refresh_view()
         # Reopening begins with the comparison headings, even after scrolling
         # down to the effect details in an earlier editing session.
-        self.query_one('#board-editor-scroll').scroll_home(animate=False)
+        for selector in ('#board-editor-main', '#board-editor-scroll',
+                         '#board-editor-board-scroll', '#board-editor-sentence-scroll',
+                         '#board-editor-effects-scroll'):
+            self.query_one(selector).scroll_home(animate=False)
 
     def open_board_editor_for_item(self, inventory_index: int) -> bool:
         """「从原列表装配」（§8.4）：原条目操作入口改为打开盘面预览。
@@ -455,7 +459,9 @@ class BoardEditorMixin:
         inspect = self.query_one('#board-editor-inspect', Static)
         inspect.update(editor.render_inspect(width=max(1, inspect.content_size.width)))
         side = self.query_one("#board-editor-side", Static)
-        side.update(editor.render_side(width=content_width, comparison_only=True))
+        side.update(editor.render_item_region('inventory', max(1, side.content_size.width)))
+        board_items = self.query_one('#board-editor-board-items', Static)
+        board_items.update(editor.render_item_region('board', max(1, board_items.content_size.width)))
         effects = self.query_one('#board-editor-effects', Static)
         effects.update(editor.render_effects(width=content_width))
         labels = {
@@ -485,20 +491,18 @@ class BoardEditorMixin:
         editor = self.board_editor
         if editor is None or self.panel_mode != 'board_editor':
             return
-        rows = [row for row, selected in enumerate(self._board_side_rows)
-                if selected == editor.list_cursor]
-        if not rows:
-            return
         scroll = self.query_one('#board-editor-scroll')
         side = self.query_one('#board-editor-side')
-        # Region coordinates already include current scrolling; request only
-        # enough movement to reveal the item's first wrapped line.
-        y = side.content_region.y + rows[0]
-        if y < scroll.content_region.y:
-            scroll.scroll_relative(y=y - scroll.content_region.y, animate=False)
-        elif y >= scroll.content_region.bottom:
-            scroll.scroll_relative(y=y - scroll.content_region.bottom + 1, animate=False)
-        self._board_side_scroll = int(scroll.scroll_y)
+        text = side.renderable
+        rows = [text.plain[:span.start].count('\n') for span in text.spans
+                if isinstance(span.style, Style)
+                and span.style.meta.get('board_item_index') == editor.list_cursor]
+        if rows:
+            y = side.content_region.y + min(rows)
+            if y < scroll.content_region.y:
+                scroll.scroll_relative(y=y-scroll.content_region.y, animate=False)
+            elif y >= scroll.content_region.bottom:
+                scroll.scroll_relative(y=y-scroll.content_region.bottom+1, animate=False)
 
     def _refresh_settings_rows(self, mode: str) -> None:
         """设置页行渲染：主页（home_settings）与暂停菜单（pause_settings）共用。"""

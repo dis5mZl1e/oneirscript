@@ -193,7 +193,7 @@ class MapHints(Vertical):
         就被调用，那里拿到的是上一拍的高度——临时消息/瞄准提示变长时，气泡
         会瞬时或持续探进下方底栏（玩家反馈的「错位、互相遮挡」）。
         这里按子件自己的 CSS 口径 + 文本折行数现算：
-        - width:auto（MapHintText）：内容宽 = 最长行，行数 = 显式行数；
+        - width:auto（MapHintText）：按容器限宽后的内容宽度折行；
         - 显式宽度（FloatingToast）：内容宽 = 宽度 - padding - 边框，按字折行。
         折行与 Textual 布局用同一套 rich Text.wrap，估算 = 布局结果。
         """
@@ -204,9 +204,9 @@ class MapHints(Vertical):
             return 1 + gutter.height
         if styles.is_auto_width:
             natural = max((cell_len(line) for line in plain.split("\n")), default=0)
-            inner = max(1, natural)
+            inner = max(1, min(natural, container_width - gutter.width))
         else:
-            inner = max(1, int(styles.width.value) - gutter.width)
+            inner = max(1, min(container_width, int(styles.width.value)) - gutter.width)
         return _wrapped_line_count(plain, inner) + gutter.height
 
     def _cheap_place_key(self, origin, content, bottom, footer_top):
@@ -313,6 +313,7 @@ class MapHints(Vertical):
         self.styles.max_height = max_height
         self.styles.offset = (x, y_bottom if bottom else y_top)
         for child,child_width,_height in child_metrics:
+            child.styles.max_width = width
             child.styles.offset = (max(0,width-child_width),0)
         # y 已按本拍文本估算，不再依赖"等布局把高度算出来"的补拍；保留布局后
         # 的一次复算，兜住 content_region 在首拍尚未就绪（尺寸刚变）的情况。

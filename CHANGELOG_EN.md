@@ -1,6 +1,7 @@
 # Oneirscript 0.1.2 — English Changelog
 
 **Released:** 2026-11-05  
+**Repacked:** 2026-11-08  
 **Release:** [GitHub Release v0.1.2](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)
 
 Oneirscript 0.1.2 continues the authoritative-simulation and performance work, adds structured remote overwrite events, and updates sidebar, input and stability work.
@@ -28,17 +29,21 @@ Oneirscript 0.1.2 continues the authoritative-simulation and performance work, a
 - Fixed crashes and lifecycle issues found during the simulation and presentation migration, with runtime error records and regression coverage.
 - Older saves remain readable. Back up saves before updating.
 
+## Repack (2026-11-08)
+
+- Fixed equipment-board relational rows for adjacent OF/BY sources, board-editor scroll restoration, and panel/toast behavior. The 0.1.2 platform scope is unchanged: English builds cover Windows, Linux and macOS; the Chinese build is Windows-only.
+
 ## Downloads
 
 | Platform | Package |
 |---|---|
-| Windows x64 | [Oneirscript-v0.1.2-20261105-Windows-x86_64-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Windows-x86_64-en.zip) |
-| Linux x64 | [Oneirscript-v0.1.2-20261105-Linux-x86_64-en.tar.gz](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Linux-x86_64-en.tar.gz) |
-| macOS Apple Silicon | [Oneirscript-v0.1.2-20261105-macOS-arm64-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-arm64-en.zip) |
-| macOS Intel | [Oneirscript-v0.1.2-20261105-macOS-Intel-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-Intel-en.zip) |
+| Windows x64 | [Oneirscript-v0.1.2-20261108-Windows-x86_64-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-Windows-x86_64-en.zip) |
+| Linux x64 | [Oneirscript-v0.1.2-20261108-Linux-x86_64-en.tar.gz](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-Linux-x86_64-en.tar.gz) |
+| macOS Apple Silicon | [Oneirscript-v0.1.2-20261108-macOS-arm64-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-macOS-arm64-en.zip) |
+| macOS Intel | [Oneirscript-v0.1.2-20261108-macOS-Intel-en.zip](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-macOS-Intel-en.zip) |
 | Python 3.11+ | [oneirscript-0.1.2-py3-none-any.whl](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/oneirscript-0.1.2-py3-none-any.whl) |
 
-The release also includes the [corresponding desktop source](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-desktop-source.zip), [RELEASE-MANIFEST.json](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/RELEASE-MANIFEST.json), and [SHA256SUMS.txt](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/SHA256SUMS.txt). The Chinese Windows package is `Oneirscript-v0.1.2-20261105-Windows-x86_64-zh.zip`.
+The release also includes the [corresponding desktop source](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-desktop-source.zip), [RELEASE-MANIFEST.json](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/RELEASE-MANIFEST.json), and [SHA256SUMS.txt](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/SHA256SUMS.txt). The Chinese Windows package is `Oneirscript-v0.1.2-20261108-Windows-x86_64-zh.zip`.
 
 ## Installation
 
@@ -51,7 +56,7 @@ Keep `assets`, `vendor` and the supplied configuration beside the game. Desktop 
 
 ## Source and checksums
 
-- The corresponding desktop source is `Oneirscript-v0.1.2-20261105-desktop-source.zip`, built from development snapshot `0df1867c`. The main branch is synchronized to v0.1.2 and the `desktop-source-v0.1.2` tag records it.
+- The corresponding desktop source is `Oneirscript-v0.1.2-20261108-desktop-source.zip`, built from development snapshot `a06f96d`. The main branch is synchronized to v0.1.2 and the `desktop-source-v0.1.2` tag records it.
 - `RELEASE-MANIFEST.json` records version, platform, architecture, size and SHA-256 for every asset; `SHA256SUMS.txt` is a plain checksum list.
 
 ## License

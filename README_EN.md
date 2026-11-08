@@ -93,10 +93,10 @@ Mind, lucidity, and imagination serve different purposes. Portents, noise, and c
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Windows-x86_64-en.zip) |
-| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Linux-x86_64-en.tar.gz) |
-| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-arm64-en.zip) |
-| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-macOS-Intel-en.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-Windows-x86_64-en.zip) |
+| Linux x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-Linux-x86_64-en.tar.gz) |
+| macOS Apple Silicon | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-macOS-arm64-en.zip) |
+| macOS Intel | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-macOS-Intel-en.zip) |
 
 [All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)
 

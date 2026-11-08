@@ -187,7 +187,7 @@ def _passive_row(index, word, board, default_row, invalid=None):
                    voices=physical, relations=(relation,))
 
 
-def compile_relational_row(index, board, default_row, words):
+def _compile_relational_row(index, board, default_row, words, bound_pair=None):
     from .positional import RowSentence, Voice, _compile_row
     if any(w.piece_id == 'word_again' for w in words):
         from .repetition import compile_repetition
@@ -311,6 +311,8 @@ def compile_relational_row(index, board, default_row, words):
         if len(ids) != 2:
             return invalid('把需要后接一个处置对象和一个行为')
         donor_id, head_id = ids
+    elif bound_pair is not None:
+        donor_id, head_id = bound_pair
     else:
         if not left:
             return invalid('缺少属性或方式来源')
@@ -439,3 +441,26 @@ def enforce_restriction_scope(rows, board=None):
         return _compile_row(row.row, voices)
 
     return tuple(scoped(row) for row in rows)
+
+
+def compile_relational_row(index, board, default_row, words):
+    result = _compile_relational_row(index, board, default_row, words)
+    if result.status == 'ready' or len(words) != 1:
+        return result
+    word = words[0]
+    if word.piece_id not in ('word_de', 'word_de_manner'):
+        return result
+    placements = [p for p in board.placements if any(y == index for x, y in p.cells())]
+    if len(placements) != 2:
+        return result
+    word_cells = set(word.cells())
+    candidates = []
+    for donor, head in (placements, placements[::-1]):
+        if not any((x - 1, y) in word_cells or (x + 1, y) in word_cells
+                   for x, y in donor.cells() if y == index):
+            continue
+        candidate = _compile_relational_row(index, board, default_row, words,
+                                            (donor.instance_id, head.instance_id))
+        if candidate.status == 'ready':
+            candidates.append(candidate)
+    return candidates[0] if len(candidates) == 1 else result

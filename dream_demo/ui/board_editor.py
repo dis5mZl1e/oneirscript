@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from rich.text import Text
+from rich.style import Style
 from rich.console import Console
 from rich.cells import cell_len
 from textual.events import MouseDown, MouseMove
@@ -104,13 +105,13 @@ INFO_SECTIONS = (
         '第 1 列的条件和「如果」都能限制触发时机，「否则」接上条件不成立时使用的另一支。条件未满足时不会触发。',
     )),
     ('功能词通用规则', (
-        '功能词本身不占语法角色，放在同行两件装备之间即可，落在哪一列都不改变左右关系。把、从、只、再要求左侧留空，如果、否则按分句位置摆放。',
+        '的、地紧邻同行的属性或方式装备即可，不限前后顺序；同行保留一件相容的行为装备。其他功能词按各自用法摆放。',
         '用「的、地、把、和、或者、被」连接两件装备时，这一行不要混入第三件无关装备，否则关系会有歧义。功能词也不能塞进同一件装备自身形状的孔洞里。',
         '配对不上时整行停止生效并给出原因，不会退回没放功能词的读法。',
     )),
     ('功能词逐词用法', (
-        '「的」夹在来源装备和行为装备之间，同一行只留这两件。左边要能给出刀痕、余温、静电或轻快节拍，右边必须是斩击或发射。左边不再单独出手，它的属性并入这次行动，例如节拍器让钢笔攻击带上轻快。',
-        '「地」位置同「的」，左边提供方式，右边执行行为。两边必须属于相容的用法，聚气喷嘴只能增强喷射，轻快节拍适合近战和发射，修缮强化只接修缮。方式只改这一行的行动，不另成一句。',
+        '「的」紧邻来源装备，同一行只留来源和行为这两件，不限前后顺序。来源要能给出刀痕、余温、静电或轻快节拍，行为必须是斩击或发射。来源不再单独出手，它的属性并入这次行动，例如节拍器让钢笔攻击带上轻快。',
+        '「地」位置同「的」，紧邻方式来源即可，不限前后顺序。两边必须属于相容的用法，聚气喷嘴只能增强喷射，轻快节拍适合近战和发射，修缮强化只接修缮。方式只改这一行的行动，不另成一句。',
         '「把」放在行首，后面先放被处置的对象，再放行为，同行只有这两件。它只认两类组合，刀痕类对象交给能留下刀痕的行为，或容器中的液体、气体交给同介质的喷射装备。对象类型不符时整行失效。',
         '「从」放在行首，后面先放容器，再放喷射装备，左侧不能有其他装备。容器必须装有液体或气体，介质还要与喷射行为一致。效果是取用现成材料再喷出，空容器不会凭空生成。',
         '「被」夹在承受者和作用来源之间，同行只留这两件。左边必须有能转为被动的行为，右边必须给出刀痕或留白。右边给刀痕时监听清醒创伤，给留白时监听心智创伤；完成结算后，左边按斩击、静电、点燃或护持回应。没有真实受击不会触发。',
@@ -746,12 +747,20 @@ class BoardEditorController:
         text = Text()
         text.append(tr('手上：{held}', held=held), style=FIELD_COLORS['held'])
         text.append('\n')
-        text.append(tr('工具：{tool}', tool=tool_label(self.tool)), style=FIELD_COLORS['tool'])
+        text.append(tr('工具') + '：', style=FIELD_COLORS['tool'])
+        for index, tool in enumerate(TOOLS):
+            label = tr('空手') if tool is None else tool_label(tool)
+            text.append(' ' + label + ' ', style=Style(
+                color=FIELD_COLORS['tool'], bgcolor='#354553' if index == self.tool_index else None,
+                bold=index == self.tool_index, meta={'board_tool_index': index}))
+        text.append('  z', style=FIELD_COLORS['tool'])
+        text.append('\n' + tr('工具词放在对应类型的装备块旁'), style=FIELD_COLORS['tool'])
         text.append('\n')
         text.append(tr('光标 ({x},{y})', x=self.cursor[0], y=self.cursor[1]), style=FIELD_COLORS['cursor'])
         text.append('  ')
         text.append(tr('旋转 {rotation}°', rotation=self.rotation), style=FIELD_COLORS['rotation'])
-        return self._wrap_fields(text, width)
+        text.no_wrap = True
+        return text
 
     def sentence_fragments(self, compiled=None) -> tuple[tuple[str, str], ...]:
         """Main editor only: real board row coordinates and colored sentences."""
@@ -888,6 +897,36 @@ class BoardEditorController:
                      left_target if row < len(left) else None, right_target if row < len(right) else None)
             if index + 1 < max(len(board_items), len(self.list_rows)):
                 pair(Text(), Text())
+        return text
+
+    def render_item_region(self, source: str, width: int) -> Text:
+        """Each column wraps and scrolls independently; clicks use item metadata."""
+        from .panels import zone_strip
+        width = max(1, width)
+        heading = '盘上意象' if source == 'board' else '行囊意象'
+        text = zone_strip(tr(heading), width, color=FIELD_COLORS['grammar'])
+        positions = {item.instance_id: index for index, (_, item) in enumerate(self.list_rows)}
+        compiled = self._preview_compiled()
+        entries = ([node.value for node in scan(self.draft) if isinstance(node.value, Placement)]
+                   if source == 'board' else [item for _, item in self.list_rows])
+        for entry in entries:
+            index = positions.get(entry.instance_id)
+            selected = index == self.list_cursor
+            style = Style(color=CARRIED_IMAGE_STYLE, bold=selected,
+                          bgcolor='#354553' if selected else None,
+                          meta={'board_item_index': index} if index is not None else {})
+            name = self.item_name(entry.definition_id, entry.instance_id)
+            line = Text(('▶ ' if selected else '') + name, style=style)
+            if source == 'board':
+                note = f'({entry.x},{entry.y}) · ' + self._status_of(compiled, entry.instance_id)
+            else:
+                note = tr('{area} 格', area=shape_area(shape_for(entry.definition_id)))
+                note += ' · ' + (tr('已上盘') if self.draft.placement(entry.instance_id) else tr('在行囊'))
+            line.append('\n' + note, style=style)
+            text.append('\n')
+            text.append_text(self._wrap_fields(line, width))
+        if not entries:
+            text.append('\n' + tr('（无）'), style='grey58')
         return text
 
     def render_grid(self) -> Text:
@@ -1251,6 +1290,48 @@ class BoardSideView(Static):
     def on_mouse_scroll_down(self, event) -> None:
         self.app.board_editor_scroll(1)
         event.stop()
+
+
+class BoardRegionScroll(VerticalScroll):
+    def on_mouse_scroll_up(self, event):
+        self.scroll_relative(y=-2, animate=False)
+        event.stop()
+        event.prevent_default()
+
+    def on_mouse_scroll_down(self, event):
+        self.scroll_relative(y=2, animate=False)
+        event.stop()
+        event.prevent_default()
+
+
+class BoardItemRegion(Static):
+    can_focus = False
+
+    def on_resize(self, event):
+        if self.app.board_editor is not None:
+            self.call_after_refresh(self.app._refresh_board_editor, self.app._symbol_mode())
+
+    def on_mouse_down(self, event):
+        if event.button == 1:
+            index = event.style.meta.get('board_item_index')
+            if index is not None and self.app.board_editor is not None:
+                self.app.board_editor.hold_from_list(index)
+                self.app.refresh_view()
+            event.stop()
+
+
+class BoardStatusView(Static):
+    can_focus = False
+
+    def on_mouse_down(self, event):
+        if event.button == 1:
+            index = event.style.meta.get('board_tool_index')
+            if index is not None and self.app.board_editor is not None:
+                editor = self.app.board_editor
+                editor.tool_index = (index - 1) % len(TOOLS)
+                editor.cycle_tool()
+                self.app.refresh_view()
+            event.stop()
 
 
 class BoardEditorView(Vertical):

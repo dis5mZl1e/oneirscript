@@ -1,5 +1,6 @@
 """会话生命周期：构造、compose、挂载/卸载、语言/音乐同步与游戏帧刷新。"""
 from __future__ import annotations
+from ..board_editor import BoardItemRegion, BoardStatusView, BoardRegionScroll
 from ...core.presentation_control import submit_presentation
 from ..presentation_events import display_next_ticker, presentation_events
 
@@ -918,10 +919,15 @@ class SessionMixin:
                     yield Static(id='board-editor-inspect')
                 with Vertical(id='board-editor-main'):
                     yield Static(id='board-editor-grammar')
-                    yield Static(id='board-editor-status')
-                    with VerticalScroll(id='board-editor-scroll'):
-                        yield BoardSideView(id="board-editor-side")
+                    yield BoardStatusView(id='board-editor-status')
+                    with Horizontal(id='board-editor-comparison'):
+                        with BoardRegionScroll(id='board-editor-board-scroll'):
+                            yield BoardItemRegion(id='board-editor-board-items')
+                        with BoardRegionScroll(id='board-editor-scroll'):
+                            yield BoardItemRegion(id='board-editor-side')
+                    with BoardRegionScroll(id='board-editor-sentence-scroll'):
                         yield SentenceWriter(id='board-editor-sentence')
+                    with BoardRegionScroll(id='board-editor-effects-scroll'):
                         yield Static(id='board-editor-effects')
             with Vertical(id="board-editor-tools"):
                 for group in (self.BOARD_TOOL_ACTIONS[:3], self.BOARD_TOOL_ACTIONS[3:]):

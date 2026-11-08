@@ -108,6 +108,7 @@ class AppCssMixin:
         border: round #8297a7; padding: 0 1; background: #292930; }
     #signal-detail-title { height: 1; color: #d9e7f5; text-style: bold; }
     #signal-detail-scroll { height: 1fr; scrollbar-size-vertical: 1; }
+    Screen * { scrollbar-size-vertical: 0 !important; }
     #signal-detail-text { height: auto; }
     #signal-listen { height: 1; color: #dfcfaa; text-style: underline; }
     #signal-listen:hover, #signal-listen:focus { color: #f1dfad; }
@@ -463,10 +464,15 @@ class AppCssMixin:
     #board-editor-info-card { width: 74; max-width: 96%; height: auto; max-height: 88%; border: round #c9a0ff; background: #12141c; scrollbar-size-vertical: 1; }
     #board-editor-info-body { width: 100%; height: auto; padding: 1 2; color: #e6e1d3; }
     #board-editor-inspect { width: 100%; height: 1fr; overflow-y: auto; color: #b2bacb; }
-    #board-editor-main { width: 1fr; height: 1fr; }
+    #board-editor-main { width: 1fr; height: 1fr; overflow-y: auto; }
     #board-editor-grammar { height: auto; margin-bottom: 1; }
-    #board-editor-status { height: auto; margin-bottom: 1; }
-    #board-editor-scroll { width: 100%; height: 1fr; border: round #365d62; }
+    #board-editor-status { height: 5; min-height: 5; overflow-x: auto; margin-bottom: 1; }
+    #board-editor-comparison { height: 8; min-height: 8; }
+    #board-editor-scroll, #board-editor-board-scroll { width: 1fr; height: 8; border: round #365d62; }
+    #board-editor-board-items { height: auto; padding: 0 1; }
+    #board-editor-sentence-scroll { height: 4; min-height: 4; }
+    #board-editor-sentence { height: auto; min-height: 4; }
+    #board-editor-effects-scroll { height: 7; min-height: 7; border: round #365d62; }
     #board-editor-side { width: 100%; height: auto; padding: 0 1; }
     #board-editor-effects { width: 100%; height: auto; padding: 1; }
     #board-editor-tools { width: 100%; height: 4; }

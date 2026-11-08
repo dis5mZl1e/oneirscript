@@ -42,6 +42,10 @@
 - 修复模拟/显示迁移过程中的若干崩溃与生命周期问题，补充运行期错误记录和回归测试。
 - 保持旧存档读取兼容；更新前仍建议备份存档。
 
+#### 2026-11-08 重新打包
+
+- 修复联想盘「的 / 地」相邻来源的关系行编译、联想盘编辑器滚动位置恢复，以及面板/浮动提示行为；平台范围不变。
+
 ### [0.1.1] - 2026-11-01
 
 本次更新重点改善桌面端的地图流畅度、行囊与战斗操作，并补充首次入梦介绍。
@@ -176,6 +180,10 @@ Release scope: the English build ships on Windows, Linux, macOS Apple Silicon an
 
 - Fixed crashes and lifecycle issues found during the simulation/presentation migration, with runtime error records and regression coverage.
 - Older saves remain readable; back up saves before updating.
+
+#### Repack (2026-11-08)
+
+- Fixed equipment-board OF/BY adjacent-source relational rows, board-editor scroll restoration, and panel/toast behavior. Platform scope is unchanged.
 
 ### [0.1.1] - 2026-11-01
 

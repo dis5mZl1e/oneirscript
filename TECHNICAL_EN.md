@@ -132,7 +132,7 @@ details in a public issue.
 ## Source and release correspondence
 
 `DESKTOP-SOURCE.json` records the current v0.1.2 desktop source baseline, imported
-from development commit `0df1867c`. The `desktop-source-v0.1.2` tag preserves that
+from development commit `a06f96d`. The `desktop-source-v0.1.2` tag preserves that
 baseline; the Release also provides the corresponding source ZIP, desktop packages
 and checksums. This branch adds installed-Python asset lookup
 (`dream_demo/resource_paths.py`) and a writable-data CLI entry point

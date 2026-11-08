@@ -9591,12 +9591,13 @@ class PanelViewMixin:
                 prose_width = max(4, min(64, width-4))
                 desc_lines = list(Text(description, style=prose_style).wrap(
                     _WRAP_CONSOLE, prose_width, overflow="fold"))
-                # 钉底介绍最多占面板一半高度，长介绍留一行省略号，别把格子挤出视窗。
-                budget = max(1, min(10, self._portent_viewport_rows() // 2) - 3)
+                # 介绍固定三行；长文截断，完整内容由右键详情查看。
+                budget = 3
                 if len(desc_lines) > budget:
                     desc_lines = desc_lines[:budget]
-                    desc_lines[-1].truncate(max(1, width - 1))
-                    desc_lines[-1].append("…")
+                    desc_lines[-1].truncate(max(1, prose_width - 3))
+                    desc_lines[-1].append("...")
+                desc_lines.extend(Text("") for _ in range(budget - len(desc_lines)))
                 detail.append('\n')
                 for line in desc_lines:
                     detail.append("\n  ")
@@ -10260,45 +10261,6 @@ class PanelViewMixin:
                     # -4 = 盘面示意图：鼠标左键点它直接进入联想盘编辑器
                     # （2026-10-24 玩家定稿：页签行不再挂「盘」按钮）。
                     add(row, -4)
-
-
-                if board.pieces:
-
-
-                    from .board_editor import PIECE_GLYPHS
-
-
-                    from ..equipment.board import PIECE_SPECS
-
-
-                    from ..equipment.function_words import FUNCTION_WORDS
-
-
-
-
-
-                    def piece_label(piece_id: str) -> str:
-
-
-                        word = FUNCTION_WORDS.get(piece_id)
-
-
-                        return word.label if word else tr(PIECE_SPECS[piece_id].label)
-
-
-
-
-
-                    add(Text("  ".join(
-
-
-                        f"{PIECE_GLYPHS.get(piece_id, '?')}={piece_label(piece_id)}"
-
-
-                        for piece_id in {piece.piece_id for piece in board.pieces}
-
-
-                    ), style=PANEL_MUTED))
 
 
                 hint = Text(tr("[ 编辑联想盘"))

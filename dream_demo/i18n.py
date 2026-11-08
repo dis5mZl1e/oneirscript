@@ -60,6 +60,10 @@ def tr(text: str, /, **fields: object) -> str:
 
 
 EN: dict[str, str] = {
+    '的、地紧邻同行的属性或方式装备即可，不限前后顺序；同行保留一件相容的行为装备。其他功能词按各自用法摆放。': 'OF and BY may sit beside their property or manner source in either order. Keep one compatible action in the same row. Other tool words follow their individual rules.',
+    '「的」紧邻来源装备，同一行只留来源和行为这两件，不限前后顺序。来源要能给出刀痕、余温、静电或轻快节拍，行为必须是斩击或发射。来源不再单独出手，它的属性并入这次行动，例如节拍器让钢笔攻击带上轻快。': 'Place OF beside its property source, with one compatible action in the same row, in either order. The source supplies cut, heat, electricity or a swift rhythm; the action must strike or fire. The source does not act separately.',
+    '「地」位置同「的」，紧邻方式来源即可，不限前后顺序。两边必须属于相容的用法，聚气喷嘴只能增强喷射，轻快节拍适合近战和发射，修缮强化只接修缮。方式只改这一行的行动，不另成一句。': 'Place BY beside its manner source in either order, with one compatible action in the same row. Spray nozzles enhance spraying, swift rhythm supports melee and firing, and repair modifiers support repair.',
+    "工具词放在对应类型的装备块旁": "Place tool words beside matching equipment blocks",
     # ---- 界面 ----
     "梦 层": "ONEIRSCRIPT",
     "入梦之前，先选好一段位置。": "Pick a resting place before you descend.",

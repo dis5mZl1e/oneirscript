@@ -1,7 +1,7 @@
 {
-  "desktop_source_commit": "0df1867cd47b0d8df2dbd91a8683fa3c7026b810",
+  "desktop_source_commit": "a06f96d6a55d6722d23cca3274ddd5deef54467d",
   "version": "0.1.2",
-  "source_note": "Generated from the v0.1.2 desktop snapshot merged into this repository. Python-installation adapters are listed separately and are not part of the desktop-only source baseline.",
+  "source_note": "Generated from the v0.1.2 desktop source repacked on 2026-11-08. Python-installation adapters are listed separately and are not part of the desktop-only source baseline.",
   "source_files": [
     {
       "file": "LICENSE",
@@ -1797,7 +1797,7 @@
     },
     {
       "file": "dream_demo/equipment/relations.py",
-      "sha256": "b9dd74315cb7993ca8b92402609ac7c299a0e95aa8dfcbd9f973f7ccc825fc5e"
+      "sha256": "b943e52041bff0555687f52517d47c9c01557c770cf9849b7a8a48cdb7db8961"
     },
     {
       "file": "dream_demo/equipment/remaining_gear.py",
@@ -1861,7 +1861,7 @@
     },
     {
       "file": "dream_demo/i18n.py",
-      "sha256": "a8b3146f3e0e2ab1b7b8406d95d694f2cb1555f0954c71695265a0539c9d6517"
+      "sha256": "d15c9431cec87bdd460f1183c752637d8af31ce42b2b30936bcd1794f2eaa72c"
     },
     {
       "file": "dream_demo/i18n_codex_en.py",
@@ -2233,11 +2233,11 @@
     },
     {
       "file": "dream_demo/ui/app/board_editor.py",
-      "sha256": "bfdbb5f727ccf539f470e8873018efc0c8f5cdfefd166bba7c9cb466359a6031"
+      "sha256": "09a9fe2ab39911316e9e41f83775eb538f894be23a778c1586ac68f072c2fd86"
     },
     {
       "file": "dream_demo/ui/app/css.py",
-      "sha256": "467f56e8678e113ec67cdff17b0d817fc92991d3be9deff49cdcd012443587a2"
+      "sha256": "716640343c1553ae9715ac336df501c8d1ece55afe60aa95cc71a12dbd1c187a"
     },
     {
       "file": "dream_demo/ui/app/footer.py",
@@ -2261,7 +2261,7 @@
     },
     {
       "file": "dream_demo/ui/app/session.py",
-      "sha256": "5e86c13a777bd312db84363e9f39389aa03c3d5d519dc02034045810d86401a0"
+      "sha256": "c09cfbca22f88c4379ee0221678749bbf799fc43c06e8759d9866b960a112c1f"
     },
     {
       "file": "dream_demo/ui/asciimatics_bridge.py",
@@ -2269,7 +2269,7 @@
     },
     {
       "file": "dream_demo/ui/board_editor.py",
-      "sha256": "133b81028ab538fb8acc70d340efd52e68539d8b455261433960203203f8d09b"
+      "sha256": "156d21a04f36879d41247d034f06b12e95dfccabd7d27f0cb2813271d7fdb88c"
     },
     {
       "file": "dream_demo/ui/border_feedback.py",
@@ -2353,7 +2353,7 @@
     },
     {
       "file": "dream_demo/ui/floating_toast.py",
-      "sha256": "46ab14bf1abb64e1bf5cc719172883696daa2c973789bf7af7f2be0a1e19efaa"
+      "sha256": "379e205dea97e634b7c6929fb70710a8ac28230429e6fd1b789f0ed28f3dd2c8"
     },
     {
       "file": "dream_demo/ui/frame_geometry.py",
@@ -2501,7 +2501,7 @@
     },
     {
       "file": "dream_demo/ui/panels.py",
-      "sha256": "64fb3e53bc395fc32c9723ac1d4d8f98a47fb39a133429c1ece833f2fe6fe2cc"
+      "sha256": "bd1fe1b861a26efd708483e1f532952b2dc9629aac24f51e19ee8baebd5a453b"
     },
     {
       "file": "dream_demo/ui/paper_zones.py",
@@ -2815,7 +2815,7 @@
     },
     {
       "file": "MANIFEST.in",
-      "sha256": "a0fba31263c90405ffaff5e94afbb17af984ec351af7c892d5a165d8570d60fb"
+      "sha256": "63b2feae0a3dbd484392e0792d3ca5559bc8d821af97f7d3212e38270cc30222"
     },
     {
       "file": "pyproject.toml",

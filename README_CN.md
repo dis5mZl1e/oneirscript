@@ -90,7 +90,7 @@
 
 | Platform / 平台 | Package / 发行包 |
 |---|---|
-| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261105-Windows-x86_64-zh.zip) |
+| Windows x64 | [Download / 下载](https://github.com/dis5mZl1e/oneirscript/releases/download/v0.1.2/Oneirscript-v0.1.2-20261108-Windows-x86_64-zh.zip) |
 
 [All release files, source and checksums / 全部文件、源码与校验值](https://github.com/dis5mZl1e/oneirscript/releases/tag/v0.1.2)
 
